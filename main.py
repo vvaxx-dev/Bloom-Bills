@@ -6,7 +6,11 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from Plant_Game.app import App
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    __package__ = Path(__file__).resolve().parent.name
+
+from .app import App
 
 
 if __name__ == "__main__":

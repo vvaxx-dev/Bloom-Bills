@@ -174,54 +174,54 @@ def free_pack_weight(kind, rnd):
 
 
 RELICS = {
-    "green_thumb": {"name": "Green Thumb",    "rarity": "common",   "cost": 8,
+    "green_thumb": {"name": "Green Thumb",    "rarity": "common",   "cost": 90,
                     "desc": "Flowers harvest +3.",
                      "effects": {"yield_add": [("flower", 3)]},
                     "levels": [{"stat": "flower", "goal": 150, "effects": {"yield_add": [("flower", 3)]},
                                 "desc": "Flowers harvest +6 total."}]},
-    "big_can":     {"name": "Big Can",        "rarity": "common",   "cost": 10,
+    "big_can":     {"name": "Big Can",        "rarity": "common",   "cost": 115,
                     "desc": "Watering lasts 2s longer.",
                     "effects": {"water_time": 2},
                     "levels": [{"stat": "water", "goal": 150, "effects": {"water_time": 1},
                                 "desc": "Watering lasts 3s longer total."}]},
-    "compost":     {"name": "Compost Heap",   "rarity": "common",   "cost": 12,
+    "compost":     {"name": "Compost Heap",   "rarity": "common",   "cost": 130,
                     "desc": "Plants sell for double at round end.",
                     "effects": {"sell_mult": 1.0}},
-    "fertilizer":  {"name": "Fertilizer",     "rarity": "common",   "cost": 14,
+    "fertilizer":  {"name": "Fertilizer",     "rarity": "common",   "cost": 145,
                     "desc": "All plants grow 20% faster.",
                     "effects": {"growth": 0.2},
                     "levels": [{"stat": "harvest", "goal": 250, "effects": {"growth": 0.2},
                                 "desc": "All plants grow 40% faster total."}]},
-    "almanac":     {"name": "Almanac",        "rarity": "common",   "cost": 16,
+    "almanac":     {"name": "Almanac",        "rarity": "common",   "cost": 165,
                     "desc": "Rounds last 10s longer.",
                     "effects": {"round_time": 10}},
-    "piggy_bank":  {"name": "Piggy Bank",     "rarity": "uncommon", "cost": 18,
+    "piggy_bank":  {"name": "Piggy Bank",     "rarity": "uncommon", "cost": 475,
                     "desc": "Earn 5% interest on your cash after each round.",
                     "effects": {"interest": 0.05}},
-    "monoculture": {"name": "Monoculture",    "rarity": "uncommon", "cost": 20,
+    "monoculture": {"name": "Monoculture",    "rarity": "uncommon", "cost": 500,
                     "desc": "x2.5 harvests if every plant is the same kind.",
                     "effects": {"mono_mult": 2.5}},
-    "biodiversity": {"name": "Biodiversity",  "rarity": "uncommon", "cost": 20,
+    "biodiversity": {"name": "Biodiversity",  "rarity": "uncommon", "cost": 500,
                     "desc": "+20% harvests per different kind planted.",
                     "effects": {"distinct_bonus": 0.2}},
-    "beehive":     {"name": "Beehive",        "rarity": "uncommon", "cost": 22,
+    "beehive":     {"name": "Beehive",        "rarity": "uncommon", "cost": 550,
                     "desc": "Flowers harvest +3 for each flower touching them.",
                     "effects": {"adjacent": [("flower", "flower", 3)]}},
-    "desert_rose": {"name": "Desert Rose",    "rarity": "uncommon", "cost": 24,
+    "desert_rose": {"name": "Desert Rose",    "rarity": "uncommon", "cost": 580,
                     "desc": "Desert plants harvest x2.5.",
                     "effects": {"yield_mult": [("desert", 2.5)]}},
-    "scarecrow":   {"name": "Scarecrow",      "rarity": "uncommon", "cost": 25,
+    "scarecrow":   {"name": "Scarecrow",      "rarity": "uncommon", "cost": 600,
                     "desc": "All harvests x1.5.",
                     "effects": {"yield_mult": [("all", 1.5)]},
                     "levels": [{"stat": "harvest", "goal": 400, "effects": {"yield_mult": [("all", 0.5)]},
                                 "desc": "All harvests x2.25 total."}]},
-    "clover":      {"name": "Lucky Clover",   "rarity": "rare",     "cost": 26,
+    "clover":      {"name": "Lucky Clover",   "rarity": "rare",     "cost": 2600,
                     "desc": "Rare seeds are twice as likely in packs.",
                     "effects": {"pack_luck": 2.0}},
-    "gardener":    {"name": "Hired Gardener", "rarity": "rare",     "cost": 30,
+    "gardener":    {"name": "Hired Gardener", "rarity": "rare",     "cost": 3250,
                     "desc": "Plots water themselves, non-stop.",
                     "effects": {"auto_water": True}},
-    "spore_lantern": {"name": "Spore Lantern", "rarity": "uncommon", "cost": 20,
+    "spore_lantern": {"name": "Spore Lantern", "rarity": "uncommon", "cost": 600,
                       "desc": "Mushroom harvests x2.",
                       "effects": {"yield_mult": [("mushroom", 2.0)]},
                       "levels": [
@@ -230,10 +230,10 @@ RELICS = {
                           {"stat": "mushroom", "goal": 300, "effects": {"yield_mult": [("mushroom", 1.0)]},
                            "desc": "Mushroom harvests x4 total."},
                       ]},
-    "catalog":     {"name": "Seed Catalog",   "rarity": "rare",     "cost": 35,
+    "catalog":     {"name": "Seed Catalog",   "rarity": "rare",     "cost": 2750,
                     "desc": "One extra free pack each round.",
                     "effects": {"free_packs": 1}},
-    "greenhouse":  {"name": "Greenhouse",     "rarity": "rare",     "cost": 40,
+    "greenhouse":  {"name": "Greenhouse",     "rarity": "rare",     "cost": 3400,
                     "desc": "All harvests x2. Plants grow 10% faster.",
                     "effects": {"yield_mult": [("all", 2.0)], "growth": 0.1}},
 }
@@ -259,13 +259,32 @@ BOSS_TWISTS = ["crow_swarm"]
 
 
 PERKS = {
-    "cash":  {"name": "Deep Pockets", "desc": "Start each run with +$10 per level.",   "max": 10, "costs": [2, 2, 3, 3, 4, 4, 5, 5, 6, 6]},
-    "plots": {"name": "Spare Plot",   "desc": "Start each run with +1 plot per level.", "max": 4,  "costs": [5, 8, 12, 20]},
-    "packs": {"name": "Seed Stash",   "desc": "+1 free pack every round per level.",    "max": 2,  "costs": [10, 25]},
-    "yield": {"name": "Green Thumbs", "desc": "+10% to all harvests per level.",        "max": 10, "costs": [3, 4, 5, 6, 7, 8, 9, 10, 12, 15]},
+     "cash":  {"name": "Deep Pockets", "max": 10, "costs": [3, 4, 5, 6, 7, 8, 10, 12, 14, 16],
+              "desc": "START WITH +$10 A LEVEL", "now": "+${n}"},
+    "plots": {"name": "Spare Plot",   "max": 4,  "costs": [8, 12, 18, 26],
+              "desc": "ONE MORE STARTING PLOT PER LEVEL", "now": "+{n} PLOT{s}"},
+    "packs": {"name": "Seed Stash",   "max": 2,  "costs": [10, 18],
+              "desc": "ONE MORE FREE PACK A ROUND PER LEVEL", "now": "+{n} PACK{s}"},
+    "yield": {"name": "Green Thumbs", "max": 10, "costs": [5, 6, 8, 10, 12, 14, 16, 18, 20, 24],
+              "desc": "+10% TO EVERY HARVEST PER LEVEL", "now": "+{n}%"},
 }
 PERK_ORDER = ["cash", "plots", "packs", "yield"]
+PERK_STEP = {"cash": 10, "plots": 1, "packs": 1, "yield": 10}
+PERK_COST_GROWTH = 1.15     # every heirloom level after the first costs 15% more
 
+
+def perk_cost(key, level):
+    """Heirloom price of going from `level` to `level + 1` (0 when maxed)."""
+    perk = PERKS[key]
+    if level >= perk["max"]:
+        return 0
+    return int(round(perk["costs"][level] * PERK_COST_GROWTH ** level))
+
+
+def perk_text(key, level):
+    """'+$20' / '+2 PLOTS' / '+30%' - the total a level gives you."""
+    n = PERK_STEP[key] * level
+    return PERKS[key]["now"].format(n=n, s="" if n == 1 else "S")
 
 def bill_for_quota(k):
     """Bill amount for the k-th quota (k = 1, 2, 3 ...). Climbs forever."""

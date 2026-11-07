@@ -163,7 +163,7 @@ class RoundScene(Scene):
                 continue
             if bool(ev.get("cellar")) != self.in_cellar():
                 continue  
-            x, y, w, h = plot_rect(ev["plot"]) if ev["plot"] < 12 else (0, 0, 0, 0)
+            x, y, w, _h = plot_rect(ev["plot"]) if ev["plot"] < 12 else (0, 0, 0, 0)
             if ev["kind"] == "harvest":
                 self.floaters.append([x + w // 2, y + 8, "+$" + fmt(ev["amount"]), ACCENT, 0.0])
             elif ev["kind"] == "mutate":

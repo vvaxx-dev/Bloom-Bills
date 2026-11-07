@@ -12,7 +12,7 @@ try:
         COLS, MAX_PLOTS, MUTATION_CHANCE,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, PRICE_GROWTH, QUOTA_EVERY,
-        RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
+        RELIC_PRICE_GROWTH, RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
         SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST, WATER_REST,
         WATER_TIME, WIN_QUOTAS,
     )
@@ -23,7 +23,7 @@ except ImportError:
         COLS, MAX_PLOTS, MUTATION_CHANCE,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, PRICE_GROWTH, QUOTA_EVERY,
-        RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
+        RELIC_PRICE_GROWTH, RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
         SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST, WATER_REST,
         WATER_TIME, WIN_QUOTAS,
     )
@@ -98,10 +98,53 @@ class Run:
         self.last_summary = None
         self.pending_bill = 0
         self._relic_lvls = {} 
+        self.heirlooms_spent = 0
+
 
     # ------------------------------------------------------------ helpers
     def perk(self, key):
         return self.perks.get(key, 0)
+
+    def heirloom_cost(self, key):
+        """Price of the next level of one heirloom."""
+        return data.perk_cost(key, self.perk(key))
+
+    def heirloom_now(self, key, level=None):
+        """'+$20' / '+2 PLOTS' - what the level you own adds to a run."""
+        return data.perk_text(key, self.perk(key) if level is None else level)
+
+    def buy_heirloom(self, key, banked):
+        """Spend banked heirlooms on the next level.
+
+        `banked` is the profile total, which is the one and only heirloom
+        balance: this run's own payout is only credited after the run ends, so
+        nothing can be counted twice. The returned cost is what the caller has
+        to take out of the bank. Buying mid-run works immediately.
+        Returns (ok, reason, cost)."""
+        if key not in data.PERKS:
+            return False, "No such heirloom.", 0
+        perk = data.PERKS[key]
+        level = self.perk(key)
+        if level >= perk["max"]:
+            return False, "Already maxed.", 0
+        cost = self.heirloom_cost(key)
+        if banked < cost:
+            return False, "Not enough heirlooms.", cost
+        self.perks[key] = level + 1
+        self.heirlooms_spent += cost
+        self._apply_perk(key)          # a level bought mid-run works right away
+        return True, "%s is level %d!" % (perk["name"], level + 1), cost
+
+    def _apply_perk(self, key):
+        """Immediate, one-off value of a level bought during a run."""
+        if key == "cash":
+            self.money += 10
+        elif key == "plots" and len(self.plots) < MAX_PLOTS:
+            self.plots.append(Plot())
+            self.plots_bought += 1     # keeps later plot prices honest
+        elif key == "packs":
+            self.packs.append(self.pick_free_pack_kind())
+
 
     def relic_level(self, rid):
         """A relic's level: how many of its level-up goals the counters met."""
@@ -551,7 +594,12 @@ class Run:
         return False, "Bill unpaid. The run is over."
 
     def heirloom_reward(self):
-        return max(0, self.round - 1) + 3 * self.quotas_paid
+        """Heirlooms are the run's legacy: a slow trickle per round survived,
+        a fat bonus per bill paid, and a jackpot for actually winning."""
+        earned = max(0, self.round - 1) + 3 * self.quotas_paid
+        if self.won:
+            earned += 10
+        return earned
 
     # --------------------------------------------------------------- shop
     def enter_shop(self):
@@ -574,10 +622,10 @@ class Run:
     def relic_price(self, rid):
         rarity = data.RELICS[rid]["rarity"]
         rarity_multiplier = {"common": 1.0, "uncommon": 1.3, "rare": 1.7, "legendary": 2.2}[rarity]
-        return int(data.RELICS[rid]["cost"] * rarity_multiplier * PRICE_GROWTH ** (self.round - 1))
+        return int(data.RELICS[rid]["cost"] * rarity_multiplier * RELIC_PRICE_GROWTH ** (self.round - 1))
 
     def reroll_price(self):
-        return int(REROLL_BASE_PRICE * 2.0 ** self.rerolls * PRICE_GROWTH ** (self.round - 1))
+        return int(REROLL_BASE_PRICE * 2.0 ** self.rerolls * RELIC_PRICE_GROWTH ** (self.round - 1))
 
     def reroll(self):
         price = self.reroll_price()
@@ -642,6 +690,7 @@ class Run:
             "shop_offers": self.shop_offers, "rerolls": self.rerolls,
             "quotas_paid": self.quotas_paid, "total_earned": self.total_earned,
             "won": self.won, "dead": self.dead, "pending_bill": self.pending_bill,
+            "heirlooms_spent": self.heirlooms_spent,
         }
 
     @classmethod
@@ -674,6 +723,7 @@ class Run:
         run.won = bool(d.get("won", False))
         run.dead = bool(d.get("dead", False))
         run.pending_bill = int(d.get("pending_bill", 0))
+        run.heirlooms_spent = int(d.get("heirlooms_spent", 0))
         if run.phase == "summary" and run.pending_bill:
             run.last_summary = {"round": run.round, "bill": run.pending_bill, "paid": None,
                                  "money": run.money, "pending_bill": True}

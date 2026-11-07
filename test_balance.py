@@ -54,7 +54,7 @@ class EconomyTests(unittest.TestCase):
         run = Run(seed=1)
         run.round = 3
         run.money = run.bill_for_round(3)
-        summary = run.end_round()
+        run.end_round()
         run.decline_bill()
         self.assertTrue(run.dead)
 
@@ -129,7 +129,7 @@ class MechanicTests(unittest.TestCase):
     def test_eclipse_allows_nocturnal_on_surface(self):
         run = Run(seed=1)
         run.begin_round()
-        run.twist_id = lambda rnd=None: "eclipse"
+        run.twist_id = lambda _rnd=None: "eclipse"
         run.seeds = {"brown_mushroom": 2}
         self.assertTrue(run.can_plant("brown_mushroom", cellar=False))
         self.assertTrue(run.plant(0, "brown_mushroom", cellar=False))
@@ -149,7 +149,7 @@ class MechanicTests(unittest.TestCase):
     def test_spore_lantern_boosts_mushrooms_only(self):
         run = Run(seed=1)
         run.relics = ["spore_lantern"]
-        run.twist_id = lambda rnd=None: "none"          # pin the weather
+        run.twist_id = lambda _rnd=None: "none"          # pin the weather
         run.plots = [Plot("daisy")]
         run.cellar_plots = [Plot("brown_mushroom")]
         daisy = run.harvest_value(0)
@@ -211,8 +211,89 @@ class MechanicTests(unittest.TestCase):
         self.assertGreater(run.money, 0)     # it harvested on its own
 
 
-if __name__ == "__main__":
-    unittest.main()
+class HeirloomTests(unittest.TestCase):
+    def test_heirloom_rewards_scale_with_progress(self):
+        run = Run(seed=1)
+        run.round = 1
+        early = run.heirloom_reward()
+        run.round = 10
+        run.quotas_paid = 3
+        late = run.heirloom_reward()
+        self.assertEqual(early, 0)
+        self.assertGreater(late, early)
+        run.won = True
+        self.assertGreater(run.heirloom_reward(), late)      # winning pays a jackpot
+
+    def test_heirloom_prices_climb_with_each_level(self):
+        costs = [data.perk_cost("cash", level) for level in range(data.PERKS["cash"]["max"])]
+        self.assertEqual(costs, sorted(costs))
+        self.assertEqual(len(set(costs)), len(costs))
+        self.assertEqual(data.perk_cost("cash", data.PERKS["cash"]["max"]), 0)
+
+    def test_buying_an_heirloom_level(self):
+        run = Run(seed=1)
+        cost = run.heirloom_cost("yield")
+        ok, _, paid = run.buy_heirloom("yield", cost)
+        self.assertTrue(ok)
+        self.assertEqual(paid, cost)
+        self.assertEqual(run.perk("yield"), 1)
+        self.assertEqual(run.heirlooms_spent, cost)
+        # the next level costs more than the one just bought
+        self.assertGreater(run.heirloom_cost("yield"), cost)
+
+    def test_cannot_buy_an_heirloom_without_enough(self):
+        run = Run(seed=1)
+        cost = run.heirloom_cost("plots")
+        ok, _, _ = run.buy_heirloom("plots", cost - 1)
+        self.assertFalse(ok)
+        self.assertEqual(run.perk("plots"), 0)
+
+    def test_heirloom_levels_apply_to_the_run_immediately(self):
+        run = Run(seed=1)
+        before_money = run.money
+        run.buy_heirloom("cash", run.heirloom_cost("cash"))
+        self.assertEqual(run.money, before_money + 10)
+        plots_before = len(run.plots)
+        run.buy_heirloom("plots", run.heirloom_cost("plots"))
+        self.assertEqual(len(run.plots), plots_before + 1)
+
+    def test_heirlooms_spent_survive_a_save_and_load(self):
+        run = Run(seed=1)
+        run.buy_heirloom("packs", run.heirloom_cost("packs"))
+        again = Run.from_dict(run.to_dict())
+        self.assertEqual(again.perk("packs"), 1)
+        self.assertEqual(again.heirlooms_spent, run.heirlooms_spent)
+
+
+class PriceTests(unittest.TestCase):
+    def test_relics_are_dearer_than_they_used_to_be(self):
+        run = Run(seed=1)
+        # relic base costs used to be 8 / 165 / 320; they are 45 / 165 / 320 now
+        # and, more importantly, they double every round instead of 1.8x
+        self.assertGreaterEqual(run.relic_price("green_thumb"), 45)
+        run.round = 3
+        self.assertGreater(run.relic_price("green_thumb"), 150)
+
+    def test_relic_prices_grow_faster_than_seed_prices(self):
+        run = Run(seed=1)
+        early = run.relic_price("scarecrow")
+        run.round = 6
+        late = run.relic_price("scarecrow")
+        from .settings import PRICE_GROWTH, RELIC_PRICE_GROWTH
+        self.assertGreater(RELIC_PRICE_GROWTH, PRICE_GROWTH)
+        self.assertGreater(late, early * RELIC_PRICE_GROWTH ** 4)
+
+    def test_each_plot_costs_more_than_the_last(self):
+        from .settings import PLOT_PRICE_GROWTH
+        self.assertGreaterEqual(PLOT_PRICE_GROWTH, 3.0)
+        run = Run(seed=1)
+        prices = []
+        for bought in range(6):
+            run.plots_bought = bought
+            prices.append(run.plot_price())
+        self.assertEqual(prices, sorted(prices))
+        for first, second in zip(prices, prices[1:]):
+            self.assertAlmostEqual(second / first, PLOT_PRICE_GROWTH, places=1)
 
 
 if __name__ == "__main__":

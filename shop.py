@@ -20,9 +20,9 @@ class ShopScene(Scene):
             b = Button(4 + i * 62 + 2, 141, 56, 8, "", lambda i=i: self.sell_relic(i), color=(150, 70, 60))
             b.enabled = False
             self.sell_buttons.append(b)
-        self.plot_btn = Button(4, 150, 88, 26, "", self.buy_plot)
-        self.reroll_btn = Button(96, 150, 64, 26, "", self.reroll)
-        self.next_btn = Button(258, 150, 58, 26, "NEXT ROUND >", self.go, color=(70, 130, 70))
+        self.plot_btn = Button(4, 150, 130, 26, "", self.buy_plot)
+        self.reroll_btn = Button(138, 150, 66, 26, "", self.reroll)
+        self.next_btn = Button(208, 150, 108, 26, "NEXT ROUND >", self.go, color=(70, 130, 70))
         self.buttons = self.buy_buttons + self.sell_buttons + [self.plot_btn, self.reroll_btn, self.next_btn]
         self.refresh()
 
@@ -128,27 +128,27 @@ class ShopScene(Scene):
                 for k, line in enumerate(lines[:2]):
                     gfx.draw_text(surf, line, x + 30, 129 + k * 7, TEXT, align="center")
                 self.sell_buttons[i].draw(surf, self.mouse)
-                if x <= self.mouse[0] < x + 60 and 126 <= self.mouse[1] < 150:
+                if x <= self.mouse[0] < x + 60 and 126 <= self.mouse[1] < 140:
                     owned_hover = i
             else:
                 gfx.draw_text(surf, "EMPTY", x + 30, 135, (70, 62, 96), align="center")
 
         # bottom strip
-        gfx.panel(surf, 164, 150, 90, 26)
+        gfx.panel(surf, 208, 150, 108, 26)
         nxt = run.round + 1
         twist = run.twist(nxt)
-        gfx.draw_text(surf, "NEXT: ROUND %d" % nxt, 168, 154, TEXT)
+        gfx.draw_text(surf, "NEXT: ROUND %d" % nxt, 212, 154, TEXT)
         if run.is_quota_round(nxt):
-            gfx.draw_text(surf, "BILL $" + fmt(run.bill_for_round(nxt)), 168, 161, BAD)
-            gfx.draw_text(surf, twist["name"].upper(), 168, 168, ACCENT)
+            gfx.draw_text(surf, "BILL $" + fmt(run.bill_for_round(nxt)), 212, 161, BAD)
+            gfx.draw_text(surf, twist["name"].upper(), 212, 168, ACCENT)
         else:
-            gfx.draw_text(surf, "NO BILL", 168, 161, GOOD)
+            gfx.draw_text(surf, "NO BILL", 212, 161, GOOD)
         self.plot_btn.draw(surf, self.mouse)
         self.reroll_btn.draw(surf, self.mouse)
         self.next_btn.draw(surf, self.mouse)
 
         # hover: show a quota twist description
-        if 164 <= self.mouse[0] < 254 and 150 <= self.mouse[1] < 176 and run.is_quota_round(nxt):
+        if 208 <= self.mouse[0] < 316 and 150 <= self.mouse[1] < 176 and run.is_quota_round(nxt):
             gfx.tooltip(surf, [(twist["name"], ACCENT), (twist["desc"], TEXT)], (self.mouse[0] - 60, self.mouse[1] - 36), 100)
         if owned_hover is not None:
             rel = data.RELICS[run.relics[owned_hover]]

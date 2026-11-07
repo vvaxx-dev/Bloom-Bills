@@ -30,9 +30,10 @@ WATER_REST = 3.0
 
 # --- prices ------------------------------------------------------------
 PRICE_GROWTH = 1.8              
-PLOT_BASE_PRICE = 100
-PLOT_PRICE_GROWTH = 2.5
-REROLL_BASE_PRICE = 15
+PLOT_BASE_PRICE = 200
+PLOT_PRICE_GROWTH = 3.0
+REROLL_BASE_PRICE = 50
+RELIC_PRICE_GROWTH = 2.0
 
 # --- mutations ---------------------------------------------------------
 MUTATION_CHANCE = 0.1

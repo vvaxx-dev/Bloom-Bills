@@ -14,12 +14,12 @@ class SummaryScene(Scene):
         pending = bool(summary.get("pending_bill"))
         if pending:
             bill = summary.get("bill", 0)
-            self.pay_btn = Button(80, 148, 76, 20, "PAY $%s" % fmt(bill), self.pay_bill, color=(70, 130, 70))
-            self.decline_btn = Button(164, 148, 76, 20, "DON'T PAY", self.decline_bill, color=(150, 70, 60))
+            self.pay_btn = Button(80, 150, 76, 18, "PAY $%s" % fmt(bill), self.pay_bill, color=(70, 130, 70))
+            self.decline_btn = Button(164, 150, 76, 18, "DON'T PAY", self.decline_bill, color=(150, 70, 60))
             self.next_btn = None
             self.buttons = [self.pay_btn, self.decline_btn]
         else:
-            self.next_btn = Button(118, 148, 84, 20, "GO TO SHOP", self.go_shop, color=(70, 130, 70))
+            self.next_btn = Button(118, 150, 84, 18, "GO TO SHOP", self.go_shop, color=(70, 130, 70))
             self.pay_btn = None
             self.decline_btn = None
             self.buttons = [self.next_btn]
@@ -28,6 +28,10 @@ class SummaryScene(Scene):
         ok, _ = self.run.pay_pending_bill()
         self.app.save_run()
         if ok:
+            if self.run.won:            # the last bill is paid: the run is won
+                self.app.finish_run()
+                self.app.goto("gameover")
+                return
             self.go_shop()
 
     def decline_bill(self):
@@ -62,5 +66,7 @@ class SummaryScene(Scene):
             gfx.draw_text(surf, "NEXT: SHOP", 160, 118, DIM, align="center")
             if summary.get("upkeep"):
                 gfx.draw_text(surf, "CURSED UPKEEP PAID: -$%s" % fmt(summary["upkeep"]), 160, 102, BAD, align="center")
+                gfx.draw_text(surf, "HEIRLOOMS IF THE RUN ENDED NOW: %d" % self.run.heirloom_reward(),
+                      160, 132, ACCENT, align="center")
         for button in self.buttons:
             button.draw(surf, self.mouse)

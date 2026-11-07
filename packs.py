@@ -11,7 +11,7 @@ class PacksScene(Scene):
         self.reveal = None
         self.reveal_t = 0.0
         self.open_btn = Button(10, 70, 88, 14, "OPEN PACK", self.open_pack, color=(70, 130, 70))
-        self.go_btn = Button(276, 128, 80, 48, "START ROUND >", self.go, color=(70, 130, 70))
+        self.go_btn = Button(276, 128, 40, 48, "START ROUND >", self.go, color=(70, 130, 70))
         self.buttons = [self.open_btn, self.go_btn]
         self.buy_buttons = []
         for i, kind in enumerate(self.run.unlocked_packs()):

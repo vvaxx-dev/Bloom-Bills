@@ -84,17 +84,21 @@ class App:
         gain = run.heirloom_reward()
         new_best = run.round > profile["best_round"]
         profile["heirlooms"] += gain
+        profile["perks"] = dict(run.perks) 
         profile["best_round"] = max(profile["best_round"], run.round)
         profile["runs"] += 1
         if run.won:
             profile["wins"] += 1
         self.saves.save_profile(profile)
         self.saves.clear_run()
-        s = run.last_summary
+        s = run.last_summary or {}
         self.last_result = {
             "round": run.round, "quotas_paid": run.quotas_paid, "total_earned": run.total_earned,
-            "heirlooms": gain, "bill": s["bill"], "money": s["money"], "new_best": new_best,
+            "heirlooms": gain, "spent": run.heirlooms_spent, "won": run.won,
+            "bill": s.get("bill", 0), "money": s.get("money", run.money), "new_best": new_best,
         }
+        self.run = None
+
 
     def _layout(self):
         w, h = pygame.display.get_surface().get_size()

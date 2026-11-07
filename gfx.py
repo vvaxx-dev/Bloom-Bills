@@ -1,7 +1,7 @@
 
 import pygame
 
-from .settings import ACCENT, DIM, PANEL, PANEL_DARK, PANEL_LIGHT, TEXT
+from .settings import DIM, PANEL, PANEL_DARK, PANEL_LIGHT, TEXT
 from .sprites_data import FONT, GRIDS, PALETTE
 
 _text_cache = {}
@@ -180,8 +180,8 @@ def tooltip(surf, lines, pos, width=96):
         for part in wrap(text, width - 8):
             wrapped.append((part, color))
     h = len(wrapped) * 7 + 6
-    x = min(pos[0] + 8, 320 - width - 2)
-    y = min(pos[1] + 8, 180 - h - 2)
+    x = max(2, min(pos[0] + 8, 320 - width - 2))
+    y = max(2, min(pos[1] + 8, 180 - h - 2))
     rect(surf, PANEL_DARK, x, y, width, h)
     rect(surf, (20, 16, 32), x + 1, y + 1, width - 2, h - 2)
     for i, (part, color) in enumerate(wrapped):
