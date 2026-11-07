@@ -4,6 +4,7 @@ RARITY_COLORS = {
     "uncommon": (120, 210, 110),
     "rare": (110, 170, 250),
     "legendary": (250, 190, 60),
+    "mutant": (255, 110, 230), 
 }
 RARITY_WEIGHT = {"common": 60, "uncommon": 28, "rare": 10, "legendary": 3}
 
@@ -16,6 +17,60 @@ PLANTS = {
     "orchid":    {"name": "Golden Orchid", "tags": ["flower", "rare"],  "grow": 28, "yield": 300, "sell": 500, "rarity": "legendary", "color": (250, 190, 60)},
 }
 PLANT_ORDER = ["daisy", "tomato", "sunflower", "cactus", "pumpkin", "orchid"]
+
+MUTANTS = {
+    "daisy_shiny": {"base": "daisy", "name": "Shiny Daisy", 
+                    "desc": "2x value, grows 20% faster.",
+                    "grow_mult": 0.8, "yield_mult": 2.0, "sell_mult": 2.0,
+                    "color": (180, 240, 255), "subs": {"w": (255, 220, 120), "y": (255, 255, 200)}},
+    "tomato_prickly": {"base": "tomato",    "name": "Prickly Tomato",
+                       "desc": "x2 value and counts as desert.",
+                       "grow_mult": 1.2, "yield_mult": 2.0, "sell_mult": 2.0,
+                       "tags_add": ["desert"],
+                       "color": (255, 120, 90), "subs": {"r": (255, 120, 90), "R": (190, 70, 60)}},
+    "sunflower_gold": {"base": "sunflower", "name": "Golden Sunflower",
+                       "desc": "x3 value, grows 50% slower.",
+                       "grow_mult": 1.5, "yield_mult": 3.0, "sell_mult": 3.0,
+                       "color": (255, 240, 130), "subs": {"y": (255, 240, 130), "Y": (255, 200, 60)}},
+    "cactus_saguaro": {"base": "cactus",    "name": "Saguaro",
+                       "desc": "x2 value, +$4 per harvest, grows 25% slower.",
+                       "grow_mult": 1.25, "yield_mult": 2.0, "sell_mult": 2.0,
+                       "yield_add": 4,
+                       "color": (140, 220, 100), "subs": {"m": (230, 80, 80), "g": (140, 220, 100), "G": (70, 150, 70)}},
+    "pumpkin_giant":  {"base": "pumpkin",   "name": "Giant Pumpkin",
+                       "desc": "x2.5 value, grows 60% slower.",
+                       "grow_mult": 1.6, "yield_mult": 2.5, "sell_mult": 2.5,
+                       "color": (255, 140, 40), "subs": {"o": (255, 140, 40), "Y": (200, 100, 30)}},
+    "orchid_moon":    {"base": "orchid",    "name": "Moonlight Orchid",
+                       "desc": "x2 value, grows 10% faster.",
+                       "grow_mult": 0.9, "yield_mult": 2.0, "sell_mult": 2.0,
+                       "color": (190, 170, 255), "subs": {"y": (190, 170, 255), "Y": (120, 95, 210), "m": (240, 240, 255)}},
+}
+
+def mutants_for(species):
+    """Mutant ids a planted species can randomly turn into."""
+    return [mid for mid, m in MUTANTS.items() if m["base"] == species]
+
+def mutation_threshold(species):
+    """Harvests a plant needs before each extra harvest can roll for a mutation. Fast plants need many harvests, slow plants only need a couple, so every specioes stays mutatable in one round."""
+    grow = PLANTS[species]["grow"]
+    return max(2, min(5, round(20 / grow)))
+
+for _mid, mutant in MUTANTS.items():
+    _base = PLANTS[mutant["base"]]
+    PLANTS[_mid] = {
+        "name": mutant["name"],
+        "tags": list(_base["tags"]) + list(mutant.get("tags_add", [])),
+        "grow": round(_base["grow"] * mutant["grow_mult"], 2),
+        "yield": int(round(_base["yield"] * mutant["yield_mult"] + mutant.get("yield_add", 0))),
+        "sell": int(round(_base["sell"] * mutant["sell_mult"])),
+        "rarity": "mutant",
+        "color": mutant["color"],
+        "mutant": True,
+        "base": mutant["base"],
+        "desc": mutant["desc"],
+        "subs": mutant.get("subs"),
+    }
 
 MILESTONES = [10, 25, 50, 100, 150, 200, 300, 400, 500, 750, 1000]
 

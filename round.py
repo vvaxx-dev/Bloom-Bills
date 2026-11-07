@@ -105,6 +105,9 @@ class RoundScene(Scene):
             x, y, w, h = plot_rect(ev["plot"]) if ev["plot"] < 12 else (0, 0, 0, 0)
             if ev["kind"] == "harvest":
                 self.floaters.append([x + w // 2, y + 8, "+$" + fmt(ev["amount"]), ACCENT, 0.0])
+            elif ev["kind"] == "mutate":
+                self.floaters.append([x + w // 2, y + 8, "MUTATED!", data.RARITY_COLORS["mutant"], 0.0])
+                self.app.toast("%s MUTATED!" % ev["name"].upper(), 2.5)
             elif ev["kind"] == "wither":
                 self.floaters.append([x + w // 2, y + 8, "WITHERED!", BAD, 0.0])
         run.events.clear()
@@ -201,7 +204,8 @@ class RoundScene(Scene):
         sp = data.PLANTS[p.species]
         frac = min(1.0, p.progress / sp["grow"])
         sway = 1 if (run.started and math.sin(self.t * 3 + i) > 0.6) else 0
-        gfx.draw_sprite(surf, gfx.plant_sprite_name(p.species, frac), x + 16 + sway, y + 1, 2)
+        sprite_name = gfx.plant_sprite_name(sp.get("base", p.species), frac)
+        gfx.draw_sprite(surf, sprite_name, x + 16 + sway, y + 1, 2, sp.get("subs"))
         gfx.bar(surf, x + 4, y + 28, w - 8, 3, frac, sp["color"])
         if p.water_left > 0:
             gfx.draw_sprite(surf, "drop", x + w - 9, y + 3)
@@ -215,12 +219,19 @@ class RoundScene(Scene):
         count = run.mastery.get(p.species, 0)
         nxt = next((t for t in data.MILESTONES if count < t), None)
         speed = run.growth_speed() * (2.0 if p.water_left > 0 else 1.0)
+        mutant_col = data.RARITY_COLORS["mutant"]
         lines = [
-            (sp["name"], data.RARITY_COLORS[sp["rarity"]]),
+            (sp["name"], mutant_col if sp.get("mutant") else data.RARITY_COLORS[sp["rarity"]]),
+        ]
+        if sp.get("mutant"):
+            lines.append(("MUTANT: " + sp["desc"], mutant_col))
+        lines += [
             ("HARVEST: $" + fmt(run.harvest_value(i)), ACCENT),
             ("RIPE IN: %.1fs" % max(0.0, (sp["grow"] - p.progress) / speed), TEXT),
             ("HARVESTED: %d" % count, DIM),
         ]
         if nxt:
             lines.append(("DOUBLES AT %d" % nxt, DIM))
+        elif not sp.get("mutant") and data.mutants_for(p.species):
+            lines.append(("MAY MUTATE AT %d+ HARVESTS" % data.mutation_threshold(p.species), mutant_col))
         gfx.tooltip(surf, lines, self.mouse, 84)

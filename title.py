@@ -11,12 +11,14 @@ from .settings import ACCENT, DIM, PANEL_DARK, TEXT
 class TitleScene(Scene):
     def on_enter(self):
         profile = self.app.profile
-        self.continue_btn = Button(110, 92, 100, 18, "CONTINUE", self.app.continue_run, color=(70, 130, 70))
+        self.continue_btn = Button(110, 86, 100, 18, "CONTINUE", self.app.continue_run, color=(70, 130, 70))
         has_run = bool(self.app.saves.load_run())
         self.continue_btn.enabled = has_run
-        self.new_btn = Button(110, 114, 100, 18, "NEW RUN", self.app.new_run)
-        self.shelf_btn = Button(110, 136, 100, 18, "UPGRADES", lambda: self.app.goto("shelf"))
-        self.buttons = [self.continue_btn, self.new_btn, self.shelf_btn]
+        self.new_btn = Button(110, 108, 100, 18, "NEW RUN", self.app.new_run)
+        self.shelf_btn = Button(110, 130, 100, 18, "UPGRADES", lambda: self.app.goto("shelf"))
+        # closes the game: App.quit() stops the main loop in app.py
+        self.quit_btn = Button(110, 152, 100, 18, "QUIT", self.app.quit, color=(150, 70, 60))
+        self.buttons = [self.continue_btn, self.new_btn, self.shelf_btn, self.quit_btn]
         self.profile = profile
 
     def draw(self, surf):

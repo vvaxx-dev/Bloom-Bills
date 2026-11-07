@@ -8,7 +8,7 @@ import random
 try:
     from . import data
     from .settings import (
-        BASE_FREE_PACKS, COLS, MAX_PLOTS, PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
+        BASE_FREE_PACKS, COLS, MAX_PLOTS, MUTATION_CHANCE, PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, PRICE_GROWTH, QUOTA_EVERY,
         RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
         SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST, WATER_REST,
@@ -17,7 +17,7 @@ try:
 except ImportError:
     import data
     from settings import (
-        BASE_FREE_PACKS, COLS, MAX_PLOTS, PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
+        BASE_FREE_PACKS, COLS, MAX_PLOTS, MUTATION_CHANCE, PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, PRICE_GROWTH, QUOTA_EVERY,
         RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
         SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST, WATER_REST,
@@ -30,27 +30,29 @@ def milestone_level(count):
 
 
 class Plot:
-    __slots__ = ("species", "progress", "water_left", "water_cd")
+    __slots__ = ("species", "progress", "water_left", "water_cd", "harvests")
 
-    def __init__(self, species=None, progress=0.0, water_left=0.0, water_cd=0.0):
+    def __init__(self, species=None, progress=0.0, water_left=0.0, water_cd=0.0, harvests=0):
         self.species = species
         self.progress = progress
         self.water_left = water_left
         self.water_cd = water_cd
+        self.harvests = harvests
 
     def clear(self):
-        self.species, self.progress, self.water_left, self.water_cd = None, 0.0, 0.0, 0.0
+        self.species, self.progress, self.water_left, self.water_cd, self.harvests = None, 0.0, 0.0, 0.0, 0
 
     def to_dict(self):
         return {"species": self.species, "progress": self.progress,
-                "water_left": self.water_left, "water_cd": self.water_cd}
+                "water_left": self.water_left, "water_cd": self.water_cd, "harvests": self.harvests}
 
     @classmethod
     def from_dict(cls, d):
         species = d.get("species")
         if species not in data.PLANTS:
             species = None
-        return cls(species, float(d.get("progress", 0)), float(d.get("water_left", 0)), float(d.get("water_cd", 0)))
+        return cls(species, float(d.get("progress", 0)), float(d.get("water_left", 0)),
+                   float(d.get("water_cd", 0)), int(d.get("harvests", 0)))
 
 
 class Run:
@@ -352,9 +354,26 @@ class Run:
         self.round_income += value
         self.total_earned += value
         self.mastery[species] = self.mastery.get(species, 0) + 1
+        self.plots[i].harvests += 1
         if len(self.events) < 300:
             self.events.append({"kind": "harvest", "plot": i, "amount": value})
+        self._maybe_mutate(i)
 
+    def _maybe_mutate(self, i):
+        """After enough harvests, a plant may turn into its mutant version
+        for the rest of the round: different value, growth speed, even tags."""
+        plot = self.plots[i]
+        if plot.species not in data.PLANTS or plot.harvests < data.mutation_threshold(plot.species):
+            return
+        options = data.mutants_for(plot.species)
+        if not options or self.rng.random() >= MUTATION_CHANCE:
+            return
+        mid = self.rng.choice(options)
+        plot.species = mid
+        plot.harvests = 0
+        if len(self.events) < 300:
+            self.events.append({"kind": "mutate", "plot": i, "name": data.PLANTS[mid]["name"]})
+            
     def end_round(self):
         """Sells ripe plants, pays interest, and settles the bill if one is due."""
         comp = 1.0 + self._sum("sell_mult")
