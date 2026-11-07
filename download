@@ -1,0 +1,11 @@
+"""Bloom & Bills. Start the game with:  python3 main.py"""
+
+from game.app import App
+
+
+def main():
+    App().main_loop()
+
+
+if __name__ == "__main__":
+    main()

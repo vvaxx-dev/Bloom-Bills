@@ -1,0 +1,12 @@
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local runtime and save data
+*.log
+save.json
+player.json
+run.json
+profile.json
+BloomAndBills/
