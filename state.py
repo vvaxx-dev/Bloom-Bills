@@ -8,7 +8,9 @@ import random
 try:
     from . import data
     from .settings import (
-        BASE_FREE_PACKS, COLS, MAX_PLOTS, MUTATION_CHANCE, PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
+        BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE, CELLAR_SPEED,
+        COLS, MAX_PLOTS, MUTATION_CHANCE,
+        PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, PRICE_GROWTH, QUOTA_EVERY,
         RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
         SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST, WATER_REST,
@@ -17,7 +19,9 @@ try:
 except ImportError:
     import data
     from settings import (
-        BASE_FREE_PACKS, COLS, MAX_PLOTS, MUTATION_CHANCE, PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
+        BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE, CELLAR_SPEED,
+        COLS, MAX_PLOTS, MUTATION_CHANCE,
+        PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, PRICE_GROWTH, QUOTA_EVERY,
         RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
         SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST, WATER_REST,
@@ -41,6 +45,7 @@ class Plot:
 
     def clear(self):
         self.species, self.progress, self.water_left, self.water_cd, self.harvests = None, 0.0, 0.0, 0.0, 0
+        self.harvests = 0
 
     def to_dict(self):
         return {"species": self.species, "progress": self.progress,
@@ -69,8 +74,11 @@ class Run:
         self.packs = []                 # unopened pack kinds
         self.plots = [Plot() for _ in range(min(MAX_PLOTS, START_PLOTS + self.perks.get("plots", 0)))]
         self.plots_bought = 0
+        self.cellar_plots = [Plot() for _ in range(CELLAR_PLOTS)]
+        self.cellar_unlocked = False 
         self.relics = []
         self.mastery = {}               # species id -> total harvests this run
+        self.counters = {"harvest": 0, "water": 0, "rounds": 0}
         self.shop_offers = []           # relic ids (or None once bought)
         self.rerolls = 0
         self.quotas_paid = 0
@@ -85,17 +93,50 @@ class Run:
         self.finished = False
         self.round_income = 0
         self.blight_done = False
+        self.crow_timer = 0.0
         self.events = []                # UI feed: harvest popups etc. (not saved)
         self.last_summary = None
         self.pending_bill = 0
+        self._relic_lvls = {} 
 
     # ------------------------------------------------------------ helpers
     def perk(self, key):
         return self.perks.get(key, 0)
 
+    def relic_level(self, rid):
+        """A relic's level: how many of its level-up goals the counters met."""
+        lv = 0
+        for step in data.RELICS[rid].get("levels", []):
+            if self.counters.get(step["stat"], 0) >= step["goal"]:
+                lv += 1
+            else:
+                break
+        return lv
+
+    def refresh_relic_levels(self):
+        """Detect relics that just leveled up and broadcast the evolution."""
+        for rid in self.relics:
+            lv = self.relic_level(rid)
+            if lv > self._relic_lvls.get(rid, 0):
+                self._relic_lvls[rid] = lv
+                steps = data.RELICS[rid].get("levels", [])
+                desc = steps[lv - 1]["desc"] if 0 <= lv - 1 < len(steps) else "EVOLVED!"
+                if len(self.events) < 300:
+                    self.events.append({"kind": "evolve", "name": data.RELICS[rid]["name"], "desc": desc})
+
+
     def _effects(self):
         for rid in self.relics:
-            yield data.RELICS[rid]["effects"]
+            eff = dict(data.RELICS[rid]["effects"])
+            for step in data.RELICS[rid].get("levels", [])[:self.relic_level(rid)]:
+                for key, val in step["effects"].items():
+                    if isinstance(val, list):
+                        eff[key] = list(eff.get(key, [])) + list(val)
+                    elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                        eff[key] = eff.get(key, 0) + val
+                    else:
+                        eff[key] = val
+            yield eff
 
     def _sum(self, key):
         return sum(e.get(key, 0) for e in self._effects())
@@ -109,6 +150,10 @@ class Run:
         return rnd % QUOTA_EVERY == 0
 
     @staticmethod
+    def is_boss_round(rnd):
+        return rnd % BOSS_EVERY == 0
+
+    @staticmethod
     def quota_number(rnd):
         return rnd // QUOTA_EVERY
 
@@ -120,12 +165,18 @@ class Run:
         return ((rnd + QUOTA_EVERY - 1) // QUOTA_EVERY) * QUOTA_EVERY
 
     def twist_id(self, rnd):
-        if not self.is_quota_round(rnd):
+        if self.is_boss_round(rnd):
+            return data.BOSS_TWISTS[((rnd // BOSS_EVERY) - 1) % len(data.BOSS_TWISTS)]
+        if self.is_quota_round(rnd):
+            k = self.quota_number(rnd)
+            if k == 1:
+                return "none"
+            return random.Random(self.seed * 7919 + k).choice(data.RANDOM_TWISTS)
+        # between quotas: mostly fair, sometimes a (positive/neutral) breeze
+        roll = random.Random(self.seed * 104729 + rnd).random()
+        if roll < 0.6:
             return "none"
-        k = self.quota_number(rnd)
-        if k == 1:
-            return "none"
-        return random.Random(self.seed * 7919 + k).choice(data.RANDOM_TWISTS)
+        return random.Random(self.seed * 104729 + rnd).choice(data.MINOR_TWISTS)
 
     def twist(self, rnd=None):
         return data.TWISTS[self.twist_id(self.round if rnd is None else rnd)]
@@ -145,26 +196,28 @@ class Run:
     def interest_rate(self):
         return self._sum("interest")
 
-    def neighbours(self, i):
-        if not 0 <= i < len(self.plots):
+    def neighbours(self, i, cellar=False):
+        plot_list = self.cellar_plots if cellar else self.plots
+        if not 0 <= i < len(plot_list):
             return []
         out = []
         r, c = divmod(i, COLS)
         if c > 0:
             out.append(i - 1)
-        if c < COLS - 1 and i + 1 < len(self.plots):
+        if c < COLS - 1 and i + 1 < len(plot_list):
             out.append(i + 1)
         if r > 0:
             out.append(i - COLS)
-        if i + COLS < len(self.plots):
+        if i + COLS < len(plot_list):
             out.append(i + COLS)
         return out
 
-    def harvest_breakdown(self, i):
+    def harvest_breakdown(self, i, cellar=False):
         """(chips, mult) for a plot: harvest value is chips x mult."""
-        if not 0 <= i < len(self.plots):
+        plot_list = self.cellar_plots if cellar else self.plots
+        if not 0 <= i < len(plot_list):
             return 0, 0.0
-        plot = self.plots[i]
+        plot = plot_list[i]
         if plot.species not in data.PLANTS:
             return 0, 0.0
         sp = data.PLANTS[plot.species]
@@ -176,13 +229,13 @@ class Run:
                     chips += amount
             for tag, needs, amount in e.get("adjacent", []):
                 if tag in tags:
-                    for n in self.neighbours(i):
-                        other = self.plots[n].species
+                     for n in self.neighbours(i, cellar):
+                        other = plot_list[n].species
                         if other and needs in data.PLANTS[other]["tags"]:
                             chips += amount
 
         mult = 2.0 ** milestone_level(self.mastery.get(plot.species, 0))
-        planted = [p.species for p in self.plots if p.species]
+        planted = [p.species for p in self.plots + self.cellar_plots if p.species]
         distinct = len(set(planted))
         for e in self._effects():
             for tag, m in e.get("yield_mult", []):
@@ -194,10 +247,15 @@ class Run:
                 mult *= e["mono_mult"]
         mult *= 1.0 + 0.10 * self.perk("yield")
         mult *= self.twist()["yield"]
+        if "cursed" not in tags:
+            for other in self.plots + self.cellar_plots:
+                if other.species and other is not plot and "aura" in data.PLANTS[other.species]:
+                    mult *= 0.5
+                    break
         return chips, mult
 
-    def harvest_value(self, i):
-        chips, mult = self.harvest_breakdown(i)
+    def harvest_value(self, i, cellar=False):
+        chips, mult = self.harvest_breakdown(i, cellar)
         return max(1, int(round(chips * min(mult, 1e250))))
 
     # ------------------------------------------------------------- packs
@@ -220,7 +278,7 @@ class Run:
         return int(data.PACKS[kind]["cost"] * PRICE_GROWTH ** (self.round - 1))
 
     def draw_seed(self, kind):
-        luck = self._effects_product("pack_luck")
+        luck = self._effects_product("pack_luck") * data.PACKS[kind].get("luck", 1.0)
         pool = data.PACKS[kind]["pool"]
         ids = list(pool)
         weights = []
@@ -258,22 +316,31 @@ class Run:
         return True
 
     # ----------------------------------------------------- planting etc.
-    def can_plant(self, species):
+    def can_plant(self, species, cellar=False):
         if species not in data.PLANTS:
             return False
+        sp = data.PLANTS[species]
+        nocturnal = "nocturnal" in sp["tags"]
+        if cellar:
+            return nocturnal          # only nocturnal seeds sprout in the dark
+        if nocturnal and not self.twist().get("eclipse"):
+            return False    
         ban = self.twist()["ban"]
-        return not (ban and ban in data.PLANTS[species]["tags"])
+        return not (ban and ban in sp["tags"])
 
-    def plant(self, i, species):
-        if not (0 <= i < len(self.plots)) or self.plots[i].species is not None:
+    def plant(self, i, species, cellar=False):
+        plot_list = self.cellar_plots if cellar else self.plots
+        if not (0 <= i < len(plot_list)) or plot_list[i].species is not None:
             return False
-        if self.seeds.get(species, 0) <= 0 or not self.can_plant(species):
+        if self.seeds.get(species, 0) <= 0 or not self.can_plant(species, cellar):
             return False
         self.seeds[species] -= 1
-        self.plots[i] = Plot(species)
+        plot_list[i] = Plot(species)
         return True
 
-    def can_water(self, i):
+    def can_water(self, i, cellar=False):
+        if cellar:
+            return False  
         if not 0 <= i < len(self.plots):
             return False
         p = self.plots[i]
@@ -286,6 +353,14 @@ class Run:
         wt = self.water_time()
         p.water_left = wt
         p.water_cd = wt if self._has("auto_water") else wt + WATER_REST
+        self.counters["water"] = self.counters.get("water", 0) + 1
+        return True
+
+    def buy_cellar(self):
+        if self.cellar_unlocked or self.money < CELLAR_PRICE:
+            return False
+        self.money -= CELLAR_PRICE
+        self.cellar_unlocked = True
         return True
 
     # -------------------------------------------------------- the round
@@ -297,9 +372,12 @@ class Run:
         self.started = False
         self.finished = False
         self.blight_done = False
+        self.crow_timer = 0.0
         self.round_income = 0
         self.events = []
         for p in self.plots:
+            p.clear()
+        for p in self.cellar_plots:
             p.clear()
 
     def start_timer(self):
@@ -309,60 +387,88 @@ class Run:
         if self.started:
             self.finished = True
 
-    def update(self, dt):
-        if self.phase != "round" or not self.started or self.finished or dt <= 0:
-            return
-        dt = min(dt, self.time_left)
-        speed = self.growth_speed()
-        auto = self._has("auto_water")
-        for i, p in enumerate(self.plots):
+    def _advance(self, plot_list, cellar, speed, auto, dt):
+        """Grow every plot in one area and settle its harvests."""
+        eclipse = self.twist().get("eclipse")
+        for i, p in enumerate(plot_list):
             if p.species is None:
                 continue
-            if auto and p.water_cd <= 0:
+            if auto and not cellar and p.water_cd <= 0:
                 self.water(i)
-            boosted = min(dt, max(p.water_left, 0.0))
-            p.progress += speed * (dt + (WATER_BOOST - 1.0) * boosted)
-            p.water_left = max(0.0, p.water_left - dt)
-            p.water_cd = max(0.0, p.water_cd - dt)
+            boosted = 0.0 if cellar else min(dt, max(p.water_left, 0.0))
+            plot_speed = speed
+            if eclipse and not cellar:
+                # nocturnal plants love the dark; sun-lovers sulk
+                plot_speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
+            p.progress += plot_speed * (dt + (WATER_BOOST - 1.0) * boosted)
+            if not cellar:
+                p.water_left = max(0.0, p.water_left - dt)
+                p.water_cd = max(0.0, p.water_cd - dt)
             grow = data.PLANTS[p.species]["grow"]
             guard = 0
             while p.progress >= grow and guard < 1000:
                 p.progress -= grow
-                self._harvest(i)
+                self._harvest(i, cellar)
                 guard += 1
             if guard >= 1000:
                 p.progress = 0.0
 
+    def update(self, dt):
+        if self.phase != "round" or not self.started or self.finished or dt <= 0:
+            return
+        dt = min(dt, self.time_left)
+        tw = self.twist()
+        speed = self.growth_speed()
+        auto = self._has("auto_water") or bool(tw.get("rain"))
+        self._advance(self.plots, cellar=False, speed=speed, auto=auto, dt=dt)
+        if self.cellar_unlocked:
+            # different rules: steady growth, no watering, weather-immune
+            cellar_speed = (1.0 + self._sum("growth")) * CELLAR_SPEED
+            self._advance(self.cellar_plots, cellar=True, speed=cellar_speed, auto=False, dt=dt)
+
         previous = self.time_left
         self.time_left -= dt
         half = self.time_total / 2.0
-        if self.twist()["blight"] and not self.blight_done and previous > half >= self.time_left:
+        if tw["blight"] and not self.blight_done and previous > half >= self.time_left:
             self.blight_done = True
             alive = [i for i, p in enumerate(self.plots) if p.species]
             if alive:
                 victim = self.rng.choice(alive)
                 self.events.append({"kind": "wither", "plot": victim})
                 self.plots[victim].clear()
+        crow = tw.get("crow")
+        if crow:
+            self.crow_timer += dt
+            while self.crow_timer >= crow:
+                self.crow_timer -= crow
+                alive = [i for i, p in enumerate(self.plots) if p.species]
+                if not alive:
+                    break
+                victim = self.rng.choice(alive)
+                self.plots[victim].clear()
+                self.events.append({"kind": "eaten", "plot": victim})
         if self.time_left <= 1e-9:
             self.time_left = 0.0
             self.finished = True
 
-    def _harvest(self, i):
-        value = self.harvest_value(i)
-        species = self.plots[i].species
+    def _harvest(self, i, cellar=False):
+        value = self.harvest_value(i, cellar)
+        plot_list = self.cellar_plots if cellar else self.plots
+        species = plot_list[i].species
         self.money += value
         self.round_income += value
         self.total_earned += value
         self.mastery[species] = self.mastery.get(species, 0) + 1
-        self.plots[i].harvests += 1
+        plot_list[i].harvests += 1
         if len(self.events) < 300:
             self.events.append({"kind": "harvest", "plot": i, "amount": value})
-        self._maybe_mutate(i)
+        self._maybe_mutate(i, cellar)
 
-    def _maybe_mutate(self, i):
+    def _maybe_mutate(self, i, cellar=False):
         """After enough harvests, a plant may turn into its mutant version
         for the rest of the round: different value, growth speed, even tags."""
-        plot = self.plots[i]
+        plot_list = self.cellar_plots if cellar else self.plots
+        plot = plot_list[i]
         if plot.species not in data.PLANTS or plot.harvests < data.mutation_threshold(plot.species):
             return
         options = data.mutants_for(plot.species)
@@ -375,20 +481,30 @@ class Run:
             self.events.append({"kind": "mutate", "plot": i, "name": data.PLANTS[mid]["name"]})
             
     def end_round(self):
-        """Sells ripe plants, pays interest, and settles the bill if one is due."""
+        """Sells ripe plants, collects cursed upkeep, pays interest, and
+        settles the bill if one is due."""
+        upkeep = 0
+        for plot_list in (self.plots, self.cellar_plots):
+            for p in plot_list:
+                if p.species:
+                    upkeep += data.PLANTS[p.species].get("upkeep", 0)
         comp = 1.0 + self._sum("sell_mult")
         sale = 0
-        for p in self.plots:
-            if p.species:
-                sp = data.PLANTS[p.species]
-                frac = min(1.0, p.progress / sp["grow"])
-                sale += int(sp["sell"] * frac * comp)
-            p.clear()
+        for plot_list in (self.plots, self.cellar_plots):
+            for p in plot_list:
+                if p.species:
+                    sp = data.PLANTS[p.species]
+                    frac = min(1.0, p.progress / sp["grow"])
+                    sale += int(sp["sell"] * frac * comp)
+                p.clear()
         self.money += sale
         self.total_earned += sale
+        self.money = max(0, self.money - upkeep)
         interest = int(self.money * self.interest_rate())
         self.money += interest
         self.total_earned += interest
+        self.counters["rounds"] = self.counters.get("rounds", 0) + 1
+        self.refresh_relic_levels()
 
         bill = self.bill_for_round(self.round)
         self.pending_bill = bill
@@ -401,7 +517,7 @@ class Run:
 
         self.last_summary = {
             "round": self.round, "harvest": self.round_income, "earned": self.round_income + sale + interest, "sale": sale,
-            "interest": interest, "bill": bill, "paid": paid, "money": self.money,
+            "interest": interest, "bill": bill, "paid": paid, "money": self.money, "upkeep": upkeep,
             "victory": victory, "twist": self.twist_id(self.round), "pending_bill": bool(self.pending_bill),
         }
         self.phase = "gameover" if self.dead else "summary"
@@ -520,7 +636,9 @@ class Run:
             "perks": self.perks, "round": self.round, "phase": self.phase,
             "money": self.money, "seeds": self.seeds, "packs": self.packs,
             "plots": [p.to_dict() for p in self.plots], "plots_bought": self.plots_bought,
-            "relics": self.relics, "mastery": self.mastery,
+             "cellar_plots": [p.to_dict() for p in self.cellar_plots],
+            "cellar_unlocked": self.cellar_unlocked,
+            "relics": self.relics, "mastery": self.mastery, "counters": self.counters,
             "shop_offers": self.shop_offers, "rerolls": self.rerolls,
             "quotas_paid": self.quotas_paid, "total_earned": self.total_earned,
             "won": self.won, "dead": self.dead, "pending_bill": self.pending_bill,
@@ -542,8 +660,13 @@ class Run:
         if plots:
             run.plots = plots[:MAX_PLOTS]
         run.plots_bought = int(d.get("plots_bought", 0))
+        cellar = [Plot.from_dict(p) for p in d.get("cellar_plots", [])]
+        if cellar:
+            run.cellar_plots = cellar[:CELLAR_PLOTS]
+        run.cellar_unlocked = bool(d.get("cellar_unlocked", False))
         run.relics = [r for r in d.get("relics", []) if r in data.RELICS][:RELIC_SLOTS]
         run.mastery = {k: int(v) for k, v in d.get("mastery", {}).items() if k in data.PLANTS}
+        run.counters = {k: int(v) for k, v in d.get("counters", {}).items()}
         run.shop_offers = [r if r in data.RELICS else None for r in d.get("shop_offers", [])]
         run.rerolls = int(d.get("rerolls", 0))
         run.quotas_paid = int(d.get("quotas_paid", 0))
@@ -556,6 +679,6 @@ class Run:
                                  "money": run.money, "pending_bill": True}
         if run.phase == "shop" and not run.shop_offers:
             run.roll_offers()
-        for p in run.plots:      # saves are taken between rounds: boards start empty
+        for p in run.plots + run.cellar_plots:      # saves are taken between rounds: boards start empty
             p.clear()
         return run

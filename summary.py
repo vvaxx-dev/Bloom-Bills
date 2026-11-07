@@ -60,5 +60,7 @@ class SummaryScene(Scene):
             gfx.draw_text(surf, "PAY THE BILL OR FORFEIT THE RUN", 160, 118, BAD, align="center")
         else:
             gfx.draw_text(surf, "NEXT: SHOP", 160, 118, DIM, align="center")
+            if summary.get("upkeep"):
+                gfx.draw_text(surf, "CURSED UPKEEP PAID: -$%s" % fmt(summary["upkeep"]), 160, 102, BAD, align="center")
         for button in self.buttons:
             button.draw(surf, self.mouse)

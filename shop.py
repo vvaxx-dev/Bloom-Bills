@@ -15,7 +15,7 @@ class ShopScene(Scene):
         for i in range(3):
             b = Button(9 + i * 104, 98, 90, 16, "", lambda i=i: self.buy_relic(i), color=(70, 130, 70))
             self.buy_buttons.append(b)
-            self.sell_buttons = []
+        self.sell_buttons = []
         for i in range(RELIC_SLOTS):
             b = Button(4 + i * 62 + 2, 141, 56, 8, "", lambda i=i: self.sell_relic(i), color=(150, 70, 60))
             b.enabled = False
@@ -23,7 +23,6 @@ class ShopScene(Scene):
         self.plot_btn = Button(4, 150, 88, 26, "", self.buy_plot)
         self.reroll_btn = Button(96, 150, 64, 26, "", self.reroll)
         self.next_btn = Button(258, 150, 58, 26, "NEXT ROUND >", self.go, color=(70, 130, 70))
-        self.buttons = self.buy_buttons + [self.plot_btn, self.reroll_btn, self.next_btn]
         self.buttons = self.buy_buttons + self.sell_buttons + [self.plot_btn, self.reroll_btn, self.next_btn]
         self.refresh()
 
@@ -52,7 +51,7 @@ class ShopScene(Scene):
         self.reroll_btn.enabled = run.money >= run.reroll_price()
 
     def on_click(self, pos):
-       return super().on_click(pos)
+        return super().on_click(pos)
 
     def sell_relic(self, i):
         ok, msg, _ = self.run.sell_relic(i)
@@ -127,7 +126,7 @@ class ShopScene(Scene):
                 gfx.rect(surf, data.RARITY_COLORS[rel["rarity"]], x, 126, 60, 1)
                 lines = gfx.wrap(rel["name"], 54)
                 for k, line in enumerate(lines[:2]):
-                     gfx.draw_text(surf, line, x + 30, 129 + k * 7, TEXT, align="center")
+                    gfx.draw_text(surf, line, x + 30, 129 + k * 7, TEXT, align="center")
                 self.sell_buttons[i].draw(surf, self.mouse)
                 if x <= self.mouse[0] < x + 60 and 126 <= self.mouse[1] < 150:
                     owned_hover = i

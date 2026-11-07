@@ -37,6 +37,15 @@ REROLL_BASE_PRICE = 15
 # --- mutations ---------------------------------------------------------
 MUTATION_CHANCE = 0.1
 
+
+# --- the cellar (underground growing area) ------------------------------
+CELLAR_PLOTS = 4                # plots inside the cellar
+CELLAR_SPEED = 0.75             # cellar grows steadily with no watering...
+CELLAR_PRICE = 250              # ...but you must dig it out first
+
+# --- boss rounds --------------------------------------------------------
+BOSS_EVERY = 9                  # every Nth round is a boss round
+
 # --- colors ------------------------------------------------------------
 BG = (24, 20, 36)
 PANEL = (44, 38, 66)

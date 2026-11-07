@@ -1,17 +1,16 @@
-
 import math
-
 from . import data, gfx
 from .formatting import clock, fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
-from .settings import (ACCENT, BAD, DIM, GOOD, PANEL_DARK, SOIL, SOIL_DARK,
+from .settings import (ACCENT, BAD, DIM, CELLAR_PRICE, GOOD, PANEL_DARK, SOIL, SOIL_DARK,
                        TEXT, WATER)
 
 CELL_W, CELL_H, GAP = 56, 34, 4
 GRID_X, GRID_Y = 4, 36
 TRAY_Y = 148
 
+TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": DIM}
 
 def plot_rect(i):
     return (GRID_X + (i % 4) * (CELL_W + GAP), GRID_Y + (i // 4) * (CELL_H + GAP), CELL_W, CELL_H)
@@ -29,17 +28,55 @@ class RoundScene(Scene):
         self.fast = 1
         self.t = 0.0
         self.ended = False
+        self.view = "surface"
         self.pick_default()
-        self.start_btn = Button(244, TRAY_Y, 72, 28, "START (SPACE)", self.toggle_clock, color=(70, 130, 70))
-        self.buttons = [self.start_btn]
+        self.cellar_btn = Button(244, 148, 72, 13, "", self.cellar_click)
+        self.cellar_btn.label = "CELLAR (TAB)" if self.run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
+        self.start_btn = Button(244, 163, 72, 14, "START (SPACE)", self.toggle_clock, color=(70, 130, 70))
+        self.buttons = [self.cellar_btn, self.start_btn]
+
+    def plant_list(self):
+        return self.run.cellar_plots if self.view == "cellar" else self.run.plots
+
+    def view_seeds(self):
+        if self.in_cellar():
+            return data.NOCTURNAL_PLANTS
+        seeds = list(data.SURFACE_PLANTS)
+        if self.run.twist().get("eclipse"):
+            # an eclipse lets nocturnal seeds grow up top: swap them into
+            # the tray, replacing surface plants you have no seeds of
+            for sid in data.NOCTURNAL_PLANTS:
+                if self.run.seeds.get(sid, 0) > 0 and sid not in seeds:
+                    for j, s in enumerate(seeds):
+                        if self.run.seeds.get(s, 0) == 0:
+                            seeds[j] = sid
+                            break
+        return seeds
+
+    def in_cellar(self):
+        return self.view == "cellar"
 
     def pick_default(self):
         run = self.run
-        for sid in reversed(data.PLANT_ORDER):
-            if run.seeds.get(sid, 0) > 0 and run.can_plant(sid):
+        for sid in reversed(self.view_seeds()):
+            if run.seeds.get(sid, 0) > 0 and run.can_plant(sid, self.in_cellar()):
                 self.selected = sid
                 return
         self.selected = None
+
+    def cellar_click(self):
+        run = self.run
+        if not run.cellar_unlocked:
+            if run.money >= CELLAR_PRICE:
+                run.buy_cellar()
+                self.app.toast("THE CELLAR IS OPEN! NO WATER, NO WEATHER.", 3.0)
+                self.app.save_run()
+            else:
+                self.app.toast("DIGGING COSTS $%d" % CELLAR_PRICE)
+            self.cellar_btn.label = "CELLAR (TAB)" if run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
+            return
+        self.view = "cellar" if self.view == "surface" else "surface"
+        self.pick_default()
 
     def toggle_clock(self):
         run = self.run
@@ -57,31 +94,46 @@ class RoundScene(Scene):
         if super().on_click(pos):
             return True
         run = self.run
-        for i, sid in enumerate(data.PLANT_ORDER):
+        for i, sid in enumerate(self.view_seeds()):
             if inside(pos, self.tray_rect(i)):
                 if run.seeds.get(sid, 0) > 0:
-                    if run.can_plant(sid):
+                    if run.can_plant(sid, self.in_cellar()):
                         self.selected = sid
                     else:
                         self.app.toast("%s: CAN'T PLANT THAT" % run.twist()["name"].upper())
                 return True
-        for i in range(len(run.plots)):
+        plots = self.plant_list()
+        for i in range(len(plots)):
             if inside(pos, plot_rect(i)):
                 self.click_plot(i)
                 return True
         return False
 
+    def plant_block_reason(self, sid):
+        sp = data.PLANTS[sid]
+        if self.in_cellar() and "nocturnal" not in sp["tags"]:
+            return "ONLY NOCTURNAL PLANTS GROW DOWN HERE"
+        if "nocturnal" in sp["tags"]:
+            return "NEEDS DARK: CELLAR OR ECLIPSE"
+        return "%s: CAN'T PLANT THAT" % self.run.twist()["name"].upper()
+
+
     def click_plot(self, i):
         run = self.run
-        if run.plots[i].species is None:
-            if self.selected and run.plant(i, self.selected):
+        plots = self.plant_list()
+        if plots[i].species is None:
+            if self.selected and run.plant(i, self.selected, self.in_cellar()):
                 if run.seeds.get(self.selected, 0) <= 0:
                     self.pick_default()
             elif not self.selected:
                 self.app.toast("NO SEEDS! OPEN PACKS FIRST")
+            elif self.in_cellar():
+                self.app.toast("THE CELLAR WATERS ITSELF")
         else:
             if not run.started:
                 self.app.toast("PRESS START FIRST")
+            elif self.in_cellar():
+                self.app.toast("THE CELLAR WATERS ITSELF")
             else:
                 run.water(i)
 
@@ -89,19 +141,28 @@ class RoundScene(Scene):
         import pygame
         if key == pygame.K_SPACE and not self.run.started:
             self.toggle_clock()
+        elif key == pygame.K_TAB:
+            self.cellar_click()
         elif key == pygame.K_ESCAPE:
             self.app.goto("title")
         elif pygame.K_1 <= key <= pygame.K_6:
+            seeds = self.view_seeds()
             idx = key - pygame.K_1
-            sid = data.PLANT_ORDER[idx]
-            if self.run.seeds.get(sid, 0) > 0 and self.run.can_plant(sid):
-                self.selected = sid
+            if idx < len(seeds):
+                sid = seeds[idx]
+                if self.run.seeds.get(sid, 0) > 0 and self.run.can_plant(sid, self.in_cellar()):
+                    self.selected = sid
 
     def update(self, dt):
         self.t += dt
         run = self.run
         run.update(dt * self.fast)
         for ev in run.events:
+            if ev["kind"] == "evolve":
+                self.app.toast("%s EVOLVED! %s" % (ev["name"].upper(), ev["desc"].upper()), 3.0)
+                continue
+            if bool(ev.get("cellar")) != self.in_cellar():
+                continue  
             x, y, w, h = plot_rect(ev["plot"]) if ev["plot"] < 12 else (0, 0, 0, 0)
             if ev["kind"] == "harvest":
                 self.floaters.append([x + w // 2, y + 8, "+$" + fmt(ev["amount"]), ACCENT, 0.0])
@@ -124,8 +185,13 @@ class RoundScene(Scene):
         draw_topbar(surf, run)
 
         twist = run.twist()
-        if run.is_quota_round(run.round):
-            msg, col = "%s: %s" % (twist["name"].upper(), twist["desc"].upper()), BAD
+        if twist.get("boss"):
+            msg, col = "BOSS: %s! %s" % (twist["name"].upper(), twist["desc"].upper()), BAD
+        elif run.twist_id(run.round) != "none":
+            msg, col = "%s: %s" % (twist["name"].upper(), twist["desc"].upper()), TONE_COLORS[twist.get("tone", "neutral")]
+        elif self.in_cellar():
+            msg, col = "THE CELLAR: SELF-WATERING, WEATHERPROOF.", WATER
+
         elif not run.started:
             msg, col = "PLANT SEEDS, THEN PRESS START.", DIM
         else:
@@ -138,13 +204,14 @@ class RoundScene(Scene):
         # plots
         mouse = self.mouse
         hover = None
+        plots = self.plant_list()
         for i in range(12):
             x, y, w, h = plot_rect(i)
-            if i >= len(run.plots):
+            if i >= len(plots):
                 gfx.rect(surf, PANEL_DARK, x, y, w, h)
                 gfx.draw_text(surf, "LOCKED", x + w // 2, y + 14, (70, 62, 96), align="center")
                 continue
-            self.draw_plot(surf, i, x, y, w, h)
+            self.draw_plot(plots, surf, i, x, y, w, h)
             if inside(mouse, (x, y, w, h)):
                 hover = i
         if hover is not None:
@@ -159,7 +226,8 @@ class RoundScene(Scene):
         relic_hover = None
         for i, rid in enumerate(run.relics):
             ry = 48 + i * 9
-            gfx.draw_text(surf, data.RELICS[rid]["name"], 248, ry, data.RARITY_COLORS[data.RELICS[rid]["rarity"]])
+            plus = " +" if run.relic_level(rid) > 0 else ""
+            gfx.draw_text(surf, data.RELICS[rid]["name"] + plus, 248, ry, data.RARITY_COLORS[data.RELICS[rid]["rarity"]])
             if 244 <= mouse[0] < 316 and ry - 1 <= mouse[1] < ry + 7:
                 relic_hover = rid
         if not run.relics:
@@ -169,31 +237,42 @@ class RoundScene(Scene):
         gfx.draw_text(surf, "SEEDS: %d" % sum(run.seeds.values()), 248, 130, TEXT)
 
         gfx.panel(surf, 4, TRAY_Y, 236, 28)
-        for i, sid in enumerate(data.PLANT_ORDER):
+        for i, sid in enumerate(self.view_seeds()):
             r = self.tray_rect(i)
             count = run.seeds.get(sid, 0)
-            usable = count > 0 and run.can_plant(sid)
+            usable = count > 0 and run.can_plant(sid, self.in_cellar())
             border = ACCENT if sid == self.selected else PANEL_DARK
             gfx.rect(surf, border, *r)
             gfx.rect(surf, (54, 47, 80) if usable else (36, 31, 56), r[0] + 1, r[1] + 1, r[2] - 2, r[3] - 2)
             gfx.draw_sprite(surf, sid, r[0] + 2, r[1] + 5, 1)
             gfx.draw_text(surf, "x%d" % count, r[0] + 16, r[1] + 3, TEXT if usable else DIM)
             gfx.draw_text(surf, str(i + 1), r[0] + 16, r[1] + 13, DIM)
+            self.cellar_btn.label = "CELLAR (TAB)" if run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
+        self.cellar_btn.color = (96, 70, 140) if run.cellar_unlocked else (70, 130, 70)
+        self.cellar_btn.draw(surf, mouse)
         self.start_btn.draw(surf, mouse)
 
         # tooltips
         if relic_hover:
             rel = data.RELICS[relic_hover]
-            gfx.tooltip(surf, [(rel["name"], data.RARITY_COLORS[rel["rarity"]]), (rel["desc"], TEXT)],
-                        (mouse[0] - 100, mouse[1]), 96)
-        elif hover is not None and run.plots[hover].species:
+            lv = run.relic_level(relic_hover)
+            lines = [(rel["name"] + (" +%d" % lv if lv else ""), data.RARITY_COLORS[rel["rarity"]]),
+                     (rel["desc"], TEXT)]
+            for step in rel.get("levels", [])[:lv]:
+                lines.append((step["desc"], GOOD))
+            for step in rel.get("levels", [])[lv:]:
+                lines.append(("%s AT %d %s" % ("EVOLVES", step["goal"], step["stat"].upper() + "S"), DIM))
+            gfx.tooltip(surf, lines, (mouse[0] - 100, mouse[1]), 96)
+        elif hover is not None and plots[hover].species:
             self.plot_tooltip(surf, hover)
 
-    def draw_plot(self, surf, i, x, y, w, h):
+    def draw_plot(self, plots, surf, i, x, y, w, h):
         run = self.run
-        p = run.plots[i]
-        gfx.rect(surf, SOIL_DARK, x, y, w, h)
-        gfx.rect(surf, SOIL, x + 1, y + 1, w - 2, h - 2)
+        p = plots[i]
+        cellar = self.in_cellar()
+        top, bottom = (SOIL_DARK, (66, 48, 38)) if cellar else (SOIL_DARK, SOIL)
+        gfx.rect(surf, top, x, y, w, h)
+        gfx.rect(surf, bottom, x + 1, y + 1, w - 2, h - 2)
         for k in range(6):
             gfx.rect(surf, SOIL_DARK, x + 3 + (i * 7 + k * 11) % 50, y + 3 + (i * 5 + k * 13) % 28, 2, 1)
         if p.species is None:
@@ -209,25 +288,36 @@ class RoundScene(Scene):
         gfx.bar(surf, x + 4, y + 28, w - 8, 3, frac, sp["color"])
         if p.water_left > 0:
             gfx.draw_sprite(surf, "drop", x + w - 9, y + 3)
-        elif run.can_water(i):
+        elif not cellar and run.can_water(i):
             gfx.draw_sprite(surf, "drop", x + w - 9, y + 3, 1, {"c": (96, 112, 140), "w": (130, 142, 170)})
 
     def plot_tooltip(self, surf, i):
         run = self.run
-        p = run.plots[i]
+        plots = self.plant_list()
+        p = plots[i]
         sp = data.PLANTS[p.species]
         count = run.mastery.get(p.species, 0)
         nxt = next((t for t in data.MILESTONES if count < t), None)
         speed = run.growth_speed() * (2.0 if p.water_left > 0 else 1.0)
         mutant_col = data.RARITY_COLORS["mutant"]
-        lines = [
-            (sp["name"], mutant_col if sp.get("mutant") else data.RARITY_COLORS[sp["rarity"]]),
-        ]
+        if self.in_cellar():
+            speed = (1.0 + run._sum("growth")) * 0.75
+        mutant_col = data.RARITY_COLORS["mutant"]
+        color = mutant_col if sp.get("mutant") else data.RARITY_COLORS[sp["rarity"]]
+        lines = [(sp["name"], color)]
         if sp.get("mutant"):
             lines.append(("MUTANT: " + sp["desc"], mutant_col))
+        if "nocturnal" in sp["tags"]:
+            lines.append(("NOCTURNAL", WATER))
+        if sp.get("upkeep"):
+            lines.append(("CURSED: -$%d UPKEEP AT ROUND END" % sp["upkeep"], BAD))
+        if "aura" in sp:
+            lines.append(("CURSED: OTHER PLANTS -50%", BAD))
+        if self.in_cellar():
+            lines.append(("CELLAR: SELF-WATERING", WATER))
         lines += [
-            ("HARVEST: $" + fmt(run.harvest_value(i)), ACCENT),
-            ("RIPE IN: %.1fs" % max(0.0, (sp["grow"] - p.progress) / speed), TEXT),
+            ("HARVEST: $" + fmt(run.harvest_value(i, self.in_cellar())), ACCENT),
+            ("RIPE IN: %.1fs" % max(0.0, (sp["grow"] - p.progress) / max(speed, 0.01)), TEXT),
             ("HARVESTED: %d" % count, DIM),
         ]
         if nxt:
