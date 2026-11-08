@@ -6,6 +6,7 @@ VERSION = "0.1.0"
 CANVAS_W, CANVAS_H = 320, 180   
 START_SCALE = 6                 
 FPS = 60
+BORDERLESS = True  
 
 # --- board -------------------------------------------------------------
 COLS = 4                        
@@ -29,11 +30,11 @@ WATER_TIME = 3.0
 WATER_REST = 3.0                
 
 # --- prices ------------------------------------------------------------
-PRICE_GROWTH = 1.8              
+PRICE_GROWTH = 1.6            
 PLOT_BASE_PRICE = 200
 PLOT_PRICE_GROWTH = 3.0
 REROLL_BASE_PRICE = 50
-RELIC_PRICE_GROWTH = 2.0
+RELIC_PRICE_GROWTH = 1.65
 
 # --- mutations ---------------------------------------------------------
 MUTATION_CHANCE = 0.1
@@ -46,6 +47,9 @@ CELLAR_PRICE = 250              # ...but you must dig it out first
 
 # --- boss rounds --------------------------------------------------------
 BOSS_EVERY = 9                  # every Nth round is a boss round
+
+# --- seasons ------------------------------------------------------------
+SEASON_LENGTH = 9
 
 # --- colors ------------------------------------------------------------
 BG = (24, 20, 36)

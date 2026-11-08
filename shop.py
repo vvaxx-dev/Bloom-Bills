@@ -137,12 +137,16 @@ class ShopScene(Scene):
         gfx.panel(surf, 208, 150, 108, 26)
         nxt = run.round + 1
         twist = run.twist(nxt)
+        season = run.season(nxt)
         gfx.draw_text(surf, "NEXT: ROUND %d" % nxt, 212, 154, TEXT)
+        gfx.draw_text(surf, season["short"], 314, 154, season["color"], align="right")
         if run.is_quota_round(nxt):
             gfx.draw_text(surf, "BILL $" + fmt(run.bill_for_round(nxt)), 212, 161, BAD)
             gfx.draw_text(surf, twist["name"].upper(), 212, 168, ACCENT)
         else:
             gfx.draw_text(surf, "NO BILL", 212, 161, GOOD)
+            if data.is_new_season(nxt):
+                gfx.draw_text(surf, "NEW SEASON: %s" % season["name"].upper(), 212, 168, season["color"])
         self.plot_btn.draw(surf, self.mouse)
         self.reroll_btn.draw(surf, self.mouse)
         self.next_btn.draw(surf, self.mouse)
@@ -159,4 +163,4 @@ class ShopScene(Scene):
                 (rel["rarity"].upper(), col),
                 (rel["desc"], TEXT),
                 ("SELL REFUND: $%s" % fmt(refund), ACCENT),
-            ], (self.mouse[0] - 40, self.mouse[1] - 30), 110)
+            ], self.mouse, 110)

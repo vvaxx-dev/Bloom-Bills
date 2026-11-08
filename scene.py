@@ -29,6 +29,10 @@ class Scene:
     def on_key(self, _key):
         pass
 
+    def on_wheel(self, _dy):
+        """Mouse wheel: scenes that scroll a list page through it."""
+        return False
+
     def update(self, _dt):
         pass
 
@@ -43,14 +47,17 @@ class Scene:
 def draw_topbar(surf, run, label=None):
     gfx.rect(surf, PANEL_DARK, 0, 0, 320, 14)
     gfx.rect(surf, PANEL, 0, 13, 320, 1)
+    top = 2
     left = label or ("ROUND %d" % run.round)
     money = "$" + fmt(run.money)
-    left_w = gfx.draw_text(surf, left, 5, 4, TEXT)
-    money_w = gfx.draw_text(surf, money, 315, 4, ACCENT, align="right")
+    left_w = gfx.draw_text(surf, left, 5, top, TEXT)
+    season = run.season()
+    season_w = gfx.draw_text(surf, season["short"], 5 + left_w + 4, top, season["color"])
+    money_w = gfx.draw_text(surf, money, 315, top, ACCENT, align="right")
 
     # next bill, in the middle - shorten it rather than letting a seven-figure
     # cash pile on the right run into it
-    room = 320 - 2 * max(left_w + 5, money_w + 5) - 10
+    room = 320 - 2 * max(left_w + season_w + 9, money_w + 5) - 10
     qr = run.next_quota_round()
     due = "BILL DUE THIS ROUND" if run.is_quota_round(run.round) else "NEXT BILL R%d" % qr
     bill = "$" + fmt(run.bill_for_round(qr))
@@ -58,4 +65,4 @@ def draw_topbar(surf, run, label=None):
     for text in (due + ": " + bill, due + " " + bill, bill):
         if gfx.text_width(text) <= room:
             break
-    gfx.draw_text(surf, text, 160, 4, color, align="center")
+    gfx.draw_text(surf, text, 160, top, color, align="center")

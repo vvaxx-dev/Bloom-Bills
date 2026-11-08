@@ -1,4 +1,6 @@
 
+from turtle import pos
+
 import pygame
 
 from .settings import DIM, PANEL, PANEL_DARK, PANEL_LIGHT, TEXT
@@ -78,7 +80,7 @@ def sprite(name, scale=1, subs=None):
     key = (name, scale, tuple(sorted(subs.items())) if subs else None)
     surf = _sprite_cache.get(key)
     if surf is None:
-        grid = GRIDS[name]
+        grid = GRIDS.get(name) or GRIDS["unknown"]
         palette = dict(PALETTE)
         if subs:
             palette.update(subs)
@@ -95,6 +97,10 @@ def sprite(name, scale=1, subs=None):
 def draw_sprite(surf, name, x, y, scale=1, subs=None):
     surf.blit(sprite(name, scale, subs), (int(x), int(y)))
 
+def draw_cursor(surf, pos):
+    """The mouse pointer, drawn in the same 1px chunks as the font. Its tip
+    is the hotspot, so it lands exactly where a click does."""
+    surf.blit(sprite("cursor"), (int(pos[0]), int(pos[1])))
 
 def plant_sprite_name(species, fraction):
     if fraction < 0.15:
@@ -175,13 +181,15 @@ class Button:
 
 
 def tooltip(surf, lines, pos, width=96):
+    """Panel whose top-left corner sits right on the pixel cursor's tip, so
+    the pointer always marks the corner of the box it opened."""
     wrapped = []
     for text, color in lines:
         for part in wrap(text, width - 8):
             wrapped.append((part, color))
     h = len(wrapped) * 7 + 6
-    x = max(2, min(pos[0] + 8, 320 - width - 2))
-    y = max(2, min(pos[1] + 8, 180 - h - 2))
+    x = max(2, min(pos[0], 320 - width - 2))
+    y = max(2, min(pos[1], 180 - h - 2))
     rect(surf, PANEL_DARK, x, y, width, h)
     rect(surf, (20, 16, 32), x + 1, y + 1, width - 2, h - 2)
     for i, (part, color) in enumerate(wrapped):

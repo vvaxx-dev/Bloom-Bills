@@ -21,8 +21,15 @@ PLANTS = {
     "queen_night":    {"name": "Queen of the Night", "tags": ["nocturnal", "flower"], "grow": 30, "yield": 340, "sell": 540, "rarity": "legendary", "color": (180, 120, 240)},
      "devil_ivy":  {"name": "Devil's Ivy",  "tags": ["nocturnal", "cursed", "flower"], "grow": 6,  "yield": 60,  "sell": 95,  "rarity": "rare",     "color": (120, 220, 110), "upkeep": 60},
     "widow_bloom": {"name": "Widow's Bloom", "tags": ["nocturnal", "cursed", "flower"], "grow": 18, "yield": 260, "sell": 420, "rarity": "legendary", "color": (230, 60, 90), "aura": "jealous"},
+     "potato":      {"name": "Potato",      "tags": ["veg", "root"],            "grow": 6,  "yield": 5,   "sell": 9,   "rarity": "common",   "color": (196, 158, 104)},
+    "wheat":       {"name": "Wheat",       "tags": ["grain"],                  "grow": 9,  "yield": 13,  "sell": 22,  "rarity": "common",   "color": (230, 200, 110)},
+    "corn":        {"name": "Corn",        "tags": ["veg", "grain"],           "grow": 12, "yield": 26,  "sell": 44,  "rarity": "uncommon", "color": (250, 220, 80)},
+    "carrot":      {"name": "Carrot",      "tags": ["veg", "root"],            "grow": 10, "yield": 19,  "sell": 32,  "rarity": "uncommon", "color": (236, 122, 48)},
+    "cranberries": {"name": "Cranberries", "tags": ["fruit", "berry"],         "grow": 18, "yield": 72,  "sell": 125, "rarity": "rare",     "color": (198, 44, 74)},
+    "saffron":     {"name": "Saffron",     "tags": ["flower", "spice"],        "grow": 26, "yield": 285, "sell": 490, "rarity": "legendary", "color": (226, 128, 68)},
 }
-SURFACE_PLANTS = ["daisy", "tomato", "sunflower", "cactus", "pumpkin", "orchid"]
+FARMER_PLANTS = ["potato", "wheat", "corn", "carrot", "cranberries", "saffron"]
+SURFACE_PLANTS = ["daisy", "tomato", "sunflower", "cactus", "pumpkin", "orchid"] + FARMER_PLANTS
 NOCTURNAL_PLANTS = ["brown_mushroom", "red_mushroom", "moonflower", "queen_night", "devil_ivy", "widow_bloom"]
 PLANT_ORDER = SURFACE_PLANTS + NOCTURNAL_PLANTS
 
@@ -32,63 +39,6 @@ PLANT_ORDER = SURFACE_PLANTS + NOCTURNAL_PLANTS
 # "yield_add" adds flat harvest money, and "tags_add" gives the mutant
 # extra tags so relic effects (e.g. Desert Rose) can key off it.
 # "subs" recolors the base sprite so it looks different in the garden.
-MUTANTS = {
-    "daisy_shiny":    {"base": "daisy",     "name": "Shiny Daisy",
-                       "desc": "x2 value, grows 20% faster.",
-                       "grow_mult": 0.8, "yield_mult": 2.0, "sell_mult": 2.0,
-                       "color": (180, 240, 255), "subs": {"w": (200, 245, 255), "y": (255, 220, 120)}},
-    "tomato_prickly": {"base": "tomato",    "name": "Prickly Tomato",
-                       "desc": "x2 value and counts as desert.",
-                       "grow_mult": 1.2, "yield_mult": 2.0, "sell_mult": 2.0,
-                       "tags_add": ["desert"],
-                       "color": (255, 120, 90), "subs": {"r": (255, 120, 90), "R": (190, 70, 60)}},
-    "sunflower_gold": {"base": "sunflower", "name": "Golden Sunflower",
-                       "desc": "x3 value, grows 50% slower.",
-                       "grow_mult": 1.5, "yield_mult": 3.0, "sell_mult": 3.0,
-                       "color": (255, 240, 130), "subs": {"y": (255, 240, 130), "Y": (255, 200, 60)}},
-    "cactus_saguaro": {"base": "cactus",    "name": "Saguaro",
-                       "desc": "x2 value, +$4 per harvest, grows 25% slower.",
-                       "grow_mult": 1.25, "yield_mult": 2.0, "sell_mult": 2.0,
-                       "yield_add": 4,
-                       "color": (140, 220, 100), "subs": {"m": (230, 80, 80), "g": (140, 220, 100), "G": (70, 150, 70)}},
-    "pumpkin_giant":  {"base": "pumpkin",   "name": "Giant Pumpkin",
-                       "desc": "x2.5 value, grows 60% slower.",
-                       "grow_mult": 1.6, "yield_mult": 2.5, "sell_mult": 2.5,
-                       "color": (255, 140, 40), "subs": {"o": (255, 140, 40), "Y": (200, 100, 30)}},
-    "orchid_moon":    {"base": "orchid",    "name": "Moonlight Orchid",
-                       "desc": "x2 value, grows 10% faster.",
-                       "grow_mult": 0.9, "yield_mult": 2.0, "sell_mult": 2.0,
-                       "color": (190, 170, 255), "subs": {"y": (190, 170, 255), "Y": (120, 95, 210), "m": (240, 240, 255)}},
-}
-
-
-def mutants_for(species):
-    """Mutant ids a planted species can randomly turn into."""
-    return [mid for mid, m in MUTANTS.items() if m["base"] == species]
-
-
-def mutation_threshold(species):
-    """Harvests a plant needs before each extra harvest can roll for a
-    mutation. Fast plants need many harvests, slow plants only a couple,
-    so every species stays realistically mutatable within one round."""
-    grow = PLANTS[species]["grow"]
-    return max(2, min(5, round(20 / grow)))
-
-for _mid, _mut in MUTANTS.items():
-    _base = PLANTS[_mut["base"]]
-    PLANTS[_mid] = {
-        "name": _mut["name"],
-        "tags": list(_base["tags"]) + list(_mut.get("tags_add", [])),
-        "grow": round(_base["grow"] * _mut["grow_mult"], 2),
-        "yield": int(round(_base["yield"] * _mut["yield_mult"] + _mut.get("yield_add", 0))),
-        "sell": int(round(_base["sell"] * _mut["sell_mult"])),
-        "rarity": "mutant",
-        "color": _mut["color"],
-        "mutant": True,
-        "base": _mut["base"],
-        "desc": _mut["desc"],
-        "subs": _mut.get("subs"),
-    }
 
 MUTANTS = {
     "daisy_shiny": {"base": "daisy", "name": "Shiny Daisy", 
@@ -124,7 +74,7 @@ def mutants_for(species):
     return [mid for mid, m in MUTANTS.items() if m["base"] == species]
 
 def mutation_threshold(species):
-    """Harvests a plant needs before each extra harvest can roll for a mutation. Fast plants need many harvests, slow plants only need a couple, so every specioes stays mutatable in one round."""
+    """Harvests a plant needs before each extra harvest can roll for a mutation. Fast plants need many harvests, slow plants only need a couple, so every species stays realistically mutatable within one round."""
     grow = PLANTS[species]["grow"]
     return max(2, min(5, round(20 / grow)))
 
@@ -149,6 +99,8 @@ MILESTONES = [10, 25, 50, 100, 150, 200, 300, 400, 500, 750, 1000]
 PACKS = {
     "garden":  {"name": "Garden Pack",  "short": "GARDEN",    "cost": 30,  "unlock": 1,  "color": (88, 170, 72),  "dark": (46, 120, 62),
                 "pool": {"daisy": 50, "tomato": 35, "sunflower": 12, "cactus": 3}},
+    "farmer":  {"name": "Farmer Pack",  "short": "FARMER",    "cost": 120, "unlock": 2,  "color": (190, 150, 70), "dark": (120, 88, 44),
+                "pool": {"potato": 40, "wheat": 30, "carrot": 16, "corn": 10, "cranberries": 3, "saffron": 1}},
     "harvest": {"name": "Harvest Pack", "short": "HARVEST",   "cost": 100,  "unlock": 3,  "color": (240, 140, 50), "dark": (190, 100, 40),
                 "pool": {"tomato": 30, "sunflower": 40, "cactus": 22, "pumpkin": 8}},
     "desert":  {"name": "Desert Pack",  "short": "DESERT",    "cost": 250,  "unlock": 6,  "color": (214, 120, 70), "dark": (150, 80, 50),
@@ -162,7 +114,7 @@ PACKS = {
     "cursed":  {"name": "Cursed Pack",  "short": "CURSED",    "cost": 600, "unlock": 6,  "color": (120, 40, 60), "dark": (70, 24, 40),
                 "pool": {"devil_ivy": 35, "widow_bloom": 20, "moonflower": 25, "queen_night": 20}},
 }
-PACK_ORDER = ["garden", "harvest", "desert", "golden", "nocturnal", "rare", "cursed"]
+PACK_ORDER = ["garden", "harvest", "farmer", "desert", "golden", "nocturnal", "rare", "cursed"]
 
 
 def free_pack_weight(kind, rnd):
@@ -170,7 +122,7 @@ def free_pack_weight(kind, rnd):
         return 0
     if kind == "garden":
         return max(10, 100 - 8 * (rnd - 1))
-    return {"harvest": 60, "desert": 40, "golden": 15, "nocturnal": 30, "rare": 12, "cursed": 6}[kind]
+    return {"farmer": 70, "harvest": 60, "desert": 40, "golden": 15, "nocturnal": 30, "rare": 12, "cursed": 6}[kind]
 
 
 RELICS = {
@@ -236,6 +188,11 @@ RELICS = {
     "greenhouse":  {"name": "Greenhouse",     "rarity": "rare",     "cost": 3400,
                     "desc": "All harvests x2. Plants grow 10% faster.",
                     "effects": {"yield_mult": [("all", 2.0)], "growth": 0.1}},
+     "mutagen":     {"name": "Mutagen",        "rarity": "rare",     "cost": 2900,
+                    "desc": "25% chance a seed sprouts already mutated. Mutants are 1.2x better.",
+                    "effects": {"mutate_on_plant": 0.25, "mutant_bonus": 0.2},
+                    "levels": [{"stat": "harvest", "goal": 200, "effects": {"mutate_on_plant": 0.15},
+                                "desc": "40% chance to sprout mutated. Mutants are 1.2x better."}]},
 }
 RELIC_ORDER = list(RELICS)
 
@@ -251,12 +208,22 @@ TWISTS = {
     "short":      {"name": "Short Days",   "desc": "The round is 20 seconds shorter.",      "growth": 1.0,  "yield": 1.0, "time": -20, "ban": None,     "blight": False, "tone": "bad"},
     "frost":      {"name": "Frost",        "desc": "Desert plants cannot be planted.",      "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": "desert", "blight": False, "tone": "bad"},
     "blight":     {"name": "Blight",       "desc": "A random plant withers halfway.",       "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": None,     "blight": True,  "tone": "bad"},
-    "crow_swarm": {"name": "Crow Swarm",   "desc": "Every 10s a crow eats a random plant.", "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": None,     "blight": False, "boss": True, "crow": 10, "tone": "bad"},
+    "crow_swarm": {"name": "Crazy Crows!",  "desc": "Every 6s the flock eats a random plant - two at a time once the round is half over.", "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": None,     "blight": False, "boss": True, "crow": 6, "crow_count": 1, "crow_ramp": True, "tone": "bad"},
 }
 RANDOM_TWISTS = ["drought", "locusts", "short", "frost", "blight", "sunny", "rain", "market", "eclipse"]
 MINOR_TWISTS = ["sunny", "rain", "market", "eclipse", "still"]     # rolled between quota rounds
 BOSS_TWISTS = ["crow_swarm"]  
 
+SEASONS = [
+    {"name": "Spring", "short": "SPR", "color": (130, 210, 120),
+     "desc": "THE GARDEN WAKES UP."},
+    {"name": "Summer", "short": "SUM", "color": (250, 210, 70),
+     "desc": "LONG DAYS, THIRSTY SOIL."},
+    {"name": "Autumn", "short": "AUT", "color": (240, 140, 50),
+     "desc": "THE LAST BIG HARVEST."},
+    {"name": "Winter", "short": "WIN", "color": (150, 190, 250),
+     "desc": "SHORT DAYS, COLD GROUND."},
+]
 
 PERKS = {
      "cash":  {"name": "Deep Pockets", "max": 10, "costs": [3, 4, 5, 6, 7, 8, 10, 12, 14, 16],
@@ -291,3 +258,27 @@ def bill_for_quota(k):
     if k <= 8:
         return int(round(300 * 5.0 ** (k - 1)))
     return int(round(300 * 5.0 ** 7 * 6.0 ** (k - 8)))
+
+try:
+    from .settings import SEASON_LENGTH
+except ImportError:                       # allows `python3 data.py`-style flat imports
+    from settings import SEASON_LENGTH
+
+
+def season_index(rnd):
+    """0-based index into SEASONS; wraps round forever."""
+    return ((max(1, int(rnd)) - 1) // SEASON_LENGTH) % len(SEASONS)
+
+
+def season_number(rnd):
+    """'Season 2' - how many seasons this run has seen, 1-based."""
+    return (max(1, int(rnd)) - 1) // SEASON_LENGTH + 1
+
+
+def season(rnd):
+    return SEASONS[season_index(rnd)]
+
+
+def is_new_season(rnd):
+    """True on the first round of a season (round 1 starts season 1)."""
+    return (int(rnd) - 1) % SEASON_LENGTH == 0

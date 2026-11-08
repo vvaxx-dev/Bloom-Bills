@@ -2,7 +2,7 @@ import os
 import pygame
 from .save import SaveManager
 from .scenes import SCENES
-from .settings import (BLACK, CANVAS_H, CANVAS_W, FPS, START_SCALE, TITLE, TEXT, PANEL_DARK)
+from .settings import (BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, START_SCALE, TITLE, TEXT, PANEL_DARK)
 from .state import Run
 from . import gfx
 
@@ -12,8 +12,10 @@ class App:
         pygame.init()
         pygame.display.set_caption(TITLE)
         self.fullscreen = False
+        self.borderless = BORDERLESS
         self.windowed_size = (CANVAS_W * START_SCALE, CANVAS_H * START_SCALE)
-        pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
+        pygame.display.set_mode(self._window_size(), self._window_flags())
+        pygame.mouse.set_visible(False) 
         self.canvas = pygame.Surface((CANVAS_W, CANVAS_H))
         self.clock = pygame.time.Clock()
 
@@ -38,14 +40,44 @@ class App:
     def quit(self):
         self.running = False
 
+    def _window_flags(self):
+        """No window chrome while borderless; plain resizable otherwise."""
+        return pygame.NOFRAME if self.borderless else pygame.RESIZABLE
+
+    def _window_size(self):
+        """Borderless fills the screen without going exclusive-fullscreen."""
+        if not self.borderless or self.fullscreen:
+            return self.windowed_size
+        try:
+            info = pygame.display.Info()
+            width, height = int(info.current_w), int(info.current_h)
+        except (pygame.error, ValueError):
+            width = height = 0
+        if width < CANVAS_W or height < CANVAS_H:
+            return self.windowed_size
+        return (width, height)
+
+    def rebuild_window(self):
+        pygame.display.set_mode(self._window_size(), self._window_flags())
+        pygame.display.set_caption(TITLE)
+        pygame.mouse.set_visible(False)
+
     def toggle_fullscreen(self):
         if self.fullscreen:
-            pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
             self.fullscreen = False
+            self.rebuild_window()
         else:
             pygame.display.set_mode((1920, 1080), pygame.FULLSCREEN)
             self.fullscreen = True
         pygame.display.set_caption(TITLE)
+        pygame.mouse.set_visible(False)
+        self.toast("FULLSCREEN" if self.fullscreen else "WINDOWED")
+
+    def toggle_borderless(self):
+        self.borderless = not self.borderless
+        if not self.fullscreen:
+            self.rebuild_window()
+        self.toast("BORDERLESS" if self.borderless else "WINDOWED")
 
     def new_run(self):
         self.run = Run(perks=self.profile["perks"])
@@ -129,7 +161,9 @@ class App:
     def handle_key(self, key):
         if key == pygame.K_F11:
             self.toggle_fullscreen()
-            self.toast("FULLSCREEN" if self.fullscreen else "WINDOWED")
+            return
+        if key == pygame.K_F12:
+            self.toggle_borderless()
             return
         if self.debug and self.run:
             if key == pygame.K_F2 and hasattr(self.scene, "fast"):
@@ -149,6 +183,8 @@ class App:
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 self.mouse = self.to_canvas(ev.pos)
                 self.scene.on_click(self.mouse)
+            elif ev.type == pygame.MOUSEWHEEL:
+                self.scene.on_wheel(ev.y)
             elif ev.type == pygame.KEYDOWN:
                 self.handle_key(ev.key)
         self.mouse = self.to_canvas(pygame.mouse.get_pos())
@@ -158,6 +194,7 @@ class App:
         self.toasts = [t for t in self.toasts if t[1] > 0]
         self.scene.draw(self.canvas)
         self.draw_toasts()
+        gfx.draw_cursor(self.canvas, self.mouse)
         self.present()
 
     def main_loop(self):

@@ -4,15 +4,20 @@ from .gfx import Button
 from .scene import Scene, draw_topbar
 from .settings import ACCENT, DIM, PANEL_DARK, TEXT
 
+SEEDS_PER_PAGE = 12         
+SEED_COLS = 6
 
 class PacksScene(Scene):
     def on_enter(self):
         self.run.phase = "packs"
         self.reveal = None
         self.reveal_t = 0.0
+        self.seed_page = 0
         self.open_btn = Button(10, 70, 88, 14, "OPEN PACK", self.open_pack, color=(70, 130, 70))
         self.go_btn = Button(276, 128, 40, 48, "START ROUND >", self.go, color=(70, 130, 70))
-        self.buttons = [self.open_btn, self.go_btn]
+        self.seed_left = Button(250, 137, 6, 22, "<", self.page_left)
+        self.seed_right = Button(258, 137, 6, 22, ">", self.page_right)
+        self.buttons = [self.open_btn, self.go_btn, self.seed_left, self.seed_right]
         self.buy_buttons = []
         for i, kind in enumerate(self.run.unlocked_packs()):
             b = Button(4, 92 + i * 12, 100, 12, "", lambda k=kind: self.buy(k))
@@ -20,6 +25,37 @@ class PacksScene(Scene):
             self.buy_buttons.append(b)
         self.buttons += self.buy_buttons
         self.refresh()
+        self.announce_season()
+
+    # ------------------------------------------------------- seed shelf
+    @property
+    def seed_pages(self):
+        return max(1, (len(data.PLANT_ORDER) + SEEDS_PER_PAGE - 1) // SEEDS_PER_PAGE)
+
+    def page_left(self):
+        self.seed_page = max(0, self.seed_page - 1)
+
+    def page_right(self):
+        self.seed_page = min(self.seed_pages - 1, self.seed_page + 1)
+
+    def on_wheel(self, dy):
+        if dy > 0:
+            self.page_left()
+        else:
+            self.page_right()
+
+    def visible_seed_order(self):
+        start = self.seed_page * SEEDS_PER_PAGE
+        return data.PLANT_ORDER[start:start + SEEDS_PER_PAGE]
+
+    # ---------------------------------------------------------- seasons
+    def announce_season(self):
+        """Round 1 of a season: say so, once, when the packs screen opens."""
+        run = self.run
+        if not data.is_new_season(run.round):
+            return
+        season = run.season()
+        self.app.toast("SEASON %d: %s" % (run.season_number(), season["name"].upper()), 3.0)
 
     def refresh(self):
         run = self.run
@@ -57,6 +93,8 @@ class PacksScene(Scene):
 
     def update(self, dt):
         self.reveal_t += dt
+        self.seed_left.enabled = self.seed_page > 0
+        self.seed_right.enabled = self.seed_page < self.seed_pages - 1
 
     def draw(self, surf):
         run = self.run
@@ -100,12 +138,19 @@ class PacksScene(Scene):
             gfx.draw_text(surf, "WHAT YOU GET", 212, 68, DIM, align="center")
 
         gfx.panel(surf, 4, 128, 268, 48, "YOUR SEEDS")
-        for i, sid in enumerate(data.PLANT_ORDER):
-            x = 10 + (i % 6) * 44
-            y = 138 + (i // 6) * 17
+        seeds_shown = self.visible_seed_order()
+        for i, sid in enumerate(seeds_shown):
+            x = 10 + (i % SEED_COLS) * 42
+            y = 138 + (i // SEED_COLS) * 17
             count = run.seeds.get(sid, 0)
             gfx.draw_sprite(surf, sid, x, y, 1)
             gfx.draw_text(surf, "x%d" % count, x + 14, y + 4, TEXT if count else DIM)
+            if self.seed_pages > 1:
+                self.seed_left.enabled = self.seed_page > 0
+                self.seed_right.enabled = self.seed_page < self.seed_pages - 1
+                self.seed_left.draw(surf, self.mouse)
+                self.seed_right.draw(surf, self.mouse)
+                gfx.draw_text(surf, "%d/%d" % (self.seed_page + 1, self.seed_pages), 252, 169, DIM)
         self.go_btn.draw(surf, self.mouse)
 
         for i, b in enumerate(self.buy_buttons):
@@ -118,4 +163,4 @@ class PacksScene(Scene):
                 for sid, w in pack["pool"].items():
                     lines.append(("%s %d%%" % (data.PLANTS[sid]["name"], round(100 * w / total)),
                                   data.RARITY_COLORS[data.PLANTS[sid]["rarity"]]))
-                gfx.tooltip(surf, lines, (self.mouse[0] + 60, self.mouse[1] - 40), 96)
+                gfx.tooltip(surf, lines, self.mouse, 96)

@@ -3,6 +3,7 @@ window and reused if you ever change the graphics layer."""
 
 from __future__ import annotations
 
+import math
 import random
 
 try:
@@ -207,7 +208,8 @@ class Run:
         rnd = self.round if rnd is None else rnd
         return ((rnd + QUOTA_EVERY - 1) // QUOTA_EVERY) * QUOTA_EVERY
 
-    def twist_id(self, rnd):
+    def twist_id(self, rnd=None):
+        rnd = self.round if rnd is None else rnd
         if self.is_boss_round(rnd):
             return data.BOSS_TWISTS[((rnd // BOSS_EVERY) - 1) % len(data.BOSS_TWISTS)]
         if self.is_quota_round(rnd):
@@ -223,6 +225,17 @@ class Run:
 
     def twist(self, rnd=None):
         return data.TWISTS[self.twist_id(self.round if rnd is None else rnd)]
+
+    # ------------------------------------------------------------ seasons
+    def season(self, rnd=None):
+        """The season dict for a round (defaults to the current round)."""
+        return data.season(self.round if rnd is None else rnd)
+
+    def season_number(self, rnd=None):
+        return data.season_number(self.round if rnd is None else rnd)
+
+    def season_name(self, rnd=None):
+        return self.season(rnd)["name"]
 
     # ------------------------------------------------------------ numbers
     def growth_speed(self):
@@ -288,6 +301,9 @@ class Run:
                 mult *= 1.0 + e["distinct_bonus"] * distinct
             if e.get("mono_mult") and distinct == 1 and len(planted) >= 2:
                 mult *= e["mono_mult"]
+            if sp.get("mutant"):
+                # Mutagen and friends: mutants pay a little better than they used to
+                mult *= 1.0 + self._sum("mutant_bonus")
         mult *= 1.0 + 0.10 * self.perk("yield")
         mult *= self.twist()["yield"]
         if "cursed" not in tags:
@@ -299,7 +315,7 @@ class Run:
 
     def harvest_value(self, i, cellar=False):
         chips, mult = self.harvest_breakdown(i, cellar)
-        return max(1, int(round(chips * min(mult, 1e250))))
+        return max(1, int(math.floor(chips * min(mult, 1e250) + 0.5)))
 
     # ------------------------------------------------------------- packs
     def free_pack_count(self):
@@ -378,8 +394,19 @@ class Run:
         if self.seeds.get(species, 0) <= 0 or not self.can_plant(species, cellar):
             return False
         self.seeds[species] -= 1
-        plot_list[i] = Plot(species)
+        planted = self._starting_mutation(species)
+        plot_list[i] = Plot(planted)
+        if planted != species and len(self.events) < 300:
+            self.events.append({"kind": "mutate", "plot": i, "cellar": cellar,
+                                "name": data.PLANTS[planted]["name"]})
         return True
+    def _starting_mutation(self, species):
+        """Mutagen: a seed can sprout already mutated instead of plain."""
+        chance = self._sum("mutate_on_plant")
+        if chance <= 0 or self.rng.random() >= chance:
+            return species
+        options = data.mutants_for(species)
+        return self.rng.choice(options) if options else species
 
     def can_water(self, i, cellar=False):
         if cellar:
@@ -477,19 +504,24 @@ class Run:
             alive = [i for i, p in enumerate(self.plots) if p.species]
             if alive:
                 victim = self.rng.choice(alive)
-                self.events.append({"kind": "wither", "plot": victim})
+                self.events.append({"kind": "wither", "plot": victim, "cellar": False})
                 self.plots[victim].clear()
         crow = tw.get("crow")
         if crow:
             self.crow_timer += dt
             while self.crow_timer >= crow:
                 self.crow_timer -= crow
-                alive = [i for i, p in enumerate(self.plots) if p.species]
-                if not alive:
-                    break
-                victim = self.rng.choice(alive)
-                self.plots[victim].clear()
-                self.events.append({"kind": "eaten", "plot": victim})
+                mouths = tw.get("crow_count", 1)
+                if tw.get("crow_ramp") and self.time_left <= self.time_total / 2.0:
+                    mouths += 1
+                for _ in range(mouths):
+                    alive = [i for i, p in enumerate(self.plots) if p.species]
+                    if not alive:
+                        break
+                    victim = self.rng.choice(alive)
+                    eaten = data.PLANTS[self.plots[victim].species]["name"]
+                    self.plots[victim].clear()
+                    self.events.append({"kind": "eaten", "plot": victim, "cellar": False, "name": eaten})
         if self.time_left <= 1e-9:
             self.time_left = 0.0
             self.finished = True
@@ -504,7 +536,7 @@ class Run:
         self.mastery[species] = self.mastery.get(species, 0) + 1
         plot_list[i].harvests += 1
         if len(self.events) < 300:
-            self.events.append({"kind": "harvest", "plot": i, "amount": value})
+            self.events.append({"kind": "harvest", "plot": i, "amount": value, "cellar": cellar})
         self._maybe_mutate(i, cellar)
 
     def _maybe_mutate(self, i, cellar=False):
@@ -521,7 +553,8 @@ class Run:
         plot.species = mid
         plot.harvests = 0
         if len(self.events) < 300:
-            self.events.append({"kind": "mutate", "plot": i, "name": data.PLANTS[mid]["name"]})
+            self.events.append({"kind": "mutate", "plot": i, "cellar": cellar,
+                                "name": data.PLANTS[mid]["name"]})
             
     def end_round(self):
         """Sells ripe plants, collects cursed upkeep, pays interest, and

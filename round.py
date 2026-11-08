@@ -9,6 +9,7 @@ from .settings import (ACCENT, BAD, DIM, CELLAR_PRICE, GOOD, PANEL_DARK, SOIL, S
 CELL_W, CELL_H, GAP = 56, 34, 4
 GRID_X, GRID_Y = 4, 36
 TRAY_Y = 148
+TRAY_SLOTS = 6
 
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": DIM}
 
@@ -29,38 +30,75 @@ class RoundScene(Scene):
         self.t = 0.0
         self.ended = False
         self.view = "surface"
+        self.tray_scroll = 0
         self.pick_default()
         self.cellar_btn = Button(244, 148, 72, 13, "", self.cellar_click)
         self.cellar_btn.label = "CELLAR (TAB)" if self.run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
         self.start_btn = Button(244, 163, 72, 14, "START (SPACE)", self.toggle_clock, color=(70, 130, 70))
-        self.buttons = [self.cellar_btn, self.start_btn]
+        self.tray_left = Button(6, TRAY_Y + 3, 8, 22, "<", self.scroll_tray_left)
+        self.tray_right = Button(228, TRAY_Y + 3, 8, 22, ">", self.scroll_tray_right)
+        self.buttons = [self.cellar_btn, self.start_btn, self.tray_left, self.tray_right]
 
     def plant_list(self):
         return self.run.cellar_plots if self.view == "cellar" else self.run.plots
 
     def view_seeds(self):
+        """Every seed plantable in the current view, in a fixed order so the
+        tray can page through it. An eclipse unlocks nocturnal seeds up top,
+        which is a screenful more than fits."""
         if self.in_cellar():
-            return data.NOCTURNAL_PLANTS
+            return list(data.NOCTURNAL_PLANTS)
         seeds = list(data.SURFACE_PLANTS)
         if self.run.twist().get("eclipse"):
-            # an eclipse lets nocturnal seeds grow up top: swap them into
-            # the tray, replacing surface plants you have no seeds of
-            for sid in data.NOCTURNAL_PLANTS:
-                if self.run.seeds.get(sid, 0) > 0 and sid not in seeds:
-                    for j, s in enumerate(seeds):
-                        if self.run.seeds.get(s, 0) == 0:
-                            seeds[j] = sid
-                            break
+            seeds += [sid for sid in data.NOCTURNAL_PLANTS if sid not in seeds]
         return seeds
 
     def in_cellar(self):
         return self.view == "cellar"
+
+     # -------------------------------------------------------- tray paging
+    def max_scroll(self):
+        return max(0, len(self.view_seeds()) - TRAY_SLOTS)
+
+    def clamp_scroll(self):
+        self.tray_scroll = max(0, min(self.tray_scroll, self.max_scroll()))
+
+    def scroll_tray(self, delta):
+        self.tray_scroll += delta
+        self.clamp_scroll()
+
+    def scroll_tray_left(self):
+        self.scroll_tray(-1)
+
+    def scroll_tray_right(self):
+        self.scroll_tray(1)
+
+    def on_wheel(self, dy):
+        self.scroll_tray(-1 if dy > 0 else 1)
+
+    def ensure_visible(self, sid):
+        """Bring a seed into view (used when the game picks one for you)."""
+        seeds = self.view_seeds()
+        if sid not in seeds:
+            return
+        i = seeds.index(sid)
+        if i < self.tray_scroll:
+            self.tray_scroll = i
+        elif i >= self.tray_scroll + TRAY_SLOTS:
+            self.tray_scroll = i - TRAY_SLOTS + 1
+        self.clamp_scroll()
+
+    def visible_seeds(self):
+        seeds = self.view_seeds()
+        start = min(self.tray_scroll, max(0, len(seeds) - TRAY_SLOTS))
+        return seeds[start:start + TRAY_SLOTS]
 
     def pick_default(self):
         run = self.run
         for sid in reversed(self.view_seeds()):
             if run.seeds.get(sid, 0) > 0 and run.can_plant(sid, self.in_cellar()):
                 self.selected = sid
+                self.ensure_visible(sid)
                 return
         self.selected = None
 
@@ -76,6 +114,7 @@ class RoundScene(Scene):
             self.cellar_btn.label = "CELLAR (TAB)" if run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
             return
         self.view = "cellar" if self.view == "surface" else "surface"
+        self.tray_scroll = 0
         self.pick_default()
 
     def toggle_clock(self):
@@ -88,7 +127,7 @@ class RoundScene(Scene):
             run.finish_early()
 
     def tray_rect(self, i):
-        return (8 + i * 38, TRAY_Y + 3, 36, 22)
+        return (16 + i * 35, TRAY_Y + 3, 35, 22)
 
     def on_click(self, pos):
         if super().on_click(pos):
@@ -145,9 +184,11 @@ class RoundScene(Scene):
             self.cellar_click()
         elif key == pygame.K_ESCAPE:
             self.app.goto("title")
+        elif key in (pygame.K_LEFT, pygame.K_RIGHT):
+            self.scroll_tray(-1 if key == pygame.K_LEFT else 1)
         elif pygame.K_1 <= key <= pygame.K_6:
             seeds = self.view_seeds()
-            idx = key - pygame.K_1
+            idx = self.tray_scroll + (key - pygame.K_1)
             if idx < len(seeds):
                 sid = seeds[idx]
                 if self.run.seeds.get(sid, 0) > 0 and self.run.can_plant(sid, self.in_cellar()):
@@ -155,6 +196,8 @@ class RoundScene(Scene):
 
     def update(self, dt):
         self.t += dt
+        self.tray_left.enabled = self.tray_scroll > 0
+        self.tray_right.enabled = self.tray_scroll < self.max_scroll()
         run = self.run
         run.update(dt * self.fast)
         for ev in run.events:
@@ -171,6 +214,9 @@ class RoundScene(Scene):
                 self.app.toast("%s MUTATED!" % ev["name"].upper(), 2.5)
             elif ev["kind"] == "wither":
                 self.floaters.append([x + w // 2, y + 8, "WITHERED!", BAD, 0.0])
+            elif ev["kind"] == "eaten":
+                self.floaters.append([x + w // 2, y + 8, "EATEN!", BAD, 0.0])
+                self.app.toast("A CROW ATE YOUR %s!" % ev["name"].upper(), 2.0)
         run.events.clear()
         for f in self.floaters:
             f[4] += dt
@@ -237,7 +283,9 @@ class RoundScene(Scene):
         gfx.draw_text(surf, "SEEDS: %d" % sum(run.seeds.values()), 248, 130, TEXT)
 
         gfx.panel(surf, 4, TRAY_Y, 236, 28)
-        for i, sid in enumerate(self.view_seeds()):
+        seeds = self.view_seeds()
+        visible = self.visible_seeds()
+        for i, sid in enumerate(visible):
             r = self.tray_rect(i)
             count = run.seeds.get(sid, 0)
             usable = count > 0 and run.can_plant(sid, self.in_cellar())
@@ -247,7 +295,12 @@ class RoundScene(Scene):
             gfx.draw_sprite(surf, sid, r[0] + 2, r[1] + 5, 1)
             gfx.draw_text(surf, "x%d" % count, r[0] + 16, r[1] + 3, TEXT if usable else DIM)
             gfx.draw_text(surf, str(i + 1), r[0] + 16, r[1] + 13, DIM)
-            self.cellar_btn.label = "CELLAR (TAB)" if run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
+        if len(seeds) > TRAY_SLOTS:
+            self.tray_left.enabled = self.tray_scroll > 0
+            self.tray_right.enabled = self.tray_scroll < self.max_scroll()
+            self.tray_left.draw(surf, mouse)
+            self.tray_right.draw(surf, mouse)
+        self.cellar_btn.label = "CELLAR (TAB)" if run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
         self.cellar_btn.color = (96, 70, 140) if run.cellar_unlocked else (70, 130, 70)
         self.cellar_btn.draw(surf, mouse)
         self.start_btn.draw(surf, mouse)
@@ -262,7 +315,7 @@ class RoundScene(Scene):
                 lines.append((step["desc"], GOOD))
             for step in rel.get("levels", [])[lv:]:
                 lines.append(("%s AT %d %s" % ("EVOLVES", step["goal"], step["stat"].upper() + "S"), DIM))
-            gfx.tooltip(surf, lines, (mouse[0] - 100, mouse[1]), 96)
+            gfx.tooltip(surf, lines, mouse, 96)
         elif hover is not None and plots[hover].species:
             self.plot_tooltip(surf, hover)
 

@@ -4,6 +4,8 @@ You have eight bills to pay and a garden to pay them with.
 
 Rounds are 45 seconds long. When the clock hits zero everything in the ground is sold off and the garden is emptied, so each round is planted from scratch with whatever seeds you still have. Every third round the bill collector turns up. The bills go 300, 1,500, 7,500, 37,500 ... and the eighth one is **$23,437,500**. Pay all eight and the farm is yours. Miss one and the run is over, though you keep whatever heirlooms you earned, which make the next run start a little less hopeless.
 
+Every ninth round a new **season** starts - Spring, Summer, Autumn, Winter, then round again. A season is a name and a colour on the topbar, nothing more; the weather table is still the only thing that moves your numbers.
+
 It runs in a 320x180 window that scales up cleanly, and it's about three thousand lines of Python with one dependency.
 
 ## A round, start to finish
@@ -23,20 +25,26 @@ Every third round, the collector arrives. The bill is five times the last one. Y
 Besides the bill, the things that make rounds go sideways:
 
 - **Weather twists.** Drought slows everything 35%. Locusts cut harvest value 40%. Frost bans desert plants. Rain waters the whole farm for free. Eclipse lets nocturnal plants grow on the surface and makes sun-lovers sulk. Rounds between bills are mostly fair weather, with the odd lucky breeze.
-- **Boss rounds**, every ninth. Crow Swarm: a crow eats a random plant every ten seconds, and it does not care which one you were saving.
+-  **Boss rounds**, every ninth. Crazy Crows: every six seconds the flock eats a random plant, and once the round is half over they take two at a time. They do not care which one you were saving.
 - **Mutations.** A plant that keeps surviving harvests starts rolling for a mutation. Ten percent chance, and what comes out is worth two to three times the original. A Golden Sunflower sells for 3x and grows half as fast.
 - **Cursed plants.** Devil's Ivy pays well and charges $60 upkeep a round. Widow's Bloom is jealous of its neighbours.
 - **The cellar.** $250 to dig out. Four plots, nocturnal plants only, grows without any watering at all, but at three quarters speed. It's the one part of the farm that doesn't need you.
 
 ## Relics
 
-Sixteen relics, five slots. Relics are what turn a decent round into a silly one: Monoculture pays 2.5x if every plant is the same species, Biodiversity pays for the opposite, a Beehive turns a wall of flowers into a money printer, Scarecrow multiplies every harvest by 1.5, and the Greenhouse doubles all of it.
+Seventeen relics, five slots. Relics are what turn a decent round into a silly one: Monoculture pays 2.5x if every plant is the same species, Biodiversity pays for the opposite, a Beehive turns a wall of flowers into a money printer, Scarecrow multiplies every harvest by 1.5, and the Greenhouse doubles all of it.
 
-They get dearer every round, fast, so the interesting question is whether to buy a cheap relic now or save for a scary one later. Some of them also level up mid-run if you hit their counter, which is worth playing around.
+They get dearer every round - 1.65x, which is deliberately under the 1.71x a round the bills climb, so the shop never prices itself out of the game - and seed packs climb 1.6x alongside them. The interesting question is whether to buy a cheap relic now or save for a scary one later. Some of them also level up mid-run if you hit their counter, which is worth playing around.
 
 ## Heirlooms
 
 The permanent stuff, so a failed run still means something. You earn one heirloom per round survived, three per bill paid, and ten for winning. Spend them at the Heirloom Shelf on four things: starting cash, an extra starting plot, a free pack every round, and ten percent to every harvest. Prices climb with each level, so the shelf is where a pile of mediocre runs eventually turns into a good one.
+
+## Seeds
+
+Eighteen plants across eight packs. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron. They are all fully playable - Cranberries and Saffron just borrow the placeholder sprite until their art gets drawn.
+
+The seed tray holds six at a time. Page through it with the arrows on either side, the left/right arrow keys or the mouse wheel - an Eclipse puts the whole nocturnal shelf in the tray alongside everything else, which is more than one screenful. The seed shelf on the pack screen pages the same way.
 
 ## Controls
 
@@ -45,8 +53,11 @@ The permanent stuff, so a failed run still means something. You earn one heirloo
 | Left click | everything. Seed, plot, water, buttons |
 | Space | start the round clock |
 | Tab | switch between the garden and the cellar |
-| 1 - 6 | pick a seed |
+| 1 - 6 | pick a seed (from the visible tray page) |
+| Left / right | page the seed tray / seed shelf |
+| Mouse wheel | same thing |
 | F11 | fullscreen |
+| F12 | borderless window on/off (borderless by default) |
 | Esc | back to the title |
 
 ## Running it
@@ -67,9 +78,9 @@ Small enough to read in an evening:
 - `settings.py` the knobs worth turning: round length, prices, growth rates.
 - `round.py` the growing screen, and the only file with a game loop in it.
 - `shop.py`, `packs.py`, `summary.py`, `gameover.py`, `title.py` the other screens.
-- `gfx.py` text, panels, buttons drawn from a pixel font, no image files anywhere.
+- `gfx.py` text, panels, buttons, tooltips and the mouse pointer drawn from a pixel font, no image files anywhere.
 
-All the art is generated at runtime from character grids in `sprites_data.py`, which is why the repo is text.
+All the art is generated at runtime from character grids in `sprites_data.py`, which is why the repo is text. That includes the cursor: a 7x10 pixel arrow drawn on the canvas in the same 1px chunks as the font, with the system pointer hidden. Tooltips open with their top-left corner on the cursor tip, so the pointer always marks the box it opened.
 
 ## Tests
 
@@ -77,7 +88,7 @@ All the art is generated at runtime from character grids in `sprites_data.py`, w
 python3 -m unittest Plant_Game.test_balance
 ```
 
-Twenty-nine tests on the economy: relic prices climbing, plot prices tripling, heirloom costs and payouts, the bill ladder, and the win condition.
+Fifty-five tests on the economy and the mechanics: relic and pack prices climbing (and staying buyable), plot prices tripling, heirloom costs and payouts, the bill ladder, the win condition, seasons, the Farmer Pack, the Mutagen relic, and one test per weather twist proving it actually moves a number.
 
 ## Where it's at
 
