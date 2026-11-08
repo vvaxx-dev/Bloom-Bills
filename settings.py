@@ -34,7 +34,7 @@ PRICE_GROWTH = 1.6
 PLOT_BASE_PRICE = 200
 PLOT_PRICE_GROWTH = 3.0
 REROLL_BASE_PRICE = 50
-RELIC_PRICE_GROWTH = 1.65
+RELIC_PRICE_GROWTH = 1.4
 
 # --- mutations ---------------------------------------------------------
 MUTATION_CHANCE = 0.1

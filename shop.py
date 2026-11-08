@@ -153,7 +153,7 @@ class ShopScene(Scene):
 
         # hover: show a quota twist description
         if 208 <= self.mouse[0] < 316 and 150 <= self.mouse[1] < 176 and run.is_quota_round(nxt):
-            gfx.tooltip(surf, [(twist["name"], ACCENT), (twist["desc"], TEXT)], (self.mouse[0] - 60, self.mouse[1] - 36), 100)
+            gfx.tooltip(surf, [(twist["name"], ACCENT), (twist["desc"], TEXT)], self.mouse, 100)
         if owned_hover is not None:
             rel = data.RELICS[run.relics[owned_hover]]
             col = data.RARITY_COLORS[rel["rarity"]]

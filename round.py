@@ -133,13 +133,15 @@ class RoundScene(Scene):
         if super().on_click(pos):
             return True
         run = self.run
-        for i, sid in enumerate(self.view_seeds()):
+        for i, sid in enumerate(self.visible_seeds()):
             if inside(pos, self.tray_rect(i)):
                 if run.seeds.get(sid, 0) > 0:
                     if run.can_plant(sid, self.in_cellar()):
                         self.selected = sid
                     else:
-                        self.app.toast("%s: CAN'T PLANT THAT" % run.twist()["name"].upper())
+                        self.app.toast(self.plant_block_reason(sid))
+                else:
+                    self.app.toast("NO %s SEEDS - OPEN A PACK" % data.PLANTS[sid]["name"].upper())
                 return True
         plots = self.plant_list()
         for i in range(len(plots)):
@@ -214,6 +216,11 @@ class RoundScene(Scene):
                 self.app.toast("%s MUTATED!" % ev["name"].upper(), 2.5)
             elif ev["kind"] == "wither":
                 self.floaters.append([x + w // 2, y + 8, "WITHERED!", BAD, 0.0])
+            elif ev["kind"] == "hail":
+                self.floaters.append([x + w // 2, y + 8, "HAIL!", WATER, 0.0])
+            elif ev["kind"] == "rot":
+                self.floaters.append([x + w // 2, y + 8, "ROT!", BAD, 0.0])
+                self.app.toast("%s ROTTED!" % ev.get("name", "A PLANT").upper(), 2.0)
             elif ev["kind"] == "eaten":
                 self.floaters.append([x + w // 2, y + 8, "EATEN!", BAD, 0.0])
                 self.app.toast("A CROW ATE YOUR %s!" % ev["name"].upper(), 2.0)
@@ -228,11 +235,12 @@ class RoundScene(Scene):
     def draw(self, surf):
         run = self.run
         gfx.rect(surf, (30, 26, 46), 0, 0, 320, 180)
-        draw_topbar(surf, run)
+        draw_topbar(surf, run, timer=clock(run.time_left))
 
         twist = run.twist()
         if twist.get("boss"):
-            msg, col = "BOSS: %s! %s" % (twist["name"].upper(), twist["desc"].upper()), BAD
+            msg, col = "BOSS: %s! %s" % (twist["name"].upper(),
+                                          twist.get("short", twist["desc"]).upper()), BAD
         elif run.twist_id(run.round) != "none":
             msg, col = "%s: %s" % (twist["name"].upper(), twist["desc"].upper()), TONE_COLORS[twist.get("tone", "neutral")]
         elif self.in_cellar():
@@ -243,7 +251,6 @@ class RoundScene(Scene):
         else:
             msg, col = "CLICK PLANTS TO WATER THEM.", DIM
         gfx.draw_text(surf, msg, 5, 18, col)
-        gfx.draw_text(surf, clock(run.time_left), 315, 18, TEXT, align="right")
         frac = run.time_left / run.time_total if run.time_total else 0
         gfx.bar(surf, 4, 27, 312, 5, frac, GOOD if frac > 0.25 else BAD)
 

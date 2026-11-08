@@ -67,6 +67,97 @@ MUTANTS = {
                        "desc": "x2 value, grows 10% faster.",
                        "grow_mult": 0.9, "yield_mult": 2.0, "sell_mult": 2.0,
                        "color": (190, 170, 255), "subs": {"y": (190, 170, 255), "Y": (120, 95, 210), "m": (240, 240, 255)}},
+    # --- a second roll for the garden flowers --------------------------
+    "daisy_frost":    {"base": "daisy",     "name": "Frost Daisy",
+                       "desc": "x1.8 value, grows 30% faster.",
+                       "grow_mult": 0.7, "yield_mult": 1.8, "sell_mult": 1.8,
+                       "color": (200, 235, 255), "subs": {"w": (215, 245, 255), "y": (140, 205, 250)}},
+    "tomato_heirloom": {"base": "tomato",   "name": "Heirloom Tomato",
+                        "desc": "x2.4 value, +$2 a harvest, grows 15% slower.",
+                        "grow_mult": 1.15, "yield_mult": 2.4, "sell_mult": 2.4, "yield_add": 2,
+                        "color": (250, 130, 70), "subs": {"g": (70, 155, 60), "r": (250, 130, 70), "R": (175, 60, 40)}},
+    "sunflower_twin": {"base": "sunflower", "name": "Twin Sunflower",
+                       "desc": "x2.2 value, +$3 a harvest, grows 25% faster.",
+                       "grow_mult": 0.75, "yield_mult": 2.2, "sell_mult": 2.2, "yield_add": 3,
+                       "color": (255, 235, 140), "subs": {"y": (255, 235, 140), "Y": (255, 190, 50), "b": (150, 110, 50)}},
+    "cactus_crown":   {"base": "cactus",    "name": "Crowned Cactus",
+                       "desc": "x2.6 value, grows 20% slower, counts as desert.",
+                       "grow_mult": 1.2, "yield_mult": 2.6, "sell_mult": 2.6,
+                       "tags_add": ["desert"],
+                       "color": (160, 225, 120), "subs": {"g": (160, 225, 120), "G": (85, 165, 80), "m": (255, 180, 90)}},
+    "pumpkin_ghost":  {"base": "pumpkin",   "name": "Ghost Pumpkin",
+                       "desc": "x2.2 value, grows 30% faster.",
+                       "grow_mult": 0.7, "yield_mult": 2.2, "sell_mult": 2.2,
+                       "color": (200, 220, 245), "subs": {"o": (200, 220, 245), "Y": (140, 170, 215), "g": (150, 190, 220), "G": (110, 150, 180)}},
+    "orchid_royal":   {"base": "orchid",    "name": "Royal Orchid",
+                       "desc": "x4 value, grows 70% slower.",
+                       "grow_mult": 1.7, "yield_mult": 4.0, "sell_mult": 4.0,
+                       "color": (255, 235, 140), "subs": {"y": (255, 245, 180), "Y": (235, 190, 70), "m": (255, 225, 130)}},
+
+    # --- the farmer crops ---------------------------------------------
+    "potato_gold":    {"base": "potato",    "name": "Golden Potato",
+                       "desc": "x2.2 value, +$2 a harvest, grows 35% slower.",
+                       "grow_mult": 1.35, "yield_mult": 2.2, "sell_mult": 2.2, "yield_add": 2,
+                       "color": (250, 210, 90), "subs": {"l": (255, 235, 140), "g": (245, 205, 95), "G": (200, 155, 55),
+                                                          "s": (250, 220, 140), "b": (205, 165, 85)}},
+    "wheat_ancient":  {"base": "wheat",     "name": "Ancient Wheat",
+                       "desc": "x2.4 value, +$3 a harvest, grows 15% faster.",
+                       "grow_mult": 0.85, "yield_mult": 2.4, "sell_mult": 2.4, "yield_add": 3,
+                       "color": (255, 235, 155), "subs": {"y": (255, 235, 155), "Y": (225, 175, 60), "g": (115, 195, 90)}},
+    "corn_caramel":   {"base": "corn",      "name": "Caramel Corn",
+                       "desc": "x2.5 value, +$4 a harvest, grows 25% slower.",
+                       "grow_mult": 1.25, "yield_mult": 2.5, "sell_mult": 2.5, "yield_add": 4,
+                       "color": (250, 190, 110), "subs": {"y": (250, 190, 110), "Y": (190, 110, 50), "g": (150, 185, 80)}},
+    "carrot_giant":   {"base": "carrot",    "name": "Giant Carrot",
+                       "desc": "x2.6 value, +$4 a harvest, grows 40% slower.",
+                       "grow_mult": 1.4, "yield_mult": 2.6, "sell_mult": 2.6, "yield_add": 4,
+                       "color": (255, 150, 60), "subs": {"o": (255, 150, 60), "Y": (215, 95, 25), "g": (120, 200, 90)}},
+    "cranberries_frost": {"base": "cranberries", "name": "Frost Cranberries",
+                          "desc": "x3 value, +$5 a harvest, grows 20% slower.",
+                          "grow_mult": 1.2, "yield_mult": 3.0, "sell_mult": 3.0, "yield_add": 5,
+                          "color": (250, 145, 170), "subs": {"w": (240, 150, 175), "l": (195, 75, 105), "g": (155, 50, 80),
+                                                             "G": (100, 30, 55), "b": (195, 75, 105)}},
+    "saffron_sunset": {"base": "saffron",   "name": "Sunset Saffron",
+                       "desc": "x3 value, +$6 a harvest, grows 30% slower.",
+                       "grow_mult": 1.3, "yield_mult": 3.0, "sell_mult": 3.0, "yield_add": 6,
+                       "color": (255, 200, 110), "subs": {"w": (255, 210, 125), "l": (255, 225, 155), "g": (240, 170, 70),
+                                                          "G": (190, 120, 45), "b": (240, 170, 70)}},
+
+    # --- the nocturnal shelf ------------------------------------------
+    "brown_mushroom_glow": {"base": "brown_mushroom", "name": "Glowing Mushroom",
+                            "desc": "x2 value, +$2 a harvest, grows 30% faster.",
+                            "grow_mult": 0.7, "yield_mult": 2.0, "sell_mult": 2.0, "yield_add": 2,
+                            "color": (150, 240, 185), "subs": {"b": (145, 235, 185), "s": (215, 255, 235)}},
+    "red_mushroom_spotted": {"base": "red_mushroom", "name": "Spotted Mushroom",
+                             "desc": "x2.6 value, +$3 a harvest, grows 10% slower.",
+                             "grow_mult": 1.1, "yield_mult": 2.6, "sell_mult": 2.6, "yield_add": 3,
+                             "color": (255, 135, 70), "subs": {"r": (255, 135, 70), "w": (255, 245, 205)}},
+    "moonflower_blood": {"base": "moonflower", "name": "Blood Moonflower",
+                         "desc": "x2.8 value, +$4 a harvest, grows 20% slower.",
+                         "grow_mult": 1.2, "yield_mult": 2.8, "sell_mult": 2.8, "yield_add": 4,
+                         "color": (245, 125, 155), "subs": {"c": (245, 125, 155), "w": (255, 220, 230), "p": (190, 60, 100)}},
+    "queen_night_twilight": {"base": "queen_night", "name": "Twilight Queen",
+                             "desc": "x3 value, +$5 a harvest, grows 15% slower.",
+                             "grow_mult": 1.15, "yield_mult": 3.0, "sell_mult": 3.0, "yield_add": 5,
+                             "color": (155, 150, 255), "subs": {"p": (155, 150, 255), "P": (95, 85, 200), "w": (235, 240, 255)}},
+
+    # --- cursed pack specials: they pay a fortune, then send the bill ---
+    "devil_ivy_crown": {"base": "devil_ivy", "name": "Devil's Crown",
+                        "desc": "x2.5 value, grows 10% faster, upkeep doubles.",
+                        "grow_mult": 0.9, "yield_mult": 2.5, "sell_mult": 2.5, "upkeep_mult": 2.0,
+                        "color": (245, 80, 80), "subs": {"g": (245, 80, 80), "G": (165, 30, 45), "p": (255, 200, 60)}},
+    "devil_ivy_gilded": {"base": "devil_ivy", "name": "Gilded Ivy",
+                         "desc": "x3.2 value, grows 30% slower, upkeep x1.5.",
+                         "grow_mult": 1.3, "yield_mult": 3.2, "sell_mult": 3.2, "upkeep_mult": 1.5,
+                         "color": (255, 215, 90), "subs": {"g": (250, 210, 90), "G": (190, 140, 50), "p": (255, 255, 220)}},
+    "widow_bloom_black": {"base": "widow_bloom", "name": "Black Widow",
+                          "desc": "x3 value, grows 20% faster, still jealous of its neighbours.",
+                          "grow_mult": 0.8, "yield_mult": 3.0, "sell_mult": 3.0,
+                          "color": (80, 80, 110), "subs": {"r": (80, 80, 110), "R": (40, 40, 60), "g": (95, 95, 125), "G": (65, 65, 90)}},
+    "widow_bloom_wail": {"base": "widow_bloom", "name": "Wailing Widow",
+                         "desc": "x4 value, grows 40% slower, costs $40 upkeep.",
+                         "grow_mult": 1.4, "yield_mult": 4.0, "sell_mult": 4.0, "upkeep_add": 40,
+                         "color": (240, 95, 130), "subs": {"r": (240, 95, 130), "R": (145, 30, 65)}},
 }
 
 def mutants_for(species):
@@ -80,6 +171,7 @@ def mutation_threshold(species):
 
 for _mid, mutant in MUTANTS.items():
     _base = PLANTS[mutant["base"]]
+    _upkeep = int(round(_base.get("upkeep", 0) * mutant.get("upkeep_mult", 1.0))) + mutant.get("upkeep_add", 0)
     PLANTS[_mid] = {
         "name": mutant["name"],
         "tags": list(_base["tags"]) + list(mutant.get("tags_add", [])),
@@ -89,10 +181,16 @@ for _mid, mutant in MUTANTS.items():
         "rarity": "mutant",
         "color": mutant["color"],
         "mutant": True,
+        "cursed_mutant": "cursed" in _base["tags"],
         "base": mutant["base"],
         "desc": mutant["desc"],
         "subs": mutant.get("subs"),
     }
+    if _upkeep:
+        # a cursed plant stays cursed when it mutates - it just bills harder
+        PLANTS[_mid]["upkeep"] = _upkeep
+    if _base.get("aura") or mutant.get("aura"):
+        PLANTS[_mid]["aura"] = mutant.get("aura", _base.get("aura"))
 
 MILESTONES = [10, 25, 50, 100, 150, 200, 300, 400, 500, 750, 1000]
 
@@ -167,10 +265,10 @@ RELICS = {
                     "effects": {"yield_mult": [("all", 1.5)]},
                     "levels": [{"stat": "harvest", "goal": 400, "effects": {"yield_mult": [("all", 0.5)]},
                                 "desc": "All harvests x2.25 total."}]},
-    "clover":      {"name": "Lucky Clover",   "rarity": "rare",     "cost": 2600,
+    "clover":      {"name": "Lucky Clover",   "rarity": "rare",     "cost": 1900,
                     "desc": "Rare seeds are twice as likely in packs.",
                     "effects": {"pack_luck": 2.0}},
-    "gardener":    {"name": "Hired Gardener", "rarity": "rare",     "cost": 3250,
+    "gardener":    {"name": "Hired Gardener", "rarity": "rare",     "cost": 2300,
                     "desc": "Plots water themselves, non-stop.",
                     "effects": {"auto_water": True}},
     "spore_lantern": {"name": "Spore Lantern", "rarity": "uncommon", "cost": 600,
@@ -182,13 +280,13 @@ RELICS = {
                           {"stat": "mushroom", "goal": 300, "effects": {"yield_mult": [("mushroom", 1.0)]},
                            "desc": "Mushroom harvests x4 total."},
                       ]},
-    "catalog":     {"name": "Seed Catalog",   "rarity": "rare",     "cost": 2750,
+    "catalog":     {"name": "Seed Catalog",   "rarity": "rare",     "cost": 2000,
                     "desc": "One extra free pack each round.",
                     "effects": {"free_packs": 1}},
-    "greenhouse":  {"name": "Greenhouse",     "rarity": "rare",     "cost": 3400,
+    "greenhouse":  {"name": "Greenhouse",     "rarity": "rare",     "cost": 2400,
                     "desc": "All harvests x2. Plants grow 10% faster.",
                     "effects": {"yield_mult": [("all", 2.0)], "growth": 0.1}},
-     "mutagen":     {"name": "Mutagen",        "rarity": "rare",     "cost": 2900,
+     "mutagen":     {"name": "Mutagen",        "rarity": "rare",     "cost": 2100,
                     "desc": "25% chance a seed sprouts already mutated. Mutants are 1.2x better.",
                     "effects": {"mutate_on_plant": 0.25, "mutant_bonus": 0.2},
                     "levels": [{"stat": "harvest", "goal": 200, "effects": {"mutate_on_plant": 0.15},
@@ -208,11 +306,22 @@ TWISTS = {
     "short":      {"name": "Short Days",   "desc": "The round is 20 seconds shorter.",      "growth": 1.0,  "yield": 1.0, "time": -20, "ban": None,     "blight": False, "tone": "bad"},
     "frost":      {"name": "Frost",        "desc": "Desert plants cannot be planted.",      "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": "desert", "blight": False, "tone": "bad"},
     "blight":     {"name": "Blight",       "desc": "A random plant withers halfway.",       "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": None,     "blight": True,  "tone": "bad"},
-    "crow_swarm": {"name": "Crazy Crows!",  "desc": "Every 6s the flock eats a random plant - two at a time once the round is half over.", "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": None,     "blight": False, "boss": True, "crow": 6, "crow_count": 1, "crow_ramp": True, "tone": "bad"},
+    "crow_swarm": {"name": "Crazy Crows!",  "desc": "Every 6s the flock eats a random plant - one at a time, all round.", "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": None,     "blight": False, "boss": True, "crow": 6, "crow_count": 1, "tone": "bad",
+                   "short": "THE FLOCK EATS A PLANT EVERY 6S."},
+    "hailstorm":  {"name": "Hailstorm",     "desc": "Every 7s hail batters the farm, knocking half of every plant's growth off.", "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": None,     "blight": False, "boss": True, "hail": 7, "tone": "bad",
+                   "short": "HAIL EVERY 7S: EVERY PLANT LOSES HALF ITS GROWTH."},
+    "root_rot":   {"name": "Root Rot",      "desc": "Every 8s rot takes a random plant out of the ground.", "growth": 1.0,  "yield": 1.0, "time": 0,   "ban": None,     "blight": False, "boss": True, "rot": 8, "tone": "bad",
+                   "short": "ROT TAKES A PLANT EVERY 8S."},
+    "heatwave":   {"name": "Heatwave",      "desc": "Water evaporates twice as fast and plants grow 15% slower.", "growth": 0.85, "yield": 1.0, "time": 0,   "ban": None,     "blight": False, "boss": True, "dry": 2.0, "tone": "bad",
+                   "short": "GROWTH -15%, WATER DRIES 2X FASTER."},
+    "eternal_night": {"name": "Eternal Night", "desc": "The sun never comes up: nocturnal plants grow up top, sun-lovers sulk.", "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "eclipse": True, "tone": "bad",
+                      "short": "NOCTURNAL SEEDS UP TOP, SUN-LOVERS SULK."},
+    "gale":       {"name": "Gale",          "desc": "The wind strips 10s off the round and slows every plant 20%.", "growth": 0.8,  "yield": 1.0, "time": -10, "ban": None,     "blight": False, "boss": True, "tone": "bad",
+                   "short": "ROUND -10S, GROWTH -20%."},
 }
 RANDOM_TWISTS = ["drought", "locusts", "short", "frost", "blight", "sunny", "rain", "market", "eclipse"]
 MINOR_TWISTS = ["sunny", "rain", "market", "eclipse", "still"]     # rolled between quota rounds
-BOSS_TWISTS = ["crow_swarm"]  
+BOSS_TWISTS = ["crow_swarm", "hailstorm", "root_rot", "heatwave", "eternal_night", "gale"]
 
 SEASONS = [
     {"name": "Spring", "short": "SPR", "color": (130, 210, 120),

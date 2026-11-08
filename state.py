@@ -95,7 +95,9 @@ class Run:
         self.round_income = 0
         self.blight_done = False
         self.crow_timer = 0.0
-        self.events = []                # UI feed: harvest popups etc. (not saved)
+        self.hail_timer = 0.0
+        self.rot_timer = 0.0
+        self.events = []                
         self.last_summary = None
         self.pending_bill = 0
         self._relic_lvls = {} 
@@ -443,6 +445,8 @@ class Run:
         self.finished = False
         self.blight_done = False
         self.crow_timer = 0.0
+        self.hail_timer = 0.0
+        self.rot_timer = 0.0
         self.round_income = 0
         self.events = []
         for p in self.plots:
@@ -459,7 +463,9 @@ class Run:
 
     def _advance(self, plot_list, cellar, speed, auto, dt):
         """Grow every plot in one area and settle its harvests."""
-        eclipse = self.twist().get("eclipse")
+        tw = self.twist()
+        eclipse = tw.get("eclipse")
+        dry = tw.get("dry", 1.0)
         for i, p in enumerate(plot_list):
             if p.species is None:
                 continue
@@ -472,7 +478,7 @@ class Run:
                 plot_speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
             p.progress += plot_speed * (dt + (WATER_BOOST - 1.0) * boosted)
             if not cellar:
-                p.water_left = max(0.0, p.water_left - dt)
+                p.water_left = max(0.0, p.water_left - dt * dry)
                 p.water_cd = max(0.0, p.water_cd - dt)
             grow = data.PLANTS[p.species]["grow"]
             guard = 0
@@ -511,10 +517,7 @@ class Run:
             self.crow_timer += dt
             while self.crow_timer >= crow:
                 self.crow_timer -= crow
-                mouths = tw.get("crow_count", 1)
-                if tw.get("crow_ramp") and self.time_left <= self.time_total / 2.0:
-                    mouths += 1
-                for _ in range(mouths):
+                for _ in range(max(1, tw.get("crow_count", 1))):
                     alive = [i for i, p in enumerate(self.plots) if p.species]
                     if not alive:
                         break
@@ -522,6 +525,27 @@ class Run:
                     eaten = data.PLANTS[self.plots[victim].species]["name"]
                     self.plots[victim].clear()
                     self.events.append({"kind": "eaten", "plot": victim, "cellar": False, "name": eaten})
+        hail = tw.get("hail")
+        if hail:
+            self.hail_timer += dt
+            while self.hail_timer >= hail:
+                self.hail_timer -= hail
+                for i, p in enumerate(self.plots):
+                    if p.species and len(self.events) < 300:
+                        p.progress *= 0.5
+                        self.events.append({"kind": "hail", "plot": i, "cellar": False})
+        rot = tw.get("rot")
+        if rot:
+            self.rot_timer += dt
+            while self.rot_timer >= rot:
+                self.rot_timer -= rot
+                alive = [i for i, p in enumerate(self.plots) if p.species]
+                if alive:
+                    victim = self.rng.choice(alive)
+                    name = data.PLANTS[self.plots[victim].species]["name"]
+                    self.plots[victim].clear()
+                    if len(self.events) < 300:
+                        self.events.append({"kind": "rot", "plot": victim, "cellar": False, "name": name})
         if self.time_left <= 1e-9:
             self.time_left = 0.0
             self.finished = True
@@ -653,8 +677,11 @@ class Run:
         self.shop_offers = offers
 
     def relic_price(self, rid):
+        """Rare relics are the ones you want, so they used to be priced out of
+        reach; the rarity premium is gentler now and the per-round climb is
+        slower than the packs'."""
         rarity = data.RELICS[rid]["rarity"]
-        rarity_multiplier = {"common": 1.0, "uncommon": 1.3, "rare": 1.7, "legendary": 2.2}[rarity]
+        rarity_multiplier = {"common": 1.0, "uncommon": 1.2, "rare": 1.35, "legendary": 1.5}[rarity]
         return int(data.RELICS[rid]["cost"] * rarity_multiplier * RELIC_PRICE_GROWTH ** (self.round - 1))
 
     def reroll_price(self):

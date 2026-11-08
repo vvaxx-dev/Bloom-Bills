@@ -44,7 +44,7 @@ class Scene:
             b.draw(surf, self.mouse)
 
 
-def draw_topbar(surf, run, label=None):
+def draw_topbar(surf, run, label=None, timer=None):
     gfx.rect(surf, PANEL_DARK, 0, 0, 320, 14)
     gfx.rect(surf, PANEL, 0, 13, 320, 1)
     top = 2
@@ -53,7 +53,10 @@ def draw_topbar(surf, run, label=None):
     left_w = gfx.draw_text(surf, left, 5, top, TEXT)
     season = run.season()
     season_w = gfx.draw_text(surf, season["short"], 5 + left_w + 4, top, season["color"])
-    money_w = gfx.draw_text(surf, money, 315, top, ACCENT, align="right")
+    timer_w = gfx.text_width(timer) + 8 if timer is not None else 0
+    if timer is not None:
+        gfx.draw_text(surf, timer, 315, top, TEXT, align="right")
+    money_w = gfx.draw_text(surf, money, 315 - timer_w, top, ACCENT, align="right") + timer_w
 
     # next bill, in the middle - shorten it rather than letting a seven-figure
     # cash pile on the right run into it

@@ -7,20 +7,32 @@ from .settings import ACCENT, DIM, PANEL_DARK, TEXT
 SEEDS_PER_PAGE = 12         
 SEED_COLS = 6
 
+PACK_COLS, PACK_ROWS = 6, 2
+PACKS_PER_PAGE = PACK_COLS * PACK_ROWS
+
+
+def inside(pos, r):
+    return r[0] <= pos[0] < r[0] + r[2] and r[1] <= pos[1] < r[1] + r[3]
+
 class PacksScene(Scene):
     def on_enter(self):
         self.run.phase = "packs"
         self.reveal = None
         self.reveal_t = 0.0
         self.seed_page = 0
+        self.pack_page = 0
+        self.pack_rects = [] 
         self.open_btn = Button(10, 70, 88, 14, "OPEN PACK", self.open_pack, color=(70, 130, 70))
         self.go_btn = Button(276, 128, 40, 48, "START ROUND >", self.go, color=(70, 130, 70))
         self.seed_left = Button(250, 137, 6, 22, "<", self.page_left)
         self.seed_right = Button(258, 137, 6, 22, ">", self.page_right)
-        self.buttons = [self.open_btn, self.go_btn, self.seed_left, self.seed_right]
+        self.pack_up = Button(92, 26, 10, 10, "^", self.pack_page_up)
+        self.pack_down = Button(92, 42, 10, 10, "V", self.pack_page_down)
+        self.buttons = [self.open_btn, self.go_btn, self.seed_left, self.seed_right,
+                        self.pack_up, self.pack_down]
         self.buy_buttons = []
         for i, kind in enumerate(self.run.unlocked_packs()):
-            b = Button(4, 92 + i * 12, 100, 12, "", lambda k=kind: self.buy(k))
+            b = Button(6 + (i % 2) * 50, 92 + (i // 2) * 21, 48, 18, "", lambda k=kind: self.buy(k))
             b.kind = kind
             self.buy_buttons.append(b)
         self.buttons += self.buy_buttons
@@ -44,6 +56,40 @@ class PacksScene(Scene):
         else:
             self.page_right()
 
+            # ------------------------------------------------------- pack shelf
+    @property
+    def pack_pages(self):
+        return max(1, (len(self.run.packs) + PACKS_PER_PAGE - 1) // PACKS_PER_PAGE)
+
+    def pack_page_up(self):
+        self.pack_page = max(0, self.pack_page - 1)
+
+    def pack_page_down(self):
+        self.pack_page = min(self.pack_pages - 1, self.pack_page + 1)
+
+    def visible_packs(self):
+        """(kind, packed index) for the packs on the current page."""
+        self.pack_page = max(0, min(self.pack_page, self.pack_pages - 1))
+        start = self.pack_page * PACKS_PER_PAGE
+        return [(kind, start + i) for i, kind in enumerate(self.run.packs[start:start + PACKS_PER_PAGE])]
+
+    def pack_rect(self, i):
+        return (9 + (i % PACK_COLS) * 14, 28 + (i // PACK_COLS) * 14, 12, 12)
+
+    def pack_lines(self, kind, index=None):
+        """Tooltip body for a pack: name, odds, and whether it opens next."""
+        pack = data.PACKS[kind]
+        total = sum(pack["pool"].values())
+        lines = [(pack["name"].upper() + ":", DIM)]
+        if pack.get("luck"):
+            lines.append(("RARE SEEDS x%s LIKELIER" % fmt(pack["luck"]), ACCENT))
+        for sid, w in pack["pool"].items():
+            lines.append(("%s %d%%" % (data.PLANTS[sid]["name"], round(100 * w / total)),
+                          data.RARITY_COLORS[data.PLANTS[sid]["rarity"]]))
+        if index == 0:
+            lines.append(("NEXT TO OPEN", ACCENT))
+        return lines
+
     def visible_seed_order(self):
         start = self.seed_page * SEEDS_PER_PAGE
         return data.PLANT_ORDER[start:start + SEEDS_PER_PAGE]
@@ -59,6 +105,9 @@ class PacksScene(Scene):
 
     def refresh(self):
         run = self.run
+        self.visible_packs()  # clamp after opening the last pack on a page
+        self.pack_up.enabled = self.pack_page > 0
+        self.pack_down.enabled = self.pack_page < self.pack_pages - 1
         self.open_btn.enabled = bool(run.packs)
         for b in self.buy_buttons:
             price = run.pack_price(b.kind)
@@ -102,13 +151,23 @@ class PacksScene(Scene):
         draw_topbar(surf, run)
 
         gfx.panel(surf, 4, 18, 100, 70, "YOUR PACKS")
-        for i, kind in enumerate(run.packs[:12]):
-            x, y = 10 + (i % 6) * 15, 28 + (i // 6) * 15
-            gfx.draw_sprite(surf, "pack", x, y, 1, gfx.pack_subs(data.PACKS[kind]))
-        if len(run.packs) > 12:
-            gfx.draw_text(surf, "+%d MORE" % (len(run.packs) - 12), 98, 44, DIM, align="right")
+        self.pack_rects = []
+        for i, (kind, index) in enumerate(self.visible_packs()):
+            r = self.pack_rect(i)
+            gfx.draw_sprite(surf, "pack", r[0], r[1], 1, gfx.pack_subs(data.PACKS[kind]))
+            if inside(self.mouse, r):
+                gfx.rect(surf, ACCENT, r[0] - 1, r[1] - 1, r[2] + 2, 1)
+                gfx.rect(surf, ACCENT, r[0] - 1, r[1] + r[3], r[2] + 2, 1)
+            self.pack_rects.append((kind, index, r))
         n = len(run.packs)
-        gfx.draw_text(surf, "%d UNOPENED" % n, 10, 58, TEXT if n else DIM)
+        pages = self.pack_pages
+        gfx.draw_text(surf, "%d PACKS" % n, 10, 58, TEXT if n else DIM)
+        if pages > 1:
+            self.pack_up.enabled = self.pack_page > 0
+            self.pack_down.enabled = self.pack_page < pages - 1
+            self.pack_up.draw(surf, self.mouse)
+            self.pack_down.draw(surf, self.mouse)
+            gfx.draw_text(surf, "PG %d/%d" % (self.pack_page + 1, pages), 88, 58, DIM, align="right")
         self.open_btn.draw(surf, self.mouse)
 
         gfx.panel(surf, 4, 90, 100, 86)
@@ -153,14 +212,10 @@ class PacksScene(Scene):
                 gfx.draw_text(surf, "%d/%d" % (self.seed_page + 1, self.seed_pages), 252, 169, DIM)
         self.go_btn.draw(surf, self.mouse)
 
-        for i, b in enumerate(self.buy_buttons):
+        for kind, index, r in self.pack_rects:
+            if inside(self.mouse, r):
+                gfx.tooltip(surf, self.pack_lines(kind, index), self.mouse, 96)
+                return
+        for b in self.buy_buttons:
             if b.hover(self.mouse):
-                pack = data.PACKS[b.kind]
-                total = sum(pack["pool"].values())
-                lines = [(pack["name"].upper() + ":", DIM)]
-                if pack.get("luck"):
-                    lines.append(("RARE SEEDS x%s LIKELIER" % fmt(pack["luck"]), ACCENT))
-                for sid, w in pack["pool"].items():
-                    lines.append(("%s %d%%" % (data.PLANTS[sid]["name"], round(100 * w / total)),
-                                  data.RARITY_COLORS[data.PLANTS[sid]["rarity"]]))
-                gfx.tooltip(surf, lines, self.mouse, 96)
+                gfx.tooltip(surf, self.pack_lines(b.kind), self.mouse, 96)

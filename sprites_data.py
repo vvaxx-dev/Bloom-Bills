@@ -329,16 +329,19 @@ GRIDS = {
      # the mouse pointer: same 1x1-pixel chunks as the font, so it scales with
     # the rest of the art instead of being a smooth OS arrow
     "cursor": [
-        "kw.....",
-        "kww....",
-        "kwww...",
-        "kwwww..",
-        "kwwwww.",
-        "kwwwwww",
-        "kwwwwww",
-        "kkwwwk.",
-        ".kwwwk.",
-        ".kwwk..",
+        "k........",
+        "kk.......",
+        "kwk......",
+        "kwwk.....",
+        "kwwwk....",
+        "kwwwwk...",
+        "kwwwwwk..",
+        "kwwwwwwk.",
+        "kwwwwkkkk",
+        "kwwkwsk..",
+        "kwk.kwsk.",
+        "kk..kwsk.",
+        ".....kk..",
     ],
 }
 

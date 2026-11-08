@@ -25,7 +25,7 @@ Every third round, the collector arrives. The bill is five times the last one. Y
 Besides the bill, the things that make rounds go sideways:
 
 - **Weather twists.** Drought slows everything 35%. Locusts cut harvest value 40%. Frost bans desert plants. Rain waters the whole farm for free. Eclipse lets nocturnal plants grow on the surface and makes sun-lovers sulk. Rounds between bills are mostly fair weather, with the odd lucky breeze.
--  **Boss rounds**, every ninth. Crazy Crows: every six seconds the flock eats a random plant, and once the round is half over they take two at a time. They do not care which one you were saving.
+ **Boss rounds**, every ninth. The roster rotates through Crazy Crows (one plant every six seconds, all round), Hailstorm, Root Rot, Heatwave, Eternal Night and Gale.
 - **Mutations.** A plant that keeps surviving harvests starts rolling for a mutation. Ten percent chance, and what comes out is worth two to three times the original. A Golden Sunflower sells for 3x and grows half as fast.
 - **Cursed plants.** Devil's Ivy pays well and charges $60 upkeep a round. Widow's Bloom is jealous of its neighbours.
 - **The cellar.** $250 to dig out. Four plots, nocturnal plants only, grows without any watering at all, but at three quarters speed. It's the one part of the farm that doesn't need you.
@@ -44,7 +44,7 @@ The permanent stuff, so a failed run still means something. You earn one heirloo
 
 Eighteen plants across eight packs. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron. They are all fully playable - Cranberries and Saffron just borrow the placeholder sprite until their art gets drawn.
 
-The seed tray holds six at a time. Page through it with the arrows on either side, the left/right arrow keys or the mouse wheel - an Eclipse puts the whole nocturnal shelf in the tray alongside everything else, which is more than one screenful. The seed shelf on the pack screen pages the same way.
+mouse wheel - an Eclipse puts the whole nocturnal shelf in the tray alongside everything else, which is more than one screenful. The seed shelf on the pack screen pages the same way. Owned packs have up/down paging controls and hover tooltips with their contents and odds. Farmer, nocturnal and cursed crops can mutate too; cursed mutations retain their upkeep and auras.
 
 ## Controls
 
@@ -80,7 +80,7 @@ Small enough to read in an evening:
 - `shop.py`, `packs.py`, `summary.py`, `gameover.py`, `title.py` the other screens.
 - `gfx.py` text, panels, buttons, tooltips and the mouse pointer drawn from a pixel font, no image files anywhere.
 
-All the art is generated at runtime from character grids in `sprites_data.py`, which is why the repo is text. That includes the cursor: a 7x10 pixel arrow drawn on the canvas in the same 1px chunks as the font, with the system pointer hidden. Tooltips open with their top-left corner on the cursor tip, so the pointer always marks the box it opened.
+All the art is generated at runtime from character grids in `sprites_data.py`, which is why the repo is text. That includes the cursor: an outlined, shaded pixel arrow rendered at 2x drawn on the canvas in the same 1px chunks as the font, with the system pointer hidden. Tooltips open with their bottom-left corner on the cursor tip, so the pointer always marks the box it opened.
 
 ## Tests
 

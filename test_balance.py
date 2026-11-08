@@ -84,10 +84,12 @@ class EconomyTests(unittest.TestCase):
 
     def test_late_rounds_have_less_time(self):
         run = Run(seed=1)
-        round_three = run.round_time()
+        run.twist_id = lambda _rnd=None: "none"
+        self.assertEqual(run.round_time(), 45)
         run.round = 8
-        round_eight = run.round_time()
-        self.assertGreater(round_three, round_eight)
+        self.assertEqual(run.round_time(), 35)
+        run.round = 30
+        self.assertEqual(run.round_time(), 30)
 
     def test_quotas_climb_faster_after_round_three(self):
         run = Run(seed=1)
@@ -108,6 +110,22 @@ class MechanicTests(unittest.TestCase):
         self.assertEqual(run.twist_id(9), "crow_swarm")
         self.assertTrue(run.twist(9).get("boss"))
         self.assertTrue(run.twist(9).get("crow"))
+
+    def test_boss_rounds_rotate_through_a_roster(self):
+        """Nine isn't the only disaster any more: each boss round in a run is
+        a different boss, and they all come back round again."""
+        self.assertGreater(len(data.BOSS_TWISTS), 3)
+        self.assertEqual(len(set(data.BOSS_TWISTS)), len(data.BOSS_TWISTS))
+        run = Run(seed=1)
+        seen = [run.twist_id(9 * (k + 1)) for k in range(len(data.BOSS_TWISTS))]
+        self.assertEqual(seen, data.BOSS_TWISTS)
+        self.assertEqual(run.twist_id(9 * (len(data.BOSS_TWISTS) + 1)), data.BOSS_TWISTS[0])
+        for tid in data.BOSS_TWISTS:
+            with self.subTest(boss=tid):
+                boss = data.TWISTS[tid]
+                self.assertTrue(boss.get("boss"))
+                self.assertEqual(boss.get("tone"), "bad")
+                self.assertTrue(boss.get("short"))
 
     def test_positive_and_neutral_weather_exist(self):
         for tid in ("sunny", "rain", "market", "eclipse", "still"):
@@ -281,7 +299,7 @@ class PriceTests(unittest.TestCase):
         have to climb hard, just slower than the bill ladder (~1.71x a round)."""
         from .settings import PRICE_GROWTH, RELIC_PRICE_GROWTH
         self.assertLess(RELIC_PRICE_GROWTH, 1.71)
-        self.assertGreater(RELIC_PRICE_GROWTH, PRICE_GROWTH)   # still the dearer tier
+        self.assertLess(RELIC_PRICE_GROWTH, PRICE_GROWTH)      # the cheaper tier now
         self.assertLess(PRICE_GROWTH, 1.71)
         run = Run(seed=1)
         early = run.relic_price("scarecrow")
@@ -355,7 +373,7 @@ class FarmerPackTests(unittest.TestCase):
                 self.assertIn(sid, data.SURFACE_PLANTS)      # plantable up top
                 self.assertIn(sid, data.PLANT_ORDER)         # shown on the shelf
                 self.assertIn(sid, data.PACKS["farmer"]["pool"])
-                self.assertIn(sid, data.mutants_for(sid) or [] or [sid])  # no crash
+                self.assertTrue(data.mutants_for(sid))
 
     def test_the_farmer_pack_opens(self):
         run = Run(seed=4)
@@ -542,28 +560,28 @@ class TwistTests(unittest.TestCase):
         self.assertEqual(len(withered), 1)
         self.assertEqual(sum(1 for p in run.plots if p.species), 3)
 
-    def test_crazy_crows_eat_plants_and_speed_up(self):
+    def test_crazy_crows_only_ever_take_one_plant(self):
+        """No more doubling up at half time: one plant per visit, all round."""
         twist = data.TWISTS["crow_swarm"]
         self.assertEqual(twist["name"], "Crazy Crows!")
         self.assertLessEqual(twist["crow"], 6)          # meaner than the old 10s
-        self.assertTrue(twist["crow_ramp"])
-        run = self.pinned("crow_swarm", plots=8)
+        self.assertFalse(twist.get("crow_ramp"))
+        self.assertEqual(twist.get("crow_count", 1), 1)
+        run = self.pinned("crow_swarm", plots=12)
         run.time_total = run.time_left = 24.0
         eaten_first_half = eaten_second_half = 0
         for _ in range(12):
             run.update(1.0)
-            for ev in run.events:
-                if ev["kind"] == "eaten":
-                    eaten_first_half += 1
+            eaten_first_half += sum(1 for ev in run.events if ev["kind"] == "eaten")
             run.events.clear()
+            run.plots = [Plot("daisy") for _ in range(12)]
         for _ in range(12):
             run.update(1.0)
-            for ev in run.events:
-                if ev["kind"] == "eaten":
-                    eaten_second_half += 1
+            eaten_second_half += sum(1 for ev in run.events if ev["kind"] == "eaten")
             run.events.clear()
+            run.plots = [Plot("daisy") for _ in range(12)]
         self.assertGreater(eaten_first_half, 0)
-        self.assertGreater(eaten_second_half, eaten_first_half)
+        self.assertEqual(eaten_first_half, eaten_second_half)
 
     def test_crows_say_what_they_ate(self):
         run = self.pinned("crow_swarm")
@@ -599,3 +617,167 @@ class TwistTests(unittest.TestCase):
         self.assertTrue(harvests)
         self.assertIn(True, [bool(e["cellar"]) for e in harvests])
         self.assertIn(False, [bool(e["cellar"]) for e in harvests])
+
+class BossMechanicTests(unittest.TestCase):
+    """The boss roster: every boss has to actually do something to the board."""
+
+    def pinned(self, twist, species="daisy", plots=4):
+        run = Run(seed=5)
+        run.round = 9
+        run.twist_id = lambda _rnd=None, t=twist: t
+        run.begin_round()
+        run.started = True
+        run.plots = [Plot(species) for _ in range(plots)]
+        run.time_total = run.time_left = 60.0
+        return run
+
+    def test_hailstorm_knocks_growth_back(self):
+        run = self.pinned("hailstorm", species="orchid")   # slow enough not to harvest
+        for p in run.plots:
+            p.progress = 2.0
+        run.update(7.0)
+        self.assertTrue(any(e["kind"] == "hail" for e in run.events))
+        # seven seconds of growth (2 + 7 = 9), then halved by the hail
+        self.assertTrue(all(p.progress < 6.0 for p in run.plots))
+
+    def test_root_rot_takes_a_plant(self):
+        run = self.pinned("root_rot", plots=4)
+        run.update(8.0)
+        self.assertEqual(sum(1 for p in run.plots if p.species), 3)
+        rot = [e for e in run.events if e["kind"] == "rot"]
+        self.assertEqual(len(rot), 1)
+        self.assertTrue(rot[0]["name"])
+
+    def test_heatwave_dries_the_soil_twice_as_fast(self):
+        hot = self.pinned("heatwave")
+        mild = self.pinned("none")
+        self.assertTrue(hot.water(0))
+        self.assertTrue(mild.water(0))
+        hot.update(0.5)
+        mild.update(0.5)
+        self.assertLess(hot.plots[0].water_left, mild.plots[0].water_left)
+
+    def test_heatwave_slows_growth(self):
+        self.assertLess(self.pinned("heatwave").growth_speed(),
+                        self.pinned("none").growth_speed())
+
+    def test_gale_shortens_the_round(self):
+        self.assertLess(self.pinned("gale").round_time(), self.pinned("none").round_time())
+
+    def test_eternal_night_is_an_eclipse(self):
+        run = self.pinned("eternal_night")
+        self.assertTrue(run.twist().get("eclipse"))
+        self.assertTrue(run.can_plant("brown_mushroom"))
+
+    def test_bosses_leave_the_cellar_alone(self):
+        run = self.pinned("root_rot", plots=4)
+        run.cellar_unlocked = True
+        run.cellar_plots[0] = Plot("brown_mushroom")
+        run.update(8.0)
+        self.assertIsNotNone(run.cellar_plots[0].species)
+
+
+class MutationCoverageTests(unittest.TestCase):
+    """Every plant family can mutate, and cursed mutations stay cursed."""
+
+    def test_farmer_crops_can_mutate(self):
+        for sid in data.FARMER_PLANTS:
+            with self.subTest(crop=sid):
+                self.assertTrue(data.mutants_for(sid))
+
+    def test_nocturnal_crops_can_mutate(self):
+        for sid in data.NOCTURNAL_PLANTS:
+            with self.subTest(crop=sid):
+                self.assertTrue(data.mutants_for(sid))
+
+    def test_garden_flowers_have_more_than_one_mutation(self):
+        garden = [sid for sid in data.SURFACE_PLANTS if sid not in data.FARMER_PLANTS]
+        for sid in garden:
+            with self.subTest(plant=sid):
+                self.assertGreaterEqual(len(data.mutants_for(sid)), 2)
+
+    def test_cursed_plants_get_special_mutants(self):
+        for sid in ("devil_ivy", "widow_bloom"):
+            with self.subTest(plant=sid):
+                mutants = data.mutants_for(sid)
+                self.assertGreaterEqual(len(mutants), 2)
+                self.assertTrue(any(data.PLANTS[m].get("upkeep") for m in mutants))
+                for mid in mutants:
+                    self.assertIn("cursed", data.PLANTS[mid]["tags"])
+                    self.assertTrue(data.PLANTS[mid].get("cursed_mutant"))
+
+    def test_every_mutation_is_worth_more_than_its_base(self):
+        for mid, mutant in data.MUTANTS.items():
+            with self.subTest(mutant=mid):
+                base = data.PLANTS[mutant["base"]]
+                self.assertIn(mid, data.PLANTS)
+                self.assertGreater(data.PLANTS[mid]["yield"], base["yield"])
+                self.assertGreater(data.PLANTS[mid]["sell"], base["sell"])
+                self.assertEqual(data.PLANTS[mid]["rarity"], "mutant")
+                self.assertTrue(data.PLANTS[mid]["subs"])   # it recolours the base art
+
+    def test_cursed_mutants_bill_at_round_end(self):
+        run = Run(seed=1)
+        run.begin_round()
+        mutant = next(m for m in data.mutants_for("devil_ivy") if data.PLANTS[m].get("upkeep"))
+        run.plots = [Plot(mutant, progress=99.0)]
+        run.money = 1000
+        summary = run.end_round()
+        self.assertEqual(summary["upkeep"], data.PLANTS[mutant]["upkeep"])
+        self.assertGreater(data.PLANTS[mutant]["upkeep"], data.PLANTS["devil_ivy"]["upkeep"])
+
+    def test_a_crop_can_actually_mutate_in_a_round(self):
+        for species in ("potato", "brown_mushroom", "devil_ivy"):
+            with self.subTest(plant=species):
+                run = Run(seed=7)
+                run.begin_round()
+                run.plots = [Plot(species)]
+                evolved = None
+                for _ in range(500):
+                    run.plots[0].species = species
+                    run.plots[0].harvests = data.mutation_threshold(species)
+                    run._maybe_mutate(0)
+                    if data.PLANTS[run.plots[0].species].get("mutant"):
+                        evolved = run.plots[0].species
+                        break
+                self.assertIsNotNone(evolved)
+                self.assertEqual(data.PLANTS[evolved]["base"], species)
+
+
+class ShelfInteractionTests(unittest.TestCase):
+    def app(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(run=Run(seed=1), mouse=(319, 179),
+                               toast=lambda *args: None, save_run=lambda: None)
+
+    def test_clicking_each_paged_seed_selects_the_visible_seed(self):
+        from importlib import import_module
+        RoundScene = import_module('.round', __package__).RoundScene
+        scene = RoundScene(self.app())
+        scene.on_enter()
+        for sid in data.SURFACE_PLANTS:
+            scene.run.seeds[sid] = 3
+        for offset in range(scene.max_scroll() + 1):
+            scene.tray_scroll = offset
+            for i, sid in enumerate(scene.visible_seeds()):
+                x, y, w, h = scene.tray_rect(i)
+                self.assertTrue(scene.on_click((x + w // 2, y + h // 2)))
+                self.assertEqual(scene.selected, sid)
+
+    def test_every_owned_pack_is_reachable_and_has_tooltip(self):
+        from .packs import PacksScene, PACKS_PER_PAGE
+        scene = PacksScene(self.app())
+        scene.on_enter()
+        scene.run.packs = list(data.PACK_ORDER) * 5
+        scene.refresh()
+        seen = []
+        for page in range(scene.pack_pages):
+            scene.pack_page = page
+            for kind, index in scene.visible_packs():
+                seen.append(index)
+                self.assertTrue(scene.pack_lines(kind, index))
+        self.assertEqual(seen, list(range(len(scene.run.packs))))
+        scene.run.packs = scene.run.packs[:PACKS_PER_PAGE]
+        scene.refresh()
+        self.assertEqual(scene.pack_page, 0)
+        self.assertFalse(scene.pack_down.enabled)
