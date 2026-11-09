@@ -10,19 +10,14 @@ SEEDS_PER_PAGE = SEED_COLS * SEED_ROWS
 PACK_COLS, PACK_ROWS = 6, 2
 PACKS_PER_PAGE = PACK_COLS * PACK_ROWS
 
-# the for-sale shelf sits in the bottom strip beside the seed shelf, four
-# packs to a page, so it is never drawn underneath anything
 BUY_COLS, BUY_ROWS = 2, 2
 BUYS_PER_PAGE = BUY_COLS * BUY_ROWS
 
-# --- shelf rectangles (x, y, w, h) -------------------------------------
-# three shelves, none of them overlapping: unopened packs on the top left,
-# seeds and packs-for-sale along the bottom, START ROUND down the right edge
 PACKS_BOX = (4, 18, 100, 106)
 SEED_BOX = (4, 128, 138, 48)
 BUY_BOX = (146, 128, 126, 48)
 GO_BTN = (276, 128, 40, 48)
-PAGER_Y = 131                        # pager arrows sit in each panel's title row
+PAGER_Y = 131                       
 PAGER_H = 9
 
 
@@ -136,7 +131,7 @@ class PacksScene(Scene):
     def visible_buys(self):
         """(kind, button) for the packs on sale on the current page."""
         kinds = self.run.unlocked_packs()
-        if len(kinds) != len(self.buy_buttons):   # a pack unlocked since the last refresh
+        if len(kinds) != len(self.buy_buttons):   
             self.setup_buy_buttons()
         self.buy_page = max(0, min(self.buy_page, self.buy_pages - 1))
         start = self.buy_page * BUYS_PER_PAGE
@@ -189,8 +184,8 @@ class PacksScene(Scene):
 
     def refresh(self):
         run = self.run
-        self.visible_packs()  # clamp after opening the last pack on a page
-        self.visible_buys()   # clamp after a pack unlocks and adds a page
+        self.visible_packs()  
+        self.visible_buys()   
         self.open_btn.enabled = bool(run.packs)
         for b in self.buy_buttons:
             price = run.pack_price(b.kind)

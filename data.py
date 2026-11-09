@@ -34,11 +34,6 @@ NOCTURNAL_PLANTS = ["brown_mushroom", "red_mushroom", "moonflower", "queen_night
 PLANT_ORDER = SURFACE_PLANTS + NOCTURNAL_PLANTS
 
 # --- mutations ---------------------------------------------------------
-# A plant that survives enough harvests can turn into one of these.
-# The *mults* scale the base plant's "grow" / "yield" / "sell" stats,
-# "yield_add" adds flat harvest money, and "tags_add" gives the mutant
-# extra tags so relic effects (e.g. Desert Rose) can key off it.
-# "subs" recolors the base sprite so it looks different in the garden.
 
 MUTANTS = {
     "daisy_shiny": {"base": "daisy", "name": "Shiny Daisy", 
@@ -141,7 +136,7 @@ MUTANTS = {
                              "grow_mult": 1.15, "yield_mult": 3.0, "sell_mult": 3.0, "yield_add": 5,
                              "color": (155, 150, 255), "subs": {"p": (155, 150, 255), "P": (95, 85, 200), "w": (235, 240, 255)}},
 
-    # --- cursed pack specials: they pay a fortune, then send the bill ---
+    # --- cursed pack specials----------------------------------------
     "devil_ivy_crown": {"base": "devil_ivy", "name": "Devil's Crown",
                         "desc": "x2.5 value, grows 10% faster, upkeep doubles.",
                         "grow_mult": 0.9, "yield_mult": 2.5, "sell_mult": 2.5, "upkeep_mult": 2.0,
@@ -265,7 +260,7 @@ RELICS = {
                     "effects": {"yield_mult": [("all", 1.5)]},
                     "levels": [{"stat": "harvest", "goal": 400, "effects": {"yield_mult": [("all", 0.5)]},
                                 "desc": "All harvests x2.25 total."}]},
-    "clover":      {"name": "Lucky Clover",   "rarity": "rare",     "cost": 1900,
+    "clover":      {"name": "Lucky Clover",   "rarity": "rare",     "cost": 650,
                     "desc": "Rare seeds are twice as likely in packs.",
                     "effects": {"pack_luck": 2.0}},
     "gardener":    {"name": "Hired Gardener", "rarity": "rare",     "cost": 2300,
@@ -280,13 +275,13 @@ RELICS = {
                           {"stat": "mushroom", "goal": 300, "effects": {"yield_mult": [("mushroom", 1.0)]},
                            "desc": "Mushroom harvests x4 total."},
                       ]},
-    "catalog":     {"name": "Seed Catalog",   "rarity": "rare",     "cost": 2000,
+    "catalog":     {"name": "Seed Catalog",   "rarity": "rare",     "cost": 700,
                     "desc": "One extra free pack each round.",
                     "effects": {"free_packs": 1}},
-    "greenhouse":  {"name": "Greenhouse",     "rarity": "rare",     "cost": 2400,
+    "greenhouse":  {"name": "Greenhouse",     "rarity": "rare",     "cost": 850,
                     "desc": "All harvests x2. Plants grow 10% faster.",
                     "effects": {"yield_mult": [("all", 2.0)], "growth": 0.1}},
-     "mutagen":     {"name": "Mutagen",        "rarity": "rare",     "cost": 2100,
+     "mutagen":     {"name": "Mutagen",        "rarity": "rare",     "cost": 800,
                     "desc": "25% chance a seed sprouts already mutated. Mutants are 1.2x better.",
                     "effects": {"mutate_on_plant": 0.25, "mutant_bonus": 0.2},
                     "levels": [{"stat": "harvest", "goal": 200, "effects": {"mutate_on_plant": 0.15},
@@ -320,7 +315,7 @@ TWISTS = {
                    "short": "ROUND -10S, GROWTH -20%."},
 }
 RANDOM_TWISTS = ["drought", "locusts", "short", "frost", "blight", "sunny", "rain", "market", "eclipse"]
-MINOR_TWISTS = ["sunny", "rain", "market", "eclipse", "still"]     # rolled between quota rounds
+MINOR_TWISTS = ["sunny", "rain", "market", "eclipse", "still"]     
 BOSS_TWISTS = ["crow_swarm", "hailstorm", "root_rot", "heatwave", "eternal_night", "gale"]
 
 SEASONS = [
@@ -346,7 +341,7 @@ PERKS = {
 }
 PERK_ORDER = ["cash", "plots", "packs", "yield"]
 PERK_STEP = {"cash": 10, "plots": 1, "packs": 1, "yield": 10}
-PERK_COST_GROWTH = 1.15     # every heirloom level after the first costs 15% more
+PERK_COST_GROWTH = 1.15     
 
 
 def perk_cost(key, level):
@@ -370,7 +365,7 @@ def bill_for_quota(k):
 
 try:
     from .settings import SEASON_LENGTH
-except ImportError:                       # allows `python3 data.py`-style flat imports
+except ImportError:                       
     from settings import SEASON_LENGTH
 
 

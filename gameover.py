@@ -136,11 +136,10 @@ class ShelfScene(Scene):
         level = self.level(key)
         owned = level > 0
         gfx.panel(surf, 4, y, 312, 23, fill=(38, 33, 58))
-        gfx.rect(surf, GOOD if owned else (66, 58, 92), 4, y, 2, 23)   # owned stripe
+        gfx.rect(surf, GOOD if owned else (66, 58, 92), 4, y, 2, 23)   
         gfx.draw_text(surf, perk["name"], 12, y + 3, TEXT)
         gfx.draw_text(surf, "%d/%d" % (level, perk["max"]), 206, y + 3,
                       GOOD if owned else DIM, align="right")
-        # line 2: what you have now -> what the next level would give you
         x = 12
         if owned:
             x += gfx.draw_text(surf, "HAVE " + self.heirloom_now(key), x, y + 9, GOOD) + 7
