@@ -6,6 +6,9 @@ from .gfx import Button
 from .scene import Scene, draw_topbar
 from .settings import ACCENT, BAD, DIM, GOOD, MAX_PLOTS, PANEL_DARK, RELIC_SLOTS, TEXT
 
+FORECAST_RECT = (152, 150, 98, 26)
+TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": TEXT}
+
 
 class ShopScene(Scene):
     def on_enter(self):
@@ -17,13 +20,12 @@ class ShopScene(Scene):
             self.buy_buttons.append(b)
         self.sell_buttons = []
         for i in range(RELIC_SLOTS):
-            b = Button(4 + i * 62 + 2, 141, 56, 8, "", lambda i=i: self.sell_relic(i), color=(150, 70, 60))
+            b = Button(4 + i * 62 + 2, 141, 56, 8, "", lambda i=i: self.sell_relic_clicked(i), color=(150, 70, 60))
             b.enabled = False
             self.sell_buttons.append(b)
-        self.plot_btn = Button(4, 150, 130, 26, "", self.buy_plot)
-        self.reroll_btn = Button(138, 150, 66, 26, "", self.reroll)
-        self.next_btn = Button(208, 150, 108, 26, "NEXT ROUND >", self.go, color=(70, 130, 70))
-        self.buttons = self.buy_buttons + self.sell_buttons + [self.plot_btn, self.reroll_btn, self.next_btn]
+        self.plot_btn = Button(4, 150, 88, 26, "", self.buy_plot)
+        self.reroll_btn = Button(95, 150, 54, 26, "", self.reroll)
+        self.next_btn = Button(253, 150, 63, 26, "NEXT\nROUND >", self.go, color=(70, 130, 70))
         self.refresh()
 
     def refresh(self):
@@ -43,15 +45,32 @@ class ShopScene(Scene):
             else:
                 b.label, b.enabled = "", False
         if len(run.plots) >= MAX_PLOTS:
-            self.plot_btn.label, self.plot_btn.enabled = "PLOTS MAXED", False
+            self.plot_btn.label, self.plot_btn.enabled = "PLOTS\nMAXED", False
         else:
-            self.plot_btn.label = "BUY PLOT $%s (%d/%d)" % (fmt(run.plot_price()), len(run.plots), MAX_PLOTS)
+            self.plot_btn.label = "PLOT (%d/%d)\n$%s" % (len(run.plots), MAX_PLOTS, fmt(run.plot_price()))
             self.plot_btn.enabled = run.money >= run.plot_price()
-        self.reroll_btn.label = "REROLL $" + fmt(run.reroll_price())
+        self.reroll_btn.label = "REROLL\n$" + fmt(run.reroll_price())
         self.reroll_btn.enabled = run.money >= run.reroll_price()
 
     def on_click(self, pos):
         return super().on_click(pos)
+
+    def sell_relic_clicked(self, i):
+        if not 0 <= i < len(self.run.relics):
+            return
+        rid = self.run.relics[i]
+        rel = data.RELICS[rid]
+        refund = max(1, int(self.run.relic_price(rid) * 0.5))
+        if hasattr(self.app, "ask_confirm"):
+            self.app.ask_confirm(
+                "SELL %s?" % rel["name"].upper(),
+                "SELL FOR $%s? THIS CANNOT BE UNDONE." % fmt(refund),
+                lambda idx=i: self.sell_relic(idx),
+                confirm_label="SELL",
+                danger=True,
+            )
+        else:
+            self.sell_relic(i)
 
     def sell_relic(self, i):
         ok, msg, _ = self.run.sell_relic(i)
@@ -87,12 +106,15 @@ class ShopScene(Scene):
     def on_key(self, key):
         import pygame
         if key == pygame.K_ESCAPE:
-            self.app.goto("title")
+             if hasattr(self.app, "open_pause"):
+                self.app.open_pause()
+        else:
+                self.app.goto("title")
 
     def draw(self, surf):
         run = self.run
         gfx.rect(surf, (30, 26, 46), 0, 0, 320, 180)
-        draw_topbar(surf, run, "SHOP")
+        draw_topbar(surf, run, "SHOP", mouse=self.mouse)
 
         for i in range(3):
             x, y = 4 + i * 104, 18
@@ -114,47 +136,62 @@ class ShopScene(Scene):
             b.draw(surf, self.mouse)
 
         # owned relics
-        gfx.draw_text(surf, "YOUR RELICS %d/%d" % (len(run.relics), RELIC_SLOTS), 6, 120, DIM)
+        gfx.draw_text(surf, "YOUR RELICS %d/%d" % (len(run.relics), RELIC_SLOTS), 6, 119, DIM)
         if self.msg:
-            gfx.draw_text(surf, self.msg, 314, 120, ACCENT, align="right")
+            gfx.draw_text(surf, self.msg, 314, 119, ACCENT, align="right")
         owned_hover = None
         for i in range(RELIC_SLOTS):
             x = 4 + i * 62
-            gfx.rect(surf, PANEL_DARK, x, 126, 60, 24)
+            gfx.rect(surf, PANEL_DARK, x, 125, 60, 24)
             if i < len(run.relics):
                 rel = data.RELICS[run.relics[i]]
-                gfx.rect(surf, data.RARITY_COLORS[rel["rarity"]], x, 126, 60, 1)
+                gfx.rect(surf, data.RARITY_COLORS[rel["rarity"]], x, 125, 60, 1)
                 lines = gfx.wrap(rel["name"], 54)
                 for k, line in enumerate(lines[:2]):
-                    gfx.draw_text(surf, line, x + 30, 129 + k * 7, TEXT, align="center")
+                    gfx.draw_text(surf, line, x + 30, 128 + k * 7, TEXT, align="center")
                 self.sell_buttons[i].draw(surf, self.mouse)
-                if x <= self.mouse[0] < x + 60 and 126 <= self.mouse[1] < 140:
+                if x <= self.mouse[0] < x + 60 and 125 <= self.mouse[1] < 149:
                     owned_hover = i
             else:
-                gfx.draw_text(surf, "EMPTY", x + 30, 135, (70, 62, 96), align="center")
+                gfx.draw_text(surf, "EMPTY", x + 30, 134, (70, 62, 96), align="center")
 
-        # bottom strip
-        gfx.panel(surf, 208, 150, 108, 26)
+        # Next round weather & bill forecast panel (never obscured by buttons)
+        fx, fy, fw, fh = FORECAST_RECT
         nxt = run.round + 1
         twist = run.twist(nxt)
         season = run.season(nxt)
-        gfx.draw_text(surf, "NEXT: ROUND %d" % nxt, 212, 154, TEXT)
-        gfx.draw_text(surf, season["short"], 314, 154, season["color"], align="right")
+        tcol = BAD if twist.get("boss") else TONE_COLORS.get(twist.get("tone", "neutral"), TEXT)
+        gfx.panel(surf, fx, fy, fw, fh, fill=(38, 33, 58))
+        gfx.rect(surf, tcol, fx, fy, 2, fh)
+        gfx.draw_text(surf, "R%d" % nxt, fx + 5, fy + 3, TEXT)
+        gfx.draw_text(surf, season["short"], fx + 24, fy + 3, season["color"])
         if run.is_quota_round(nxt):
-            gfx.draw_text(surf, "BILL $" + fmt(run.bill_for_round(nxt)), 212, 161, BAD)
-            gfx.draw_text(surf, twist["name"].upper(), 212, 168, ACCENT)
+            gfx.draw_text(surf, "$" + fmt(run.bill_for_round(nxt)), fx + fw - 4, fy + 3, BAD, align="right")
         else:
-            gfx.draw_text(surf, "NO BILL", 212, 161, GOOD)
-            if data.is_new_season(nxt):
-                gfx.draw_text(surf, "NEW SEASON: %s" % season["name"].upper(), 212, 168, season["color"])
+           gfx.draw_text(surf, "NO BILL", fx + fw - 4, fy + 3, GOOD, align="right")
+
+        wname = twist["name"].upper()
+        while len(wname) > 1 and gfx.text_width(wname) > fw - 8:
+            wname = wname[:-1]
+        gfx.draw_text(surf, wname, fx + 5, fy + 11, tcol)
+        sub = "BOSS!" if twist.get("boss") else ("HOVER INFO" if twist["name"] != "Fair Weather" else "CALM SKIES")
+        gfx.draw_text(surf, sub, fx + 5, fy + 18, DIM)
+
         self.plot_btn.draw(surf, self.mouse)
         self.reroll_btn.draw(surf, self.mouse)
         self.next_btn.draw(surf, self.mouse)
 
-        # hover: show a quota twist description
-        if 208 <= self.mouse[0] < 316 and 150 <= self.mouse[1] < 176 and run.is_quota_round(nxt):
-            gfx.tooltip(surf, [(twist["name"], ACCENT), (twist["desc"], TEXT)], self.mouse, 100)
-        if owned_hover is not None:
+       # Hover tooltips
+        if fx <= self.mouse[0] < fx + fw and fy <= self.mouse[1] < fy + fh:
+            bill_line = (("BILL DUE: $%s" % fmt(run.bill_for_round(nxt)), BAD)
+                         if run.is_quota_round(nxt) else ("NO BILL DUE", GOOD))
+            gfx.tooltip(surf, [
+                ("NEXT: ROUND %d (%s)" % (nxt, season["name"].upper()), ACCENT),
+                ("WEATHER: " + twist["name"].upper(), tcol),
+                (twist["desc"], TEXT),
+                bill_line,
+            ], self.mouse, 118)
+        elif owned_hover is not None:
             rel = data.RELICS[run.relics[owned_hover]]
             col = data.RARITY_COLORS[rel["rarity"]]
             refund = max(1, int(run.relic_price(run.relics[owned_hover]) * 0.5))

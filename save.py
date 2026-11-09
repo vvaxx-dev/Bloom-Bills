@@ -2,7 +2,11 @@ import json
 
 from .paths import save_dir
 
-PROFILE_DEFAULT = {"v": 1, "heirlooms": 0, "perks": {}, "best_round": 0, "runs": 0, "wins": 0}
+SETTINGS_DEFAULT = {"confirmations": True, "floaters": True, "scale": 6}
+PROFILE_DEFAULT = {
+    "v": 1, "heirlooms": 0, "perks": {}, "best_round": 0, "runs": 0, "wins": 0,
+    "settings": SETTINGS_DEFAULT.copy(), "harvested": {},
+}
 
 
 class SaveManager:
@@ -24,6 +28,21 @@ class SaveManager:
         for key, value in PROFILE_DEFAULT.items():
             profile.setdefault(key, value.copy() if isinstance(value, dict) else value)
         profile["perks"] = {key: int(value) for key, value in profile["perks"].items()}
+        raw_settings = profile.get("settings")
+        merged_settings = dict(SETTINGS_DEFAULT)
+        if isinstance(raw_settings, dict):
+            merged_settings["confirmations"] = bool(raw_settings.get("confirmations", True))
+            merged_settings["floaters"] = bool(raw_settings.get("floaters", True))
+            try:
+                merged_settings["scale"] = max(2, min(8, int(raw_settings.get("scale", 6))))
+            except (TypeError, ValueError):
+                merged_settings["scale"] = 6
+        profile["settings"] = merged_settings
+        raw_harvested = profile.get("harvested")
+        profile["harvested"] = (
+            {str(k): int(v) for k, v in raw_harvested.items() if isinstance(v, (int, float))}
+            if isinstance(raw_harvested, dict) else {}
+        )
         return profile
 
     def save_profile(self, profile):

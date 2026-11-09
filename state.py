@@ -13,9 +13,9 @@ try:
         COLS, MAX_PLOTS, MUTATION_CHANCE,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, PRICE_GROWTH, QUOTA_EVERY,
-        RELIC_PRICE_GROWTH, RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
-        SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST, WATER_REST,
-        WATER_TIME, WIN_QUOTAS,
+        RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS, REROLL_BASE_PRICE,
+        ROUND_TIME, SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST,
+        WATER_REST, WATER_TIME, WIN_QUOTAS,
     )
 except ImportError:
     import data
@@ -24,9 +24,9 @@ except ImportError:
         COLS, MAX_PLOTS, MUTATION_CHANCE,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, PRICE_GROWTH, QUOTA_EVERY,
-        RELIC_PRICE_GROWTH, RELIC_SLOTS, REROLL_BASE_PRICE, ROUND_TIME,
-        SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST, WATER_REST,
-        WATER_TIME, WIN_QUOTAS,
+        RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS, REROLL_BASE_PRICE,
+        ROUND_TIME, SEEDS_PER_PACK, START_MONEY, START_PLOTS, WATER_BOOST,
+        WATER_REST, WATER_TIME, WIN_QUOTAS,
     )
 
 
@@ -70,7 +70,7 @@ class Run:
 
         self.round = 1
         self.phase = "packs"            # packs -> round -> summary -> shop -> packs ...
-        self.money = START_MONEY + 10 * self.perks.get("cash", 0)
+        self.money = START_MONEY
         self.seeds = {}                 # species id -> count in your pocket
         self.packs = []                 # unopened pack kinds
         self.plots = [Plot() for _ in range(min(MAX_PLOTS, START_PLOTS + self.perks.get("plots", 0)))]
@@ -94,6 +94,7 @@ class Run:
         self.finished = False
         self.round_income = 0
         self.blight_done = False
+        self.compost_announced = False
         self.crow_timer = 0.0
         self.hail_timer = 0.0
         self.rot_timer = 0.0
@@ -140,9 +141,7 @@ class Run:
 
     def _apply_perk(self, key):
         """Immediate, one-off value of a level bought during a run."""
-        if key == "cash":
-            self.money += 10
-        elif key == "plots" and len(self.plots) < MAX_PLOTS:
+        if key == "plots" and len(self.plots) < MAX_PLOTS:
             self.plots.append(Plot())
             self.plots_bought += 1     # keeps later plot prices honest
         elif key == "packs":
@@ -210,6 +209,31 @@ class Run:
         rnd = self.round if rnd is None else rnd
         return ((rnd + QUOTA_EVERY - 1) // QUOTA_EVERY) * QUOTA_EVERY
 
+    def bill_progress(self):
+        """Current cash progress toward the upcoming bill and overall quota ladder."""
+        already_paid_this_round = (
+            self.is_quota_round(self.round)
+            and (self.phase == "shop" or self.quotas_paid >= self.quota_number(self.round))
+        )
+        ref_round = self.round + 1 if already_paid_this_round else self.round
+        qr = self.next_quota_round(ref_round)
+        due_now = self.is_quota_round(self.round) and not already_paid_this_round
+        bill = self.bill_for_round(qr)
+        quota_idx = self.quota_number(qr)
+        fraction = min(1.0, self.money / bill) if bill > 0 else 1.0
+        return {
+            "quota_round": qr,
+            "due_now": due_now,
+            "rounds_until": max(0, qr - self.round),
+            "bill": bill,
+            "money": self.money,
+            "fraction": fraction,
+            "shortfall": max(0, bill - self.money),
+            "quota_index": quota_idx,
+            "quotas_paid": self.quotas_paid,
+            "win_quotas": WIN_QUOTAS,
+        }
+
     def twist_id(self, rnd=None):
         rnd = self.round if rnd is None else rnd
         if self.is_boss_round(rnd):
@@ -252,7 +276,17 @@ class Run:
         return max(10, base_time + self._sum("round_time") + self.twist()["time"])
 
     def interest_rate(self):
-        return self._sum("interest")
+        return self._sum("interest") + data.deep_pockets_rate(self.perk("cash"))
+
+    def compost_window(self):
+        return max((e.get("compost_window", 0.0) for e in self._effects()), default=0.0)
+
+    def compost_mult(self):
+        return self._effects_product("compost_mult")
+
+    def compost_active(self):
+        w = self.compost_window()
+        return w > 0 and (self.started or self.finished) and self.time_left <= w + 1e-9
 
     def neighbours(self, i, cellar=False):
         plot_list = self.cellar_plots if cellar else self.plots
@@ -306,6 +340,8 @@ class Run:
             if sp.get("mutant"):
                 # Mutagen and friends: mutants pay a little better than they used to
                 mult *= 1.0 + self._sum("mutant_bonus")
+            if self.compost_active():
+                mult *= self.compost_mult()
         mult *= 1.0 + 0.10 * self.perk("yield")
         mult *= self.twist()["yield"]
         if "cursed" not in tags:
@@ -402,6 +438,16 @@ class Run:
             self.events.append({"kind": "mutate", "plot": i, "cellar": cellar,
                                 "name": data.PLANTS[planted]["name"]})
         return True
+
+    def remove_plant(self, i, cellar=False):
+        """Dig up a planted crop from plot `i` so another seed can take its place."""
+        plot_list = self.cellar_plots if cellar else self.plots
+        if not (0 <= i < len(plot_list)) or plot_list[i].species is None:
+            return False, "Nothing planted there."
+        name = data.PLANTS[plot_list[i].species]["name"]
+        plot_list[i].clear()
+        return True, "Removed %s." % name
+
     def _starting_mutation(self, species):
         """Mutagen: a seed can sprout already mutated instead of plain."""
         chance = self._sum("mutate_on_plant")
@@ -444,6 +490,7 @@ class Run:
         self.started = False
         self.finished = False
         self.blight_done = False
+        self.compost_announced = False
         self.crow_timer = 0.0
         self.hail_timer = 0.0
         self.rot_timer = 0.0
@@ -493,6 +540,23 @@ class Run:
         if self.phase != "round" or not self.started or self.finished or dt <= 0:
             return
         dt = min(dt, self.time_left)
+        w = self.compost_window()
+        if w > 0 and self.time_left > w > self.time_left - dt:
+            first_dt = self.time_left - w
+            self._step_round(first_dt)
+            if not self.finished and dt - first_dt > 0:
+                self._step_round(dt - first_dt)
+        else:
+            self._step_round(dt)
+
+    def _step_round(self, dt):
+        if dt <= 0 or self.finished:
+            return
+        w = self.compost_window()
+        if w > 0 and not self.compost_announced and self.time_left <= w + 1e-9:
+            self.compost_announced = True
+            if len(self.events) < 300:
+                self.events.append({"kind": "compost", "window": int(w)})
         tw = self.twist()
         speed = self.growth_speed()
         auto = self._has("auto_water") or bool(tw.get("rain"))
@@ -504,6 +568,11 @@ class Run:
 
         previous = self.time_left
         self.time_left -= dt
+        if w > 0 and not self.compost_announced and self.time_left <= w + 1e-9 and self.time_left > 1e-9:
+            self.compost_announced = True
+            if len(self.events) < 300:
+                self.events.append({"kind": "compost", "window": int(w)})
+
         half = self.time_total / 2.0
         if tw["blight"] and not self.blight_done and previous > half >= self.time_left:
             self.blight_done = True
@@ -558,9 +627,13 @@ class Run:
         self.round_income += value
         self.total_earned += value
         self.mastery[species] = self.mastery.get(species, 0) + 1
+        self.counters["harvest"] = self.counters.get("harvest", 0) + 1
+        for tag in data.PLANTS[species]["tags"]:
+            self.counters[tag] = self.counters.get(tag, 0) + 1
         plot_list[i].harvests += 1
         if len(self.events) < 300:
             self.events.append({"kind": "harvest", "plot": i, "amount": value, "cellar": cellar})
+            self.refresh_relic_levels()
         self._maybe_mutate(i, cellar)
 
     def _maybe_mutate(self, i, cellar=False):
@@ -582,13 +655,17 @@ class Run:
             
     def end_round(self):
         """Sells ripe plants, collects cursed upkeep, pays interest, and
-        settles the bill if one is due."""
+                prepares the bill if one is due (never auto-ending without player input)."""
+
         upkeep = 0
         for plot_list in (self.plots, self.cellar_plots):
             for p in plot_list:
                 if p.species:
                     upkeep += data.PLANTS[p.species].get("upkeep", 0)
-        comp = 1.0 + self._sum("sell_mult")
+                w = self.compost_window()
+        in_compost = (w > 0) and (not self.started or self.time_left <= w + 1e-9)
+        comp = (1.0 + self._sum("sell_mult")) * (self.compost_mult() if in_compost else 1.0)
+
         sale = 0
         for plot_list in (self.plots, self.cellar_plots):
             for p in plot_list:
@@ -600,7 +677,8 @@ class Run:
         self.money += sale
         self.total_earned += sale
         self.money = max(0, self.money - upkeep)
-        interest = int(self.money * self.interest_rate())
+        rate = self.interest_rate()
+        interest = max(1, int(self.money * rate)) if (self.money > 0 and rate > 0) else 0
         self.money += interest
         self.total_earned += interest
         self.counters["rounds"] = self.counters.get("rounds", 0) + 1
@@ -610,17 +688,19 @@ class Run:
         self.pending_bill = bill
         paid = None
         victory = False
-        if bill and self.money < bill:
-            paid = False
-            self.dead = True
-            self.pending_bill = 0
 
         self.last_summary = {
-            "round": self.round, "harvest": self.round_income, "earned": self.round_income + sale + interest, "sale": sale,
-            "interest": interest, "bill": bill, "paid": paid, "money": self.money, "upkeep": upkeep,
-            "victory": victory, "twist": self.twist_id(self.round), "pending_bill": bool(self.pending_bill),
+            "round": self.round, "harvest": self.round_income,
+            "earned": self.round_income + sale + interest,
+            "net": self.round_income + sale + interest - upkeep,
+            "sale": sale, "interest": interest, "interest_rate": rate,
+            "bill": bill, "paid": paid, "money": self.money, "upkeep": upkeep,
+            "victory": victory, "twist": self.twist_id(self.round),
+            "pending_bill": bool(self.pending_bill),
+            "can_afford": (self.money >= bill) if bill else True,
+            "shortfall": max(0, bill - self.money) if bill else 0,
         }
-        self.phase = "gameover" if self.dead else "summary"
+        self.phase = "summary"
         return self.last_summary
 
     def pay_pending_bill(self):
@@ -628,10 +708,7 @@ class Run:
         if not bill:
             return True, "No bill due."
         if self.money < bill:
-            self.dead = True
-            self.pending_bill = 0
-            self.last_summary["paid"] = False
-            return False, "Not enough money. The run is over."
+            return False, "Not enough money for the bill."
         self.money -= bill
         self.quotas_paid += 1
         self.pending_bill = 0
@@ -677,13 +754,12 @@ class Run:
         self.shop_offers = offers
 
     def relic_price(self, rid):
-        """Rare relics are the ones you want, so they used to be priced out of
-        reach; the rarity premium is gentler now and the per-round climb is
-        slower than the packs'."""
+        """Rare relics start only slightly above uncommon, then scale with both
+        a slightly higher rarity multiplier and a steeper per-round growth rate."""
         rarity = data.RELICS[rid]["rarity"]
-        rarity_multiplier = {"common": 1.0, "uncommon": 1.2, "rare": 1.35, "legendary": 1.5}[rarity]
-        return int(data.RELICS[rid]["cost"] * rarity_multiplier * RELIC_PRICE_GROWTH ** (self.round - 1))
-
+        rarity_multiplier = {"common": 1.0, "uncommon": 1.2, "rare": 1.45, "legendary": 1.6}[rarity]
+        growth = RARE_RELIC_PRICE_GROWTH if rarity == "rare" else RELIC_PRICE_GROWTH
+        return int(data.RELICS[rid]["cost"] * rarity_multiplier * growth ** (self.round - 1))
     def reroll_price(self):
         return int(REROLL_BASE_PRICE * 2.0 ** self.rerolls * RELIC_PRICE_GROWTH ** (self.round - 1))
 
@@ -750,7 +826,7 @@ class Run:
             "shop_offers": self.shop_offers, "rerolls": self.rerolls,
             "quotas_paid": self.quotas_paid, "total_earned": self.total_earned,
             "won": self.won, "dead": self.dead, "pending_bill": self.pending_bill,
-            "heirlooms_spent": self.heirlooms_spent,
+            "heirlooms_spent": self.heirlooms_spent, "last_summary": self.last_summary,
         }
 
     @classmethod
@@ -784,11 +860,14 @@ class Run:
         run.dead = bool(d.get("dead", False))
         run.pending_bill = int(d.get("pending_bill", 0))
         run.heirlooms_spent = int(d.get("heirlooms_spent", 0))
-        if run.phase == "summary" and run.pending_bill:
+        saved_summary = d.get("last_summary")
+        if isinstance(saved_summary, dict):
+            run.last_summary = dict(saved_summary)
+        else:
             run.last_summary = {"round": run.round, "bill": run.pending_bill, "paid": None,
-                                 "money": run.money, "pending_bill": True}
+                                "money": run.money, "pending_bill": bool(run.pending_bill)}
         if run.phase == "shop" and not run.shop_offers:
             run.roll_offers()
-        for p in run.plots + run.cellar_plots:      # saves are taken between rounds: boards start empty
+        for p in run.plots + run.cellar_plots:
             p.clear()
         return run

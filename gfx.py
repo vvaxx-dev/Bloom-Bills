@@ -149,12 +149,19 @@ def dim_overlay(surf, alpha=150):
 
 
 class Button:
-    def __init__(self, x, y, w, h, label, action=None, color=PANEL_LIGHT, text_color=TEXT):
+    def __init__(self, x, y, w, h, label="", action=None, color=PANEL_LIGHT, text_color=TEXT,
+                 icon=None, icon_scale=1, icon_subs=None):
+
         self.x, self.y, self.w, self.h = x, y, w, h
         self.label = label
         self.action = action
         self.color = color
         self.text_color = text_color
+        self.icon = icon
+        self.icon_scale = icon_scale
+        self.icon_subs = icon_subs
+        self.active = False
+        self.border_color = None
         self.enabled = True
 
     def hit(self, pos):
@@ -174,16 +181,31 @@ class Button:
         if not self.enabled:
             face, edge, ink = PANEL, PANEL_DARK, DIM
         else:
-            lift = 22 if self.hover(mouse) else 0
+            lift = 22 if self.hover(mouse) else (10 if self.active else 0)
             face = tuple(min(255, c + lift) for c in self.color)
-            edge = PANEL_DARK
+            edge = self.border_color if (self.active and self.border_color) else PANEL_DARK
+
             ink = self.text_color
         rect(surf, edge, self.x, self.y, self.w, self.h)
         rect(surf, face, self.x + 1, self.y + 1, self.w - 2, self.h - 3)
         rect(surf, tuple(max(0, c - 30) for c in face), self.x + 1, self.y + self.h - 3, self.w - 2, 2)
+        if self.icon and not self.label:
+            sp = sprite(self.icon, self.icon_scale, self.icon_subs)
+            ix = self.x + (self.w - sp.get_width()) // 2
+            iy = self.y + (self.h - 2 - sp.get_height()) // 2
+            surf.blit(sp, (ix, iy))
+            return
         lines = button_lines(self.label, self.w - 6)
-        total = len(lines) * 6 - 1
-        ty = self.y + (self.h - 2 - total) // 2
+        text_h = len(lines) * 6 - 1
+        if self.icon:
+            sp = sprite(self.icon, self.icon_scale, self.icon_subs)
+            total = sp.get_height() + 2 + text_h
+            iy = self.y + max(2, (self.h - 2 - total) // 2)
+            ix = self.x + (self.w - sp.get_width()) // 2
+            surf.blit(sp, (ix, iy))
+            ty = iy + sp.get_height() + 2
+        else:
+            ty = self.y + (self.h - 2 - text_h) // 2
         for i, line in enumerate(lines):
             draw_text(surf, line, self.x + self.w // 2, ty + i * 6, ink, align="center")
 
@@ -197,7 +219,8 @@ def tooltip(surf, lines, pos, width=96):
             wrapped.append((part, color))
     h = len(wrapped) * 7 + 6
     x = max(2, min(pos[0], 320 - width - 2))
-    y = max(2, min(pos[1] - h, 180 - h - 2))
+    y = pos[1] + 15 if pos[1] - h < 2 else pos[1] - h
+    y = max(2, min(y, 180 - h - 2))
     rect(surf, PANEL_DARK, x, y, width, h)
     rect(surf, (20, 16, 32), x + 1, y + 1, width - 2, h - 2)
     for i, (part, color) in enumerate(wrapped):

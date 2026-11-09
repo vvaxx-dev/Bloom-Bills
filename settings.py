@@ -36,6 +36,11 @@ PLOT_PRICE_GROWTH = 3.0
 REROLL_BASE_PRICE = 50
 RELIC_PRICE_GROWTH = 1.4
 
+RARE_RELIC_PRICE_GROWTH = 1.48
+
+# --- relics ------------------------------------------------------------
+COMPOST_WINDOW = 15.0
+
 # --- mutations ---------------------------------------------------------
 MUTATION_CHANCE = 0.1
 

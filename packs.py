@@ -2,7 +2,7 @@ from . import data, gfx
 from .formatting import fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
-from .settings import ACCENT, DIM, PANEL_DARK, TEXT
+from .settings import ACCENT, BAD, DIM, GOOD, PANEL_DARK, TEXT, WATER
 
 SEED_COLS, SEED_ROWS = 4, 2
 SEEDS_PER_PAGE = SEED_COLS * SEED_ROWS
@@ -14,11 +14,15 @@ BUY_COLS, BUY_ROWS = 2, 2
 BUYS_PER_PAGE = BUY_COLS * BUY_ROWS
 
 PACKS_BOX = (4, 18, 100, 106)
+REVEAL_BOX = (108, 18, 208, 74)
+FORECAST_BOX = (108, 95, 208, 29)
 SEED_BOX = (4, 128, 138, 48)
 BUY_BOX = (146, 128, 126, 48)
 GO_BTN = (276, 128, 40, 48)
 PAGER_Y = 131                       
 PAGER_H = 9
+
+TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": TEXT}
 
 
 def inside(pos, r):
@@ -249,7 +253,10 @@ class PacksScene(Scene):
             else:
                 self.go()
         elif key == pygame.K_ESCAPE:
-            self.app.goto("title")
+            if hasattr(self.app, "open_pause"):
+                self.app.open_pause()
+            else:
+                self.app.goto("title")
         elif key == pygame.K_LEFT:
             self.page_left()
         elif key == pygame.K_RIGHT:
@@ -268,7 +275,7 @@ class PacksScene(Scene):
     def draw(self, surf):
         run = self.run
         gfx.rect(surf, (30, 26, 46), 0, 0, 320, 180)
-        draw_topbar(surf, run)
+        draw_topbar(surf, run, mouse=self.mouse)
 
         # --- unopened packs -------------------------------------------
         gfx.panel(surf, *PACKS_BOX, "YOUR PACKS")
@@ -293,7 +300,7 @@ class PacksScene(Scene):
         self.open_btn.draw(surf, self.mouse)
 
         # --- just opened ----------------------------------------------
-        gfx.panel(surf, 108, 18, 208, 106, "JUST OPENED")
+        gfx.panel(surf, *REVEAL_BOX, "JUST OPENED")
         if self.reveal:
             kind, seeds = self.reveal
             pack = data.PACKS[kind]
@@ -305,23 +312,40 @@ class PacksScene(Scene):
                 hop = max(0, int(6 - (self.reveal_t - appear) * 30))
                 sp = data.PLANTS[sid]
                 col = data.RARITY_COLORS[sp["rarity"]]
-                x, y = 114 + i * 66, 34 - hop
+                x, y = 114 + i * 66, 32 - hop
                 gfx.rect(surf, col, x, y, 62, 54)
                 gfx.rect(surf, PANEL_DARK, x + 1, y + 1, 60, 52)
                 gfx.draw_sprite(surf, sid, x + 19, y + 4, 2)
                 gfx.draw_text(surf, sp["name"], x + 31, y + 32, TEXT, align="center")
                 gfx.draw_text(surf, sp["rarity"], x + 31, y + 41, col, align="center")
         else:
-            gfx.draw_text(surf, "OPEN A PACK TO SEE", 212, 58, DIM, align="center")
-            gfx.draw_text(surf, "WHAT YOU GET", 212, 68, DIM, align="center")
+            gfx.draw_text(surf, "OPEN A PACK TO SEE", 212, 48, DIM, align="center")
+            gfx.draw_text(surf, "WHAT YOU GET", 212, 58, DIM, align="center")
+
+        # --- upcoming round weather forecast --------------------------
+        fx, fy, fw, fh = FORECAST_BOX
+        twist = run.twist(run.round)
+        tcol = BAD if twist.get("boss") else TONE_COLORS.get(twist.get("tone", "neutral"), TEXT)
+        gfx.panel(surf, fx, fy, fw, fh, fill=(38, 33, 58))
+        gfx.rect(surf, tcol, fx, fy, 3, fh)
+        prefix = "BOSS FORECAST: " if twist.get("boss") else "WEATHER FORECAST: "
+        gfx.draw_text(surf, prefix + twist["name"].upper(), fx + 7, fy + 4, tcol)
+        gfx.draw_text(surf, "%dS" % run.round_time(), fx + fw - 5, fy + 4, DIM, align="right")
+        desc = twist.get("short", twist["desc"])
+        desc_lines = gfx.wrap(desc, fw - 12)
+        for k, line in enumerate(desc_lines[:2]):
+            gfx.draw_text(surf, line, fx + 7, fy + 13 + k * 7, DIM if k else TEXT)
 
         # --- your seeds -----------------------------------------------
         gfx.panel(surf, *SEED_BOX, "YOUR SEEDS")
+        seed_hover = None
         for i, sid in enumerate(self.visible_seed_order()):
             r = self.seed_rect(i)
             count = run.seeds.get(sid, 0)
             gfx.draw_sprite(surf, sid, r[0], r[1], 1)
             gfx.draw_text(surf, "x%d" % count, r[0] + 13, r[1] + 4, TEXT if count else DIM)
+            if inside(self.mouse, r):
+                seed_hover = sid
         if self.seed_pages > 1:
             self.seed_left.draw(surf, self.mouse)
             self.seed_right.draw(surf, self.mouse)
@@ -352,3 +376,24 @@ class PacksScene(Scene):
             if inside(self.mouse, r):
                 gfx.tooltip(surf, self.pack_lines(kind), self.mouse, 96)
                 return
+        if inside(self.mouse, FORECAST_BOX):
+            gfx.tooltip(surf, [
+                ("ROUND %d WEATHER" % run.round, ACCENT),
+                (twist["name"].upper(), tcol),
+                (twist["desc"], TEXT),
+                ("ROUND TIME: %dS" % run.round_time(), DIM),
+            ], self.mouse, 120)
+            return
+        if seed_hover:
+            sp = data.PLANTS[seed_hover]
+            rcol = data.RARITY_COLORS[sp["rarity"]]
+            lines = [
+                (sp["name"], rcol),
+                ("%s - %gS GROW" % (sp["rarity"].upper(), sp["grow"]), DIM),
+                ("HARVEST $%s / SELL $%s" % (fmt(sp["yield"]), fmt(sp["sell"])), GOOD),
+            ]
+            if "nocturnal" in sp["tags"]:
+                lines.append(("NOCTURNAL: CELLAR OR ECLIPSE", WATER))
+            if twist["ban"] and twist["ban"] in sp["tags"]:
+                lines.append(("BANNED BY %s THIS ROUND!" % twist["name"].upper(), BAD))
+            gfx.tooltip(surf, lines, self.mouse, 112)

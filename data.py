@@ -1,4 +1,3 @@
-
 RARITY_COLORS = {
     "common": (200, 196, 210),
     "uncommon": (120, 210, 110),
@@ -230,8 +229,8 @@ RELICS = {
                     "levels": [{"stat": "water", "goal": 150, "effects": {"water_time": 1},
                                 "desc": "Watering lasts 3s longer total."}]},
     "compost":     {"name": "Compost Heap",   "rarity": "common",   "cost": 130,
-                    "desc": "Plants sell for double at round end.",
-                    "effects": {"sell_mult": 1.0}},
+                    "desc": "In the last 15s of each round, harvests and plant sales pay x2.",
+                    "effects": {"compost_window": 15.0, "compost_mult": 2.0}},
     "fertilizer":  {"name": "Fertilizer",     "rarity": "common",   "cost": 145,
                     "desc": "All plants grow 20% faster.",
                     "effects": {"growth": 0.2},
@@ -263,7 +262,7 @@ RELICS = {
     "clover":      {"name": "Lucky Clover",   "rarity": "rare",     "cost": 650,
                     "desc": "Rare seeds are twice as likely in packs.",
                     "effects": {"pack_luck": 2.0}},
-    "gardener":    {"name": "Hired Gardener", "rarity": "rare",     "cost": 2300,
+    "gardener":    {"name": "Hired Gardener", "rarity": "rare",     "cost": 760,
                     "desc": "Plots water themselves, non-stop.",
                     "effects": {"auto_water": True}},
     "spore_lantern": {"name": "Spore Lantern", "rarity": "uncommon", "cost": 600,
@@ -330,8 +329,8 @@ SEASONS = [
 ]
 
 PERKS = {
-     "cash":  {"name": "Deep Pockets", "max": 10, "costs": [3, 4, 5, 6, 7, 8, 10, 12, 14, 16],
-              "desc": "START WITH +$10 A LEVEL", "now": "+${n}"},
+    "cash":  {"name": "Deep Pockets", "max": 10, "costs": [3, 4, 5, 6, 7, 8, 10, 12, 14, 16],
+              "desc": "+2% CASH INTEREST A LEVEL (25% AT MAX)", "now": "+{n}% INTEREST"},
     "plots": {"name": "Spare Plot",   "max": 4,  "costs": [8, 12, 18, 26],
               "desc": "ONE MORE STARTING PLOT PER LEVEL", "now": "+{n} PLOT{s}"},
     "packs": {"name": "Seed Stash",   "max": 2,  "costs": [10, 18],
@@ -340,8 +339,28 @@ PERKS = {
               "desc": "+10% TO EVERY HARVEST PER LEVEL", "now": "+{n}%"},
 }
 PERK_ORDER = ["cash", "plots", "packs", "yield"]
-PERK_STEP = {"cash": 10, "plots": 1, "packs": 1, "yield": 10}
-PERK_COST_GROWTH = 1.15     
+PERK_STEP = {"cash": 2, "plots": 1, "packs": 1, "yield": 10}
+PERK_COST_GROWTH = 1.15    
+
+def deep_pockets_pct(level):
+    """+2% interest per level from 1..9, jumping to +25% at max level 10."""
+    level = max(0, int(level))
+    if level == 0:
+        return 0
+    if level >= PERKS["cash"]["max"]:
+        return 25
+    return 2 * level
+
+
+def deep_pockets_rate(level):
+    return deep_pockets_pct(level) / 100.0
+
+
+def packs_for_plant(species):
+    """Pack ids whose seed pool contains `species`."""
+    return [kind for kind in PACK_ORDER if species in PACKS[kind]["pool"]]
+
+
 
 
 def perk_cost(key, level):
@@ -353,9 +372,10 @@ def perk_cost(key, level):
 
 
 def perk_text(key, level):
-    """'+$20' / '+2 PLOTS' / '+30%' - the total a level gives you."""
-    n = PERK_STEP[key] * level
+    """'+4% INTEREST' / '+2 PLOTS' / '+30%' - the total a level gives you."""
+    n = deep_pockets_pct(level) if key == "cash" else PERK_STEP[key] * level
     return PERKS[key]["now"].format(n=n, s="" if n == 1 else "S")
+
 
 def bill_for_quota(k):
     """Bill amount for the k-th quota (k = 1, 2, 3 ...). Climbs forever."""

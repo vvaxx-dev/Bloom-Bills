@@ -1,36 +1,62 @@
 import os
+
 import pygame
-from .save import SaveManager
-from .scenes import SCENES
-from .settings import (BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, START_SCALE, TITLE, TEXT, PANEL_DARK)
-from .state import Run
-from . import gfx
+
+try:
+    from . import gfx
+    from .overlays import ConfirmModal, PauseModal, SettingsModal
+    from .save import SaveManager
+    from .scene import TOPBAR_PAUSE_RECT, draw_topbar_tooltip
+    from .scenes import SCENES
+    from .settings import (BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, START_SCALE,
+                          TITLE, TEXT, PANEL_DARK)
+    from .state import Run
+except ImportError:
+    import gfx
+    from overlays import ConfirmModal, PauseModal, SettingsModal
+    from save import SaveManager
+    from scene import TOPBAR_PAUSE_RECT, draw_topbar_tooltip
+    from scenes import SCENES
+    from settings import (BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, START_SCALE,
+                          TITLE, TEXT, PANEL_DARK)
+    from state import Run
+
+RUN_SCENE_NAMES = ("packs", "round", "summary", "shop")
 
 
 class App:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption(TITLE)
+        self.saves = SaveManager()
+        self.profile = self.saves.load_profile()
+        self.settings_cfg = self.profile.setdefault("settings", {})
+        scale = int(self.settings_cfg.get("scale", START_SCALE))
         self.fullscreen = False
         self.borderless = BORDERLESS
-        self.windowed_size = (CANVAS_W * START_SCALE, CANVAS_H * START_SCALE)
+        self.windowed_size = (CANVAS_W * scale, CANVAS_H * scale)
         pygame.display.set_mode(self._window_size(), self._window_flags())
-        pygame.mouse.set_visible(False) 
+        pygame.mouse.set_visible(False)
         self.canvas = pygame.Surface((CANVAS_W, CANVAS_H))
         self.clock = pygame.time.Clock()
 
-        self.saves = SaveManager()
-        self.profile = self.saves.load_profile()
         self.run = None
         self.scene = None
+        self.scene_name = ""
+        self.pause_modal = None
+        self.settings_modal = None
+        self.confirm_modal = None
         self.mouse = (0, 0)
         self.running = True
-        self.toasts = []                 # [text, seconds_left]
+        self.toasts = []
         self.last_result = None
         self.debug = os.environ.get("BLOOM_DEBUG") == "1"
         self.goto("title")
 
     def goto(self, name, **kwargs):
+        self.scene_name = name
+        self.pause_modal = None
+        self.confirm_modal = None
         self.scene = SCENES[name](self, **kwargs)
         self.scene.on_enter()
 
@@ -39,6 +65,36 @@ class App:
 
     def quit(self):
         self.running = False
+
+    def save_settings(self):
+        self.profile["settings"] = dict(self.settings_cfg)
+        self.saves.save_profile(self.profile)
+
+    def set_window_scale(self, scale):
+        scale = max(2, min(8, int(scale)))
+        self.settings_cfg["scale"] = scale
+        self.windowed_size = (CANVAS_W * scale, CANVAS_H * scale)
+        if not self.fullscreen and not self.borderless:
+            self.rebuild_window()
+        self.save_settings()
+
+    def ask_confirm(self, title, message, on_confirm, confirm_label="CONFIRM", danger=True):
+        if not self.settings_cfg.get("confirmations", True):
+            if on_confirm:
+                on_confirm()
+            return
+        self.confirm_modal = ConfirmModal(self, title, message, on_confirm,
+                                        confirm_label=confirm_label, danger=danger)
+
+    def open_settings(self):
+        self.settings_modal = SettingsModal(self)
+
+    def open_pause(self):
+        if self.run and self.scene_name in RUN_SCENE_NAMES:
+            self.pause_modal = PauseModal(self)
+
+    def active_modal(self):
+        return self.confirm_modal or self.settings_modal or self.pause_modal
 
     def _window_flags(self):
         """No window chrome while borderless; plain resizable otherwise."""
@@ -92,7 +148,7 @@ class App:
         self.run = Run.from_dict(data)
         if self.run.phase == "shop":
             self.goto("shop")
-        elif self.run.phase == "summary" and self.run.pending_bill:
+        elif self.run.phase == "summary":
             self.goto("summary")
         else:
             self.goto("packs")
@@ -116,11 +172,15 @@ class App:
         gain = run.heirloom_reward()
         new_best = run.round > profile["best_round"]
         profile["heirlooms"] += gain
-        profile["perks"] = dict(run.perks) 
+        profile["perks"] = dict(run.perks)
         profile["best_round"] = max(profile["best_round"], run.round)
         profile["runs"] += 1
         if run.won:
             profile["wins"] += 1
+        harvested = dict(profile.get("harvested", {}))
+        for sid, count in run.mastery.items():
+            harvested[sid] = harvested.get(sid, 0) + int(count)
+        profile["harvested"] = harvested
         self.saves.save_profile(profile)
         self.saves.clear_run()
         s = run.last_summary or {}
@@ -130,7 +190,6 @@ class App:
             "bill": s.get("bill", 0), "money": s.get("money", run.money), "new_best": new_best,
         }
         self.run = None
-
 
     def _layout(self):
         w, h = pygame.display.get_surface().get_size()
@@ -154,9 +213,9 @@ class App:
         text = self.toasts[0][0]
         w = gfx.text_width(text) + 10
         x = (CANVAS_W - w) // 2
-        gfx.rect(self.canvas, PANEL_DARK, x - 1, 15, w + 2, 13)
-        gfx.rect(self.canvas, (80, 40, 40), x, 16, w, 11)
-        gfx.draw_text(self.canvas, text, CANVAS_W // 2, 19, TEXT, align="center")
+        gfx.rect(self.canvas, PANEL_DARK, x - 1, 17, w + 2, 13)
+        gfx.rect(self.canvas, (80, 40, 40), x, 18, w, 11)
+        gfx.draw_text(self.canvas, text, CANVAS_W // 2, 21, TEXT, align="center")
 
     def handle_key(self, key):
         if key == pygame.K_F11:
@@ -164,6 +223,13 @@ class App:
             return
         if key == pygame.K_F12:
             self.toggle_borderless()
+            return
+        modal = self.active_modal()
+        if modal:
+            modal.on_key(key)
+            return
+        if key == pygame.K_ESCAPE and self.run and self.scene_name in RUN_SCENE_NAMES:
+            self.open_pause()
             return
         if self.debug and self.run:
             if key == pygame.K_F2 and hasattr(self.scene, "fast"):
@@ -174,6 +240,18 @@ class App:
                 self.toast("DEBUG: +$10000")
         self.scene.on_key(key)
 
+    def handle_click(self, pos):
+        modal = self.active_modal()
+        if modal:
+            modal.on_click(pos)
+            return
+        if self.run and self.scene_name in RUN_SCENE_NAMES:
+            px, py, pw, ph = TOPBAR_PAUSE_RECT
+            if px <= pos[0] < px + pw and py <= pos[1] < py + ph:
+                self.open_pause()
+                return
+        self.scene.on_click(pos)
+
     def tick(self, dt):
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
@@ -182,17 +260,33 @@ class App:
                 self.mouse = self.to_canvas(ev.pos)
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 self.mouse = self.to_canvas(ev.pos)
-                self.scene.on_click(self.mouse)
+                self.handle_click(self.mouse)
             elif ev.type == pygame.MOUSEWHEEL:
-                self.scene.on_wheel(ev.y)
+                if not self.active_modal():
+                    self.scene.on_wheel(ev.y)
             elif ev.type == pygame.KEYDOWN:
                 self.handle_key(ev.key)
         self.mouse = self.to_canvas(pygame.mouse.get_pos())
-        self.scene.update(dt)
+        modal = self.active_modal()
+        if not modal:
+            self.scene.update(dt)
         for t in self.toasts:
             t[1] -= dt
         self.toasts = [t for t in self.toasts if t[1] > 0]
+
+        real_mouse = self.mouse
+        if modal:
+            self.mouse = (-999, -999)
         self.scene.draw(self.canvas)
+        self.mouse = real_mouse
+
+        if modal:
+            if self.pause_modal and modal is not self.pause_modal:
+                self.pause_modal.draw(self.canvas, (-999, -999))
+            modal.draw(self.canvas, self.mouse)
+        elif self.run and self.scene_name in RUN_SCENE_NAMES:
+            draw_topbar_tooltip(self.canvas, self.run, self.mouse)
+
         self.draw_toasts()
         gfx.draw_cursor(self.canvas, self.mouse)
         self.present()
@@ -202,3 +296,8 @@ class App:
             dt = min(self.clock.tick(FPS) / 1000.0, 0.1)
             self.tick(dt)
         pygame.quit()
+
+
+if __name__ == "__main__":
+    app = App()
+    app.main_loop()

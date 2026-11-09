@@ -1,7 +1,15 @@
-
 from . import gfx
 from .formatting import fmt
 from .settings import ACCENT, BAD, DIM, PANEL, PANEL_DARK, TEXT
+
+TOPBAR_PAUSE_RECT = (296, 0, 24, 14)
+
+
+def draw_topbar_tooltip(surf, run, mouse):
+    if not (TOPBAR_PAUSE_RECT[0] <= mouse[0] < TOPBAR_PAUSE_RECT[0] + TOPBAR_PAUSE_RECT[2]
+            and TOPBAR_PAUSE_RECT[1] <= mouse[1] < TOPBAR_PAUSE_RECT[1] + TOPBAR_PAUSE_RECT[3]):
+        return
+    gfx.tooltip(surf, [("PAUSE", ACCENT)], mouse, 72)
 
 
 class Scene:
@@ -44,7 +52,7 @@ class Scene:
             b.draw(surf, self.mouse)
 
 
-def draw_topbar(surf, run, label=None, timer=None):
+def draw_topbar(surf, run, label=None, timer=None, mouse=None):
     gfx.rect(surf, PANEL_DARK, 0, 0, 320, 14)
     gfx.rect(surf, PANEL, 0, 13, 320, 1)
     top = 2
@@ -69,3 +77,11 @@ def draw_topbar(surf, run, label=None, timer=None):
         if gfx.text_width(text) <= room:
             break
     gfx.draw_text(surf, text, 160, top, color, align="center")
+
+    # pause indicator
+    pause_x, pause_y, pause_w, pause_h = TOPBAR_PAUSE_RECT
+    hover = mouse is not None and pause_x <= mouse[0] < pause_x + pause_w and pause_y <= mouse[1] < pause_y + pause_h
+    pause_col = ACCENT if hover else PANEL
+    gfx.rect(surf, pause_col, 300, 2, 16, 10)
+    gfx.rect(surf, ACCENT, 304, 4, 3, 3)
+    gfx.rect(surf, ACCENT, 309, 4, 3, 3)

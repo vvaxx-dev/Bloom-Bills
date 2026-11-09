@@ -38,7 +38,7 @@ They get dearer every round - 1.65x, which is deliberately under the 1.71x a rou
 
 ## Heirlooms
 
-The permanent stuff, so a failed run still means something. You earn one heirloom per round survived, three per bill paid, and ten for winning. Spend them at the Heirloom Shelf on four things: starting cash, an extra starting plot, a free pack every round, and ten percent to every harvest. Prices climb with each level, so the shelf is where a pile of mediocre runs eventually turns into a good one.
+The permanent stuff, so a failed run still means something. You earn one heirloom per round survived, three per bill paid, and ten for winning. Spend them at the Heirloom Shelf on four things: end-of-round cash interest (+2% per level up to +25% at max, stacking with Piggy Bank), an extra starting plot, a free pack every round, and ten percent to every harvest. Prices climb with each level, so the shelf is where a pile of mediocre runs eventually turns into a good one.
 
 ## Seeds
 
@@ -52,16 +52,17 @@ The pack screen is three shelves, and every one of them fits on screen: the unop
 
 | Key | Does |
 |---|---|
-| Left click | everything. Seed, plot, water, buttons |
+| Left click | everything. Seed, plot, water, shovel, buttons |
 | Space | start the round clock |
+| X / Backspace / Delete | toggle the shovel to dig up a planted crop |
 | Tab | switch between the garden and the cellar |
 | 1 - 6 | pick a seed (from the visible tray page) |
-| Left / right | page the seed tray / seed shelf |
+| Left / right | page the seed tray / seed shelf / flower index|
 | Up / down | page the pack shelves |
 | Mouse wheel | page whichever shelf the cursor is over |
 | F11 | fullscreen |
 | F12 | borderless window on/off (borderless by default) |
-| Esc | back to the title |
+| Esc | open / close pause menu, settings, or confirmation prompts |
 
 ## Running it
 

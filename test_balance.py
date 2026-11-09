@@ -270,8 +270,10 @@ class HeirloomTests(unittest.TestCase):
     def test_heirloom_levels_apply_to_the_run_immediately(self):
         run = Run(seed=1)
         before_money = run.money
+        self.assertAlmostEqual(run.interest_rate(), 0.0)
         run.buy_heirloom("cash", run.heirloom_cost("cash"))
-        self.assertEqual(run.money, before_money + 10)
+        self.assertEqual(run.money, before_money)
+        self.assertAlmostEqual(run.interest_rate(), 0.02)
         plots_before = len(run.plots)
         run.buy_heirloom("plots", run.heirloom_cost("plots"))
         self.assertEqual(len(run.plots), plots_before + 1)
@@ -320,9 +322,6 @@ class PriceTests(unittest.TestCase):
         for first, second in zip(prices, prices[1:]):
             self.assertAlmostEqual(second / first, PLOT_PRICE_GROWTH, places=1)
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 class SeasonTests(unittest.TestCase):
     def test_a_new_season_starts_every_nine_rounds(self):
@@ -917,3 +916,296 @@ class ShelfInteractionTests(unittest.TestCase):
             self.skipTest("pygame not installed")
         pygame.init()
         return pygame.Surface((320, 180))
+
+
+class DeepPocketsInterestTests(unittest.TestCase):
+    def test_deep_pockets_curve_ends_at_25_percent(self):
+        expected = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 25]
+        actual = [data.deep_pockets_pct(lv) for lv in range(11)]
+        self.assertEqual(actual, expected)
+        self.assertEqual(data.perk_text("cash", 1), "+2% INTEREST")
+        self.assertEqual(data.perk_text("cash", 9), "+18% INTEREST")
+        self.assertEqual(data.perk_text("cash", 10), "+25% INTEREST")
+
+    def test_deep_pockets_stacks_with_piggy_bank_and_pays_interest(self):
+        from .settings import START_MONEY
+        run = Run(seed=1, perks={"cash": 10})
+        self.assertEqual(run.money, START_MONEY)  # no flat +$10 per level
+        self.assertAlmostEqual(run.interest_rate(), 0.25)
+        run.relics = ["piggy_bank"]
+        self.assertAlmostEqual(run.interest_rate(), 0.30)
+        run.money = 1000
+        summary = run.end_round()
+        self.assertEqual(summary["interest"], 300)
+        self.assertEqual(run.money, 1300)
+
+
+class CompostHeapTests(unittest.TestCase):
+    def test_compost_doubles_harvests_only_in_final_15_seconds(self):
+        run = Run(seed=1)
+        run.twist_id = lambda _rnd=None: "none"
+        run.relics = ["compost"]
+        run.begin_round()
+        run.start_timer()
+        run.plots = [Plot("sunflower")]  # yield 14
+
+        run.time_left = 20.0
+        self.assertFalse(run.compost_active())
+        self.assertEqual(run.harvest_value(0), 14)
+
+        run.time_left = 15.0
+        self.assertTrue(run.compost_active())
+        self.assertEqual(run.harvest_value(0), 28)
+
+    def test_compost_splits_single_large_update_across_15s_threshold(self):
+        run = Run(seed=1)
+        run.twist_id = lambda _rnd=None: "none"
+        run.relics = ["compost"]
+        run.begin_round()
+        run.start_timer()
+        run.money = 0
+        # Daisy grows every 5s (yield 2 plain, 4 in final 15s).
+        # Start at 20s left and advance 10s in one call:
+        #   20s -> 15s (5s): 1 plain harvest ($2)
+        #   15s -> 10s (5s): 1 compost-boosted harvest ($4)
+        run.time_total = 45.0
+        run.time_left = 20.0
+        run.plots = [Plot("daisy")]
+        run.update(10.0)
+        self.assertAlmostEqual(run.time_left, 10.0)
+        harvests = [ev["amount"] for ev in run.events if ev["kind"] == "harvest"]
+        self.assertEqual(harvests, [2, 4])
+        self.assertTrue(any(ev["kind"] == "compost" for ev in run.events))
+
+    def test_compost_doubles_end_of_round_sale_when_in_window_not_early(self):
+        # Ending naturally at 0s -> 2x sale
+        natural = Run(seed=1)
+        natural.relics = ["compost"]
+        natural.begin_round()
+        natural.start_timer()
+        natural.plots = [Plot("pumpkin", progress=10.0)]  # half of 20s, sell 150 -> base 75, 2x = 150
+        natural.time_left = 0.0
+        natural.finished = True
+        s_nat = natural.end_round()
+        self.assertEqual(s_nat["sale"], 150)
+
+        # Bailing out early at 30s left -> 1x sale
+        early = Run(seed=1)
+        early.relics = ["compost"]
+        early.begin_round()
+        early.start_timer()
+        early.plots = [Plot("pumpkin", progress=10.0)]
+        early.time_left = 30.0
+        early.finish_early()
+        s_early = early.end_round()
+        self.assertEqual(s_early["sale"], 75)
+
+
+class UnpaidQuotaTests(unittest.TestCase):
+    def test_short_on_quota_does_not_instantly_end_run(self):
+        run = Run(seed=1)
+        run.round = 3
+        run.money = 50  # bill is $300
+        summary = run.end_round()
+        self.assertFalse(run.dead)
+        self.assertEqual(run.phase, "summary")
+        self.assertTrue(summary["pending_bill"])
+        self.assertFalse(summary["can_afford"])
+        self.assertEqual(summary["shortfall"], 250)
+        self.assertIsNone(summary["paid"])
+
+        # Attempting to pay fails without killing the run
+        ok, _ = run.pay_pending_bill()
+        self.assertFalse(ok)
+        self.assertFalse(run.dead)
+        self.assertEqual(run.pending_bill, 300)
+
+        # Pressing Don't Pay (decline_bill) ends the run
+        run.decline_bill()
+        self.assertTrue(run.dead)
+        self.assertEqual(run.pending_bill, 0)
+
+    def test_summary_scene_disables_pay_and_waits_for_dont_pay(self):
+        try:
+            import pygame
+        except ImportError:
+            self.skipTest("pygame not installed")
+        import os, tempfile
+        from .app import App
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("BLOOM_SAVE_DIR")
+            os.environ["BLOOM_SAVE_DIR"] = tmp
+            try:
+                app = App()
+                app.new_run()
+                app.run.round = 3
+                app.run.money = 100
+                app.after_round()
+                self.assertEqual(app.scene_name, "summary")
+                self.assertIsNotNone(app.run)
+                self.assertFalse(app.scene.pay_btn.enabled)
+                self.assertTrue(app.scene.decline_btn.enabled)
+                # Space does not skip an unpaid bill
+                app.handle_key(pygame.K_SPACE)
+                self.assertEqual(app.scene_name, "summary")
+                # Clicking Don't Pay finishes the run and opens gameover
+                bx, by = app.scene.decline_btn.x + 5, app.scene.decline_btn.y + 5
+                app.handle_click((bx, by))
+                self.assertEqual(app.scene_name, "gameover")
+                self.assertIsNone(app.run)
+            finally:
+                if old is None:
+                    os.environ.pop("BLOOM_SAVE_DIR", None)
+                else:
+                    os.environ["BLOOM_SAVE_DIR"] = old
+
+
+class RareRelicPricingTests(unittest.TestCase):
+    def test_rare_relics_start_slightly_above_uncommon_and_scale_steeper(self):
+        from .settings import PRICE_GROWTH, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH
+        self.assertGreater(RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH)
+        self.assertLess(RARE_RELIC_PRICE_GROWTH, PRICE_GROWTH)
+
+        uncommons = [r for r, d in data.RELICS.items() if d["rarity"] == "uncommon"]
+        rares = [r for r, d in data.RELICS.items() if d["rarity"] == "rare"]
+        max_uncommon_base = max(data.RELICS[r]["cost"] for r in uncommons)
+        for rid in rares:
+            self.assertGreater(data.RELICS[rid]["cost"], max_uncommon_base)
+            self.assertLessEqual(data.RELICS[rid]["cost"], 850)
+
+        r1 = Run(seed=1)
+        max_u_r1 = max(r1.relic_price(r) for r in uncommons)
+        min_r_r1 = min(r1.relic_price(r) for r in rares)
+        self.assertGreater(min_r_r1, max_u_r1)
+        self.assertLess(min_r_r1, max_u_r1 * 2.0)
+
+        r10 = Run(seed=1)
+        r10.round = 10
+        uncommon_ratio = r10.relic_price("scarecrow") / r1.relic_price("scarecrow")
+        rare_ratio = r10.relic_price("clover") / r1.relic_price("clover")
+        self.assertGreater(rare_ratio, uncommon_ratio)
+
+
+class ShovelAndMenuTests(unittest.TestCase):
+    def test_remove_plant_clears_surface_and_cellar_plots(self):
+        run = Run(seed=1)
+        run.begin_round()
+        run.plots[0] = Plot("daisy", progress=2.0)
+        run.cellar_plots[0] = Plot("brown_mushroom", progress=2.0)
+        ok, _ = run.remove_plant(0, cellar=False)
+        self.assertTrue(ok)
+        self.assertIsNone(run.plots[0].species)
+        ok_empty, _ = run.remove_plant(0, cellar=False)
+        self.assertFalse(ok_empty)
+        ok_cellar, _ = run.remove_plant(0, cellar=True)
+        self.assertTrue(ok_cellar)
+        self.assertIsNone(run.cellar_plots[0].species)
+
+    def test_shovel_confirmation_pause_settings_and_flower_index(self):
+        try:
+            import pygame
+        except ImportError:
+            self.skipTest("pygame not installed")
+        import os, tempfile
+        from .app import App
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("BLOOM_SAVE_DIR")
+            os.environ["BLOOM_SAVE_DIR"] = tmp
+            try:
+                app = App()
+                # Main page has Flower Index book & Settings cogwheel
+                self.assertEqual(app.scene_name, "title")
+                self.assertEqual(app.scene.book_btn.icon, "book")
+                self.assertEqual(app.scene.cog_btn.icon, "cog")
+
+                # Open settings from main page
+                app.handle_click((app.scene.cog_btn.x + 4, app.scene.cog_btn.y + 4))
+                self.assertIsNotNone(app.settings_modal)
+                app.handle_key(pygame.K_ESCAPE)
+                self.assertIsNone(app.settings_modal)
+
+                # Open Flower Index ("Little Book") and inspect plants + mutants
+                app.handle_click((app.scene.book_btn.x + 8, app.scene.book_btn.y + 8))
+                self.assertEqual(app.scene_name, "index")
+                app.scene.draw(app.canvas)
+                self.assertTrue(app.scene.mutant_rects)
+                mid, mrect = app.scene.mutant_rects[0]
+                app.handle_click((mrect[0] + 4, mrect[1] + 4))
+                self.assertEqual(app.scene.selected, mid)
+                app.scene.draw(app.canvas)
+                self.assertIsNotNone(app.scene.base_rect)
+                app.handle_key(pygame.K_ESCAPE)
+                self.assertEqual(app.scene_name, "title")
+
+                # Start a run, plant a seed, test Shovel + Confirmation
+                app.new_run()
+                app.run.seeds["daisy"] = 2
+                app.goto("round")
+                app.scene.selected = "daisy"
+                from .round import plot_rect
+                px, py, pw, ph = plot_rect(0)
+                app.handle_click((px + pw // 2, py + ph // 2))
+                self.assertEqual(app.run.plots[0].species, "daisy")
+
+                # Activate shovel and click planted plot -> opens ConfirmModal first
+                sx, sy = app.scene.shovel_btn.x + 5, app.scene.shovel_btn.y + 5
+                app.handle_click((sx, sy))
+                self.assertTrue(app.scene.shovel_mode)
+                app.handle_click((px + pw // 2, py + ph // 2))
+                self.assertIsNotNone(app.confirm_modal)
+                self.assertEqual(app.run.plots[0].species, "daisy")  # still there before confirm
+                # Confirm removal
+                cx, cy = app.confirm_modal.confirm_btn.x + 5, app.confirm_modal.confirm_btn.y + 5
+                app.handle_click((cx, cy))
+                self.assertIsNone(app.confirm_modal)
+                self.assertIsNone(app.run.plots[0].species)
+
+                # Pause menu opens on ESC, freezes timer, has settings cog, new run, quit, heirlooms
+                app.run.start_timer()
+                before_t = app.run.time_left
+                app.handle_key(pygame.K_ESCAPE)
+                self.assertIsNotNone(app.pause_modal)
+                self.assertEqual(app.pause_modal.cog_btn.icon, "cog")
+                # Open settings from pause menu and close back to pause menu
+                app.handle_click((app.pause_modal.cog_btn.x + 4, app.pause_modal.cog_btn.y + 4))
+                self.assertIsNotNone(app.settings_modal)
+                app.handle_key(pygame.K_ESCAPE)
+                self.assertIsNone(app.settings_modal)
+                self.assertIsNotNone(app.pause_modal)
+                self.assertEqual(app.run.time_left, before_t)
+
+                # New Run from Pause menu asks for confirmation
+                nx, ny = app.pause_modal.new_btn.x + 5, app.pause_modal.new_btn.y + 5
+                app.handle_click((nx, ny))
+                self.assertIsNotNone(app.confirm_modal)
+                app.handle_key(pygame.K_ESCAPE)  # cancel
+                self.assertIsNone(app.confirm_modal)
+                self.assertIsNotNone(app.pause_modal)
+            finally:
+                if old is None:
+                    os.environ.pop("BLOOM_SAVE_DIR", None)
+                else:
+                    os.environ["BLOOM_SAVE_DIR"] = old
+
+    def test_bill_progress_advances_after_paying_bill_in_shop(self):
+        run = Run(seed=1)
+        run.round = 3
+        run.money = 400
+        bp_before = run.bill_progress()
+        self.assertTrue(bp_before["due_now"])
+        self.assertEqual(bp_before["quota_index"], 1)
+        self.assertEqual(bp_before["bill"], 300)
+
+        run.end_round()
+        ok, _ = run.pay_pending_bill()
+        self.assertTrue(ok)
+        run.enter_shop()
+        bp_after = run.bill_progress()
+        self.assertFalse(bp_after["due_now"])
+        self.assertEqual(bp_after["quota_index"], 2)
+        self.assertEqual(bp_after["quota_round"], 6)
+        self.assertEqual(bp_after["bill"], 1500)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,4 +1,3 @@
- 
 PALETTE = {
     "k": (20, 16, 28),      # outline
     "g": (88, 170, 72),     # green
@@ -326,7 +325,60 @@ GRIDS = {
         "ccccc",
         ".ccc.",
     ],
-     # the mouse pointer: same 1x1-pixel chunks as the font, so it scales with
+    "cog": [
+        "....kkkk....",
+        "...kssssk...",
+        ".kksswwsskk.",
+        ".ksswkkwssk.",
+        "ksswk..kwssk",
+        "kswk....kwsk",
+        "kswk....kwsk",
+        "ksswk..kwssk",
+        ".ksswkkwssk.",
+        ".kksswwsskk.",
+        "...kssssk...",
+        "....kkkk....",
+    ],
+    "book": [
+        "..kkkkkkkkkk..",
+        ".kBbbbbbbbbwk.",
+        ".kBbbbbbbbbwk.",
+        ".kBbbyyybbbwk.",
+        ".kBbyyyyybbwk.",
+        ".kBbbyyybbbwk.",
+        ".kBbbbggbbbwk.",
+        ".kBbbggggbbwk.",
+        ".kBbbbggbbbwk.",
+        ".kBbbbbbbbbwk.",
+        ".kBBwwwwwwwwk.",
+        "..kkkkkkkkkk..",
+    ],
+    "shovel": [
+        "........kkk.",
+        ".......kbbbk",
+        "......kbbk..",
+        ".....kbbk...",
+        "....kbbk....",
+        "..kkkbbk....",
+        ".kswwskk....",
+        "kswwwwsk....",
+        "kswwwssk....",
+        "ksssssk.....",
+        ".kkkkk......",
+        "............",
+    ],
+    "pause": [
+        ".........",
+        "..kk.kk..",
+        "..kw.wk..",
+        "..kw.wk..",
+        "..kw.wk..",
+        "..kw.wk..",
+        "..kw.wk..",
+        "..kk.kk..",
+        ".........",
+    ],
+    # the mouse pointer: same 1x1-pixel chunks as the font, so it scales with
     # the rest of the art instead of being a smooth OS arrow
     "cursor": [
         "k........",
@@ -406,4 +458,6 @@ FONT = {
     "&": [".##..", "#..#.", ".##..", "#..##", ".##.#"],   # 5 wide
     "[": ["##.", "#..", "#..", "#..", "##."],
     "]": [".##", "..#", "..#", "..#", ".##"],
+     "#": ["#.#.", "####", "#.#.", "####", "#.#."],
+    "|": [".#.", ".#.", ".#.", ".#.", ".#."],
 }
