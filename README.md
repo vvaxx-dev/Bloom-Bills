@@ -44,7 +44,9 @@ The permanent stuff, so a failed run still means something. You earn one heirloo
 
 Eighteen plants across eight packs. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron. They are all fully playable - Cranberries and Saffron just borrow the placeholder sprite until their art gets drawn.
 
-mouse wheel - an Eclipse puts the whole nocturnal shelf in the tray alongside everything else, which is more than one screenful. The seed shelf on the pack screen pages the same way. Owned packs have up/down paging controls and hover tooltips with their contents and odds. Farmer, nocturnal and cursed crops can mutate too; cursed mutations retain their upkeep and auras.
+An Eclipse puts the whole nocturnal shelf in the round's tray alongside everything else, which is more than one screenful, so the tray pages with the arrows, left/right or the mouse wheel.
+
+The pack screen is three shelves, and every one of them fits on screen: the unopened packs on the top left (twelve to a page), the seeds and the packs for sale along the bottom. Four packs are for sale at a time and the rest are a page away, so all eight stay reachable through the whole run as each one unlocks - wheel or arrows over a shelf page that shelf. Hovering any pack shows its contents and odds. Farmer, nocturnal and cursed crops can mutate too; cursed mutations retain their upkeep and auras.
 
 ## Controls
 
@@ -55,7 +57,8 @@ mouse wheel - an Eclipse puts the whole nocturnal shelf in the tray alongside ev
 | Tab | switch between the garden and the cellar |
 | 1 - 6 | pick a seed (from the visible tray page) |
 | Left / right | page the seed tray / seed shelf |
-| Mouse wheel | same thing |
+| Up / down | page the pack shelves |
+| Mouse wheel | page whichever shelf the cursor is over |
 | F11 | fullscreen |
 | F12 | borderless window on/off (borderless by default) |
 | Esc | back to the title |
