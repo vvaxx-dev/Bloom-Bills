@@ -876,6 +876,40 @@ class ShelfInteractionTests(unittest.TestCase):
                 self.assertGreaterEqual(y, SEED_BOX[1])
                 self.assertLessEqual(y + h, SEED_BOX[1] + SEED_BOX[3])
 
+    def test_seed_panel_is_painted_at_its_own_width(self):
+        """The panel must be drawn from SEED_BOX, not from a wider stale
+        rectangle - a 268px panel runs straight over the for-sale shelf."""
+        from .packs import BUY_BOX, SEED_BOX
+        surf = self._surface()
+        scene = self.packs_scene()
+        scene.draw(surf)
+        gap_x = SEED_BOX[0] + SEED_BOX[2] + 2       # the gap between the two panels
+        self.assertLess(gap_x, BUY_BOX[0])
+        background = (30, 26, 46)
+        for y in (SEED_BOX[1] + 4, SEED_BOX[1] + 24, SEED_BOX[1] + 44):
+            self.assertEqual(tuple(surf.get_at((gap_x, y)))[:3], background,
+                             "the seed panel was painted wider than SEED_BOX")
+
+    def test_pack_name_and_price_are_on_separate_lines(self):
+        """A shelf button is two lines: name on top, price underneath. Left to
+        the generic reflow, a short label collapses onto one line."""
+        from .settings import TEXT
+        surf = self._surface()
+        scene = self.packs_scene(round_no=2, money=5000)
+        scene.run.packs = ["garden"] * 3
+        scene.refresh()
+        scene.draw(surf)
+        x, y, w, h = scene.buy_slot_rect(0)
+        ink = TEXT[:3]
+        rows = sorted({ry for ry in range(y, y + h) for rx in range(x, x + w)
+                       if tuple(surf.get_at((rx, ry)))[:3] == ink})
+        self.assertTrue(rows, "no text drawn on the shelf button")
+        bands = 1
+        for above, below in zip(rows, rows[1:]):
+            if below - above > 1:
+                bands += 1
+        self.assertEqual(bands, 2, "pack name and price should be on separate lines")
+
     def _surface(self):
         try:
             import pygame
