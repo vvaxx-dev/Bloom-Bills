@@ -781,3 +781,139 @@ class ShelfInteractionTests(unittest.TestCase):
         scene.refresh()
         self.assertEqual(scene.pack_page, 0)
         self.assertFalse(scene.pack_down.enabled)
+    # ------------------------------------------------------------------
+    # the packs screen: the for-sale shelf used to run off the bottom of the
+    # screen underneath the seed shelf, so six of the eight packs could not be
+    # bought and the wheel only ever paged the seeds
+    # ------------------------------------------------------------------
+    def packs_scene(self, round_no=24, money=50_000_000):
+        from .packs import PacksScene
+        app = self.app()
+        app.mouse = (160, 90)
+        app.goto = lambda name: None
+        app.run = Run(seed=1)
+        app.run.round = round_no
+        app.run.money = money
+        app.run.packs = list(data.PACK_ORDER) * 2
+        scene = PacksScene(app)
+        scene.on_enter()
+        return scene
+
+    def test_for_sale_shelf_stays_on_screen(self):
+        from .packs import BUY_BOX, PACKS_BOX, SEED_BOX, GO_BTN
+        scene = self.packs_scene()
+        boxes = [PACKS_BOX, SEED_BOX, BUY_BOX, GO_BTN]
+        for name, r in (("packs", PACKS_BOX), ("seeds", SEED_BOX), ("buy", BUY_BOX)):
+            self.assertGreaterEqual(r[0], 0, name)
+            self.assertGreaterEqual(r[1], 14, name)          # below the topbar
+            self.assertLessEqual(r[0] + r[2], 320, name)
+            self.assertLessEqual(r[1] + r[3], 180, name)
+        def overlap(a, b):
+            return (a[0] < b[0] + b[2] and b[0] < a[0] + a[2]
+                    and a[1] < b[1] + b[3] and b[1] < a[1] + a[3])
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                self.assertFalse(overlap(a, b), (a, b))
+
+    def test_every_unlocked_pack_can_be_bought_from_the_shelf(self):
+        from .packs import BUYS_PER_PAGE
+        scene = self.packs_scene()
+        self.assertEqual(scene.buy_pages,
+                         (len(scene.run.unlocked_packs()) + BUYS_PER_PAGE - 1) // BUYS_PER_PAGE)
+        seen = []
+        for page in range(scene.buy_pages):
+            scene.buy_page = page
+            scene.draw(self._surface())
+            seen += [kind for kind, _r in scene.buy_rects]
+        self.assertEqual(seen, scene.run.unlocked_packs())
+        # and the button under the cursor buys the pack it is labelled with
+        scene.buy_page = scene.buy_pages - 1
+        scene.draw(self._surface())
+        kind, rect = scene.buy_rects[-1]
+        before = len(scene.run.packs)
+        self.assertTrue(scene.on_click((rect[0] + 2, rect[1] + 2)))
+        self.assertEqual(scene.run.packs[-1], kind)
+        self.assertEqual(len(scene.run.packs), before + 1)
+
+    def test_a_buy_button_hidden_on_another_page_cannot_be_clicked(self):
+        from .packs import BUYS_PER_PAGE
+        scene = self.packs_scene()
+        scene.buy_page = 0
+        scene.draw(self._surface())
+        hidden = [b for b in scene.buy_buttons if b.slot // BUYS_PER_PAGE]
+        self.assertTrue(hidden)
+        before = len(scene.run.packs)
+        for b in hidden:
+            self.assertFalse(scene.on_click((b.x + 1, b.y + 1)))
+        self.assertEqual(len(scene.run.packs), before)
+
+    def test_wheel_pages_the_shelf_under_the_cursor(self):
+        scene = self.packs_scene()
+        scene.app.mouse = (160, 140)                      # over the for-sale shelf
+        scene.on_wheel(-1)                                # wheel down
+        self.assertEqual(scene.buy_page, 1)
+        self.assertEqual(scene.seed_page, 0)
+        scene.on_wheel(1)                                 # wheel up
+        self.assertEqual(scene.buy_page, 0)
+        scene.app.mouse = (40, 40)                        # over the unopened tray
+        scene.on_wheel(-1)
+        self.assertEqual(scene.pack_page, 1)
+        self.assertEqual(scene.buy_page, 0)
+        scene.app.mouse = (160, 90)                       # over neither: the seeds
+        scene.on_wheel(-1)
+        self.assertEqual(scene.seed_page, 1)
+        self.assertEqual(scene.pack_page, 1)
+
+    def test_seed_shelf_stays_inside_its_panel_on_every_page(self):
+        from .packs import SEED_BOX
+        scene = self.packs_scene()
+        for page in range(scene.seed_pages):
+            scene.seed_page = page
+            for i in range(len(scene.visible_seed_order())):
+                x, y, w, h = scene.seed_rect(i)
+                self.assertGreaterEqual(x, SEED_BOX[0])
+                self.assertLessEqual(x + w, SEED_BOX[0] + SEED_BOX[2])
+                self.assertGreaterEqual(y, SEED_BOX[1])
+                self.assertLessEqual(y + h, SEED_BOX[1] + SEED_BOX[3])
+
+    def test_seed_panel_is_painted_at_its_own_width(self):
+        """The panel must be drawn from SEED_BOX, not from a wider stale
+        rectangle - a 268px panel runs straight over the for-sale shelf."""
+        from .packs import BUY_BOX, SEED_BOX
+        surf = self._surface()
+        scene = self.packs_scene()
+        scene.draw(surf)
+        gap_x = SEED_BOX[0] + SEED_BOX[2] + 2       # the gap between the two panels
+        self.assertLess(gap_x, BUY_BOX[0])
+        background = (30, 26, 46)
+        for y in (SEED_BOX[1] + 4, SEED_BOX[1] + 24, SEED_BOX[1] + 44):
+            self.assertEqual(tuple(surf.get_at((gap_x, y)))[:3], background,
+                             "the seed panel was painted wider than SEED_BOX")
+
+    def test_pack_name_and_price_are_on_separate_lines(self):
+        """A shelf button is two lines: name on top, price underneath. Left to
+        the generic reflow, a short label collapses onto one line."""
+        from .settings import TEXT
+        surf = self._surface()
+        scene = self.packs_scene(round_no=2, money=5000)
+        scene.run.packs = ["garden"] * 3
+        scene.refresh()
+        scene.draw(surf)
+        x, y, w, h = scene.buy_slot_rect(0)
+        ink = TEXT[:3]
+        rows = sorted({ry for ry in range(y, y + h) for rx in range(x, x + w)
+                       if tuple(surf.get_at((rx, ry)))[:3] == ink})
+        self.assertTrue(rows, "no text drawn on the shelf button")
+        bands = 1
+        for above, below in zip(rows, rows[1:]):
+            if below - above > 1:
+                bands += 1
+        self.assertEqual(bands, 2, "pack name and price should be on separate lines")
+
+    def _surface(self):
+        try:
+            import pygame
+        except ImportError:               # headless checkout without pygame
+            self.skipTest("pygame not installed")
+        pygame.init()
+        return pygame.Surface((320, 180))

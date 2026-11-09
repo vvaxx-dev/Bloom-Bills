@@ -72,6 +72,16 @@ def draw_wrapped(surf, text, x, y, max_width, color=TEXT, scale=1, line_gap=2):
     return len(wrap(text, max_width, scale))
 
 
+def button_lines(label, max_width, scale=1):
+    """Wrap a button's label, keeping the label's own line breaks (a pack's
+    name and its price are two lines on purpose) and folding any line that is
+    still too wide."""
+    lines = []
+    for chunk in str(label).split("\n"):
+        lines.extend(wrap(chunk, max_width, scale))
+    return lines or [""]
+
+
 def sprite(name, scale=1, subs=None):
     key = (name, scale, tuple(sorted(subs.items())) if subs else None)
     surf = _sprite_cache.get(key)
@@ -171,7 +181,7 @@ class Button:
         rect(surf, edge, self.x, self.y, self.w, self.h)
         rect(surf, face, self.x + 1, self.y + 1, self.w - 2, self.h - 3)
         rect(surf, tuple(max(0, c - 30) for c in face), self.x + 1, self.y + self.h - 3, self.w - 2, 2)
-        lines = wrap(self.label, self.w - 6)
+        lines = button_lines(self.label, self.w - 6)
         total = len(lines) * 6 - 1
         ty = self.y + (self.h - 2 - total) // 2
         for i, line in enumerate(lines):
