@@ -161,6 +161,7 @@ class SummaryScene(Scene):
                 gfx.draw_text(surf, "-$%s" % fmt(short), rx + rw - 6, ry0 + 69, BAD, align="right")
                 gfx.draw_wrapped(surf, "NOT ENOUGH FOR QUOTA. PRESS DON'T PAY TO END RUN.",
                                  rx + 6, ry0 + 84, rw - 12, BAD)
+        else:
             qr = bp["quota_round"]
             nbill = bp["bill"]
             frac = bp["fraction"]

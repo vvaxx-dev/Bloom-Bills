@@ -337,11 +337,11 @@ class Run:
                 mult *= 1.0 + e["distinct_bonus"] * distinct
             if e.get("mono_mult") and distinct == 1 and len(planted) >= 2:
                 mult *= e["mono_mult"]
-            if sp.get("mutant"):
-                # Mutagen and friends: mutants pay a little better than they used to
-                mult *= 1.0 + self._sum("mutant_bonus")
-            if self.compost_active():
-                mult *= self.compost_mult()
+        if sp.get("mutant"):
+            # Mutagen and friends: mutants pay a little better than they used to
+            mult *= 1.0 + self._sum("mutant_bonus")
+        if self.compost_active():
+            mult *= self.compost_mult()
         mult *= 1.0 + 0.10 * self.perk("yield")
         mult *= self.twist()["yield"]
         if "cursed" not in tags:
@@ -633,7 +633,7 @@ class Run:
         plot_list[i].harvests += 1
         if len(self.events) < 300:
             self.events.append({"kind": "harvest", "plot": i, "amount": value, "cellar": cellar})
-            self.refresh_relic_levels()
+        self.refresh_relic_levels()
         self._maybe_mutate(i, cellar)
 
     def _maybe_mutate(self, i, cellar=False):
@@ -662,8 +662,8 @@ class Run:
             for p in plot_list:
                 if p.species:
                     upkeep += data.PLANTS[p.species].get("upkeep", 0)
-                w = self.compost_window()
-        in_compost = (w > 0) and (not self.started or self.time_left <= w + 1e-9)
+                in_compost = self.compost_active()
+
         comp = (1.0 + self._sum("sell_mult")) * (self.compost_mult() if in_compost else 1.0)
 
         sale = 0
@@ -678,7 +678,7 @@ class Run:
         self.total_earned += sale
         self.money = max(0, self.money - upkeep)
         rate = self.interest_rate()
-        interest = max(1, int(self.money * rate)) if (self.money > 0 and rate > 0) else 0
+        interest = max(1, int(round(self.money * rate, 9))) if (self.money > 0 and rate > 0) else 0
         self.money += interest
         self.total_earned += interest
         self.counters["rounds"] = self.counters.get("rounds", 0) + 1
@@ -820,7 +820,7 @@ class Run:
             "perks": self.perks, "round": self.round, "phase": self.phase,
             "money": self.money, "seeds": self.seeds, "packs": self.packs,
             "plots": [p.to_dict() for p in self.plots], "plots_bought": self.plots_bought,
-             "cellar_plots": [p.to_dict() for p in self.cellar_plots],
+            "cellar_plots": [p.to_dict() for p in self.cellar_plots],
             "cellar_unlocked": self.cellar_unlocked,
             "relics": self.relics, "mastery": self.mastery, "counters": self.counters,
             "shop_offers": self.shop_offers, "rerolls": self.rerolls,

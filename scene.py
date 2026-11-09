@@ -1,6 +1,6 @@
 from . import gfx
 from .formatting import fmt
-from .settings import ACCENT, BAD, DIM, PANEL, PANEL_DARK, TEXT
+from .settings import ACCENT, BAD, DIM, PANEL, PANEL_DARK, PANEL_LIGHT, TEXT
 
 TOPBAR_PAUSE_RECT = (296, 0, 24, 14)
 
@@ -61,6 +61,7 @@ def draw_topbar(surf, run, label=None, timer=None, mouse=None):
     left_w = gfx.draw_text(surf, left, 5, top, TEXT)
     season = run.season()
     season_w = gfx.draw_text(surf, season["short"], 5 + left_w + 4, top, season["color"])
+    right_x = TOPBAR_PAUSE_RECT[0] - 2
     timer_w = gfx.text_width(timer) + 8 if timer is not None else 0
     if timer is not None:
         gfx.draw_text(surf, timer, 315, top, TEXT, align="right")
@@ -68,11 +69,14 @@ def draw_topbar(surf, run, label=None, timer=None, mouse=None):
 
     # next bill, in the middle - shorten it rather than letting a seven-figure
     # cash pile on the right run into it
-    room = 320 - 2 * max(left_w + season_w + 9, money_w + 5) - 10
-    qr = run.next_quota_round()
-    due = "BILL DUE THIS ROUND" if run.is_quota_round(run.round) else "NEXT BILL R%d" % qr
-    bill = "$" + fmt(run.bill_for_round(qr))
-    color = BAD if run.is_quota_round(run.round) else DIM
+    left_end = 5 + left_w + 4 + season_w
+    right_start = right_x - money_w
+    room = 2 * min(160 - left_end - 4, right_start - 160 - 4)
+    bp = run.bill_progress()
+    qr = bp["quota_round"]
+    due = "BILL DUE THIS ROUND" if bp["due_now"] else "NEXT BILL R%d" % qr
+    bill = "$" + fmt(bp["bill"])
+    color = BAD if bp["due_now"] else DIM
     for text in (due + ": " + bill, due + " " + bill, bill):
         if gfx.text_width(text) <= room:
             break
@@ -81,7 +85,10 @@ def draw_topbar(surf, run, label=None, timer=None, mouse=None):
     # pause indicator
     pause_x, pause_y, pause_w, pause_h = TOPBAR_PAUSE_RECT
     hover = mouse is not None and pause_x <= mouse[0] < pause_x + pause_w and pause_y <= mouse[1] < pause_y + pause_h
-    pause_col = ACCENT if hover else PANEL
-    gfx.rect(surf, pause_col, 300, 2, 16, 10)
-    gfx.rect(surf, ACCENT, 304, 4, 3, 3)
-    gfx.rect(surf, ACCENT, 309, 4, 3, 3)
+    border = ACCENT if hover else PANEL_LIGHT
+    fill = PANEL_LIGHT if hover else PANEL
+    bar_col = ACCENT if hover else TEXT
+    gfx.rect(surf, border, 300, 2, 16, 10)
+    gfx.rect(surf, fill, 301, 3, 14, 8)
+    gfx.rect(surf, bar_col, 305, 4, 2, 6)
+    gfx.rect(surf, bar_col, 309, 4, 2, 6)

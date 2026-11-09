@@ -1,25 +1,33 @@
+import importlib.util
 import os
-
+import sys
+from pathlib import Path
 import pygame
 
-try:
-    from . import gfx
-    from .overlays import ConfirmModal, PauseModal, SettingsModal
-    from .save import SaveManager
-    from .scene import TOPBAR_PAUSE_RECT, draw_topbar_tooltip
-    from .scenes import SCENES
-    from .settings import (BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, START_SCALE,
-                          TITLE, TEXT, PANEL_DARK)
-    from .state import Run
-except ImportError:
-    import gfx
-    from overlays import ConfirmModal, PauseModal, SettingsModal
-    from save import SaveManager
-    from scene import TOPBAR_PAUSE_RECT, draw_topbar_tooltip
-    from scenes import SCENES
-    from settings import (BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, START_SCALE,
-                          TITLE, TEXT, PANEL_DARK)
-    from state import Run
+if __package__ in (None, ""):
+    _root = Path(__file__).resolve().parent
+    _parent = _root.parent
+    if str(_parent) not in sys.path:
+        sys.path.insert(0, str(_parent))
+    _pkg_name = _root.name.replace("-", "_")
+    if _pkg_name:
+        _spec = importlib.util.spec_from_file_location(_pkg_name, _root / "__init__.py")
+        _module = importlib.util.module_from_spec(_spec)
+        sys.modules[_pkg_name] = _module
+        _module.__path__ = [str(_root)]
+        _module.__package__ = _pkg_name
+        _module.__spec__ = _spec
+        _module.__file__ = str(_root / "__init__.py")
+    __package__ = _pkg_name
+
+from . import gfx
+from .overlays import ConfirmModal, PauseModal, SettingsModal
+from .save import SaveManager
+from .scene import TOPBAR_PAUSE_RECT, draw_topbar_tooltip
+from .scenes import SCENES
+from .settings import (BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, START_SCALE,
+                       TITLE, TEXT, PANEL_DARK)
+from .state import Run
 
 RUN_SCENE_NAMES = ("packs", "round", "summary", "shop")
 
@@ -56,6 +64,7 @@ class App:
     def goto(self, name, **kwargs):
         self.scene_name = name
         self.pause_modal = None
+        self.settings_modal = None
         self.confirm_modal = None
         self.scene = SCENES[name](self, **kwargs)
         self.scene.on_enter()
@@ -229,8 +238,9 @@ class App:
             modal.on_key(key)
             return
         if key == pygame.K_ESCAPE and self.run and self.scene_name in RUN_SCENE_NAMES:
-            self.open_pause()
-            return
+            if not getattr(self.scene, "shovel_mode", False):
+                self.open_pause()
+                return
         if self.debug and self.run:
             if key == pygame.K_F2 and hasattr(self.scene, "fast"):
                 self.scene.fast = 1 if self.scene.fast > 1 else 10

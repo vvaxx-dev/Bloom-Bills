@@ -1206,6 +1206,200 @@ class ShovelAndMenuTests(unittest.TestCase):
         self.assertEqual(bp_after["quota_round"], 6)
         self.assertEqual(bp_after["bill"], 1500)
 
+class RegressionFixTests(unittest.TestCase):
+    def test_compost_and_mutagen_do_not_scale_with_unrelated_relics(self):
+        run = Run(seed=1)
+        run.twist_id = lambda _rnd=None: "none"
+        run.relics = ["compost", "almanac", "big_can", "clover"]
+        run.begin_round()
+        run.start_timer()
+        run.time_left = 10.0
+        run.plots = [Plot("sunflower")]  # base yield 14 -> 28 in final 15s
+        self.assertEqual(run.harvest_value(0), 28)
+
+        run2 = Run(seed=1)
+        run2.twist_id = lambda _rnd=None: "none"
+        run2.relics = ["mutagen", "almanac", "big_can", "clover"]
+        run2.plots = [Plot("sunflower_gold")]  # base yield 42 -> 50 with 1.2x
+        self.assertEqual(run2.harvest_value(0), 50)
+
+    def test_compost_does_not_apply_to_unstarted_round_sale(self):
+        run = Run(seed=1)
+        run.relics = ["compost"]
+        run.begin_round()
+        run.plots = [Plot("pumpkin", progress=10.0)]  # half of 20s, sell 150 -> 75
+        summary = run.end_round()
+        self.assertEqual(summary["sale"], 75)
+
+    def test_relic_levels_refresh_even_when_event_queue_is_full(self):
+        run = Run(seed=1)
+        run.relics = ["fertilizer"]
+        run.begin_round()
+        run.counters["harvest"] = 249
+        run.plots = [Plot("daisy")]
+        run.events = [{"kind": "noop"} for _ in range(300)]
+        run._harvest(0)
+        self.assertEqual(run._relic_lvls.get("fertilizer"), 1)
+
+    def test_shop_buttons_work_and_non_escape_keys_stay_in_shop(self):
+        try:
+            import pygame
+        except ImportError:
+            self.skipTest("pygame not installed")
+        import os, tempfile
+        from .app import App
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("BLOOM_SAVE_DIR")
+            os.environ["BLOOM_SAVE_DIR"] = tmp
+            try:
+                app = App()
+                app.new_run()
+                app.run.money = 50000
+                app.run.enter_shop()
+                app.goto("shop")
+                self.assertTrue(app.scene.buttons)
+
+                # Non-Escape keys must not kick the player back to title
+                app.handle_key(pygame.K_SPACE)
+                app.handle_key(pygame.K_a)
+                self.assertEqual(app.scene_name, "shop")
+
+                # Buy relic, reroll, buy plot, and proceed to next round
+                b0 = app.scene.buy_buttons[0]
+                app.handle_click((b0.x + 4, b0.y + 4))
+                self.assertEqual(len(app.run.relics), 1)
+                plots_before = len(app.run.plots)
+                pb = app.scene.plot_btn
+                app.handle_click((pb.x + 4, pb.y + 4))
+                self.assertEqual(len(app.run.plots), plots_before + 1)
+                nb = app.scene.next_btn
+                app.handle_click((nb.x + 4, nb.y + 4))
+                self.assertEqual(app.scene_name, "packs")
+            finally:
+                if old is None:
+                    os.environ.pop("BLOOM_SAVE_DIR", None)
+                else:
+                    os.environ["BLOOM_SAVE_DIR"] = old
+
+    def test_summary_scene_draws_only_relevant_right_panel(self):
+        try:
+            import pygame  # noqa: F401
+        except ImportError:
+            self.skipTest("pygame not installed")
+        import os, tempfile
+        from .app import App
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("BLOOM_SAVE_DIR")
+            os.environ["BLOOM_SAVE_DIR"] = tmp
+            try:
+                app = App()
+                # Non-pending summary should draw UP NEXT forecast in lower right panel
+                app.new_run()
+                app.run.round = 1
+                app.run.money = 100
+                app.after_round()
+                app.scene.draw(app.canvas)
+                bg = (38, 33, 58, 255)
+                non_bg = sum(
+                    1
+                    for y in range(105, 140)
+                    for x in range(170, 305)
+                    if app.canvas.get_at((x, y)) != bg
+                )
+                self.assertGreater(non_bg, 0)
+
+                # Pending summary must not overwrite Bill Collector bottom with UP NEXT
+                app.new_run()
+                app.run.round = 3
+                app.run.money = 500
+                app.after_round()
+                app.scene.draw(app.canvas)
+                stray = sum(
+                    1
+                    for y in range(120, 138)
+                    for x in range(169, 306)
+                    if app.canvas.get_at((x, y)) != bg
+                )
+                self.assertEqual(stray, 0)
+            finally:
+                if old is None:
+                    os.environ.pop("BLOOM_SAVE_DIR", None)
+                else:
+                    os.environ["BLOOM_SAVE_DIR"] = old
+
+    def test_round_scene_update_floaters_fast_shovel_and_topbar(self):
+        try:
+            import pygame
+        except ImportError:
+            self.skipTest("pygame not installed")
+        import os, tempfile
+        from .app import App
+        from .scene import TOPBAR_PAUSE_RECT
+        from .settings import TEXT
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("BLOOM_SAVE_DIR")
+            os.environ["BLOOM_SAVE_DIR"] = tmp
+            try:
+                app = App()
+                app.new_run()
+                app.run.cellar_unlocked = True
+                app.run.relics = ["compost"]
+                app.goto("round")
+
+                # Cellar has 6 seeds (<= TRAY_SLOTS): shovel active border & tray buttons disabled
+                app.scene.cellar_click()
+                self.assertFalse(app.scene.tray_left.enabled)
+                self.assertFalse(app.scene.tray_right.enabled)
+                app.scene.toggle_shovel()
+                app.scene.draw(app.canvas)
+                self.assertTrue(app.scene.shovel_btn.active)
+
+                # First ESC cancels shovel mode; second ESC opens pause menu
+                app.handle_key(pygame.K_ESCAPE)
+                self.assertFalse(app.scene.shovel_mode)
+                self.assertIsNone(app.pause_modal)
+                app.handle_key(pygame.K_ESCAPE)
+                self.assertIsNotNone(app.pause_modal)
+                app.pause_modal.resume()
+
+                # Surface: update processes fast mode, t sway, floaters, compost toast, and clears events
+                app.scene.cellar_click()
+                app.run.seeds["daisy"] = 5
+                app.run.plant(0, "daisy")
+                app.run.start_timer()
+                app.run.time_left = 18.0
+                app.scene.fast = 10
+                app.scene.update(0.5)  # 5s -> 13s left: 1 daisy harvest + compost toast
+                self.assertAlmostEqual(app.run.time_left, 13.0)
+                self.assertGreater(app.scene.t, 0.0)
+                self.assertEqual(len(app.scene.floaters), 1)
+                self.assertEqual(app.run.events, [])
+                self.assertIn("COMPOST HEAP", app.toasts[0][0])
+
+                # Timer renders strictly left of pause button
+                app.scene.draw(app.canvas)
+                px = TOPBAR_PAUSE_RECT[0]
+                timer_pixels = sum(
+                    1
+                    for y in range(2, 8)
+                    for x in range(px - 22, px)
+                    if app.canvas.get_at((x, y))[:3] == TEXT
+                )
+                self.assertGreater(timer_pixels, 0)
+
+                # Hovering pause button keeps pause bars visible against fill
+                app.mouse = (TOPBAR_PAUSE_RECT[0] + 4, 4)
+                app.scene.draw(app.canvas)
+                colors = {app.canvas.get_at((x, y))[:3] for y in range(3, 11) for x in range(301, 315)}
+                self.assertGreaterEqual(len(colors), 2)
+            finally:
+                if old is None:
+                    os.environ.pop("BLOOM_SAVE_DIR", None)
+                else:
+                    os.environ["BLOOM_SAVE_DIR"] = old
+
+
+
 
 if __name__ == "__main__":
     unittest.main()

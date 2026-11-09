@@ -37,11 +37,15 @@ class RoundScene(Scene):
         self.cellar_btn.label = "CELLAR (TAB)" if self.run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
         self.start_btn = Button(244, 163, 72, 14, "START (SPACE)", self.toggle_clock, color=(70, 130, 70))
         self.tray_left = Button(6, TRAY_Y + 3, 8, 22, "<", self.scroll_tray_left)
-        self.tray_right = Button(228, TRAY_Y + 3, 8, 22, ">", self.scroll_tray_right)
         self.tray_right = Button(202, TRAY_Y + 3, 8, 22, ">", self.scroll_tray_right)
         self.shovel_btn = Button(214, TRAY_Y, 26, 28, "DIG", self.toggle_shovel,
                                  color=PANEL_LIGHT, icon="shovel", icon_scale=1)
         self.buttons = [self.cellar_btn, self.start_btn, self.tray_left, self.tray_right, self.shovel_btn]
+        self._sync_tray_buttons()
+
+    def _sync_tray_buttons(self):
+        self.tray_left.enabled = self.tray_scroll > 0
+        self.tray_right.enabled = self.tray_scroll < self.max_scroll()
 
     def plant_list(self):
         return self.run.cellar_plots if self.view == "cellar" else self.run.plots
@@ -128,6 +132,7 @@ class RoundScene(Scene):
         self.shovel_mode = False
         self.tray_scroll = 0
         self.pick_default()
+        self._sync_tray_buttons()
 
     def toggle_clock(self):
         run = self.run
@@ -158,7 +163,6 @@ class RoundScene(Scene):
                 if run.seeds.get(sid, 0) > 0:
                     if run.can_plant(sid, self.in_cellar()):
                         self.shovel_mode = False
-
                         self.selected = sid
                     else:
                         self.app.toast(self.plant_block_reason(sid))
@@ -258,19 +262,49 @@ class RoundScene(Scene):
 
 
     def update(self, dt):
+        self.t += dt
+        self._sync_tray_buttons()
         run = self.run
-        if run.phase != "round" or not run.started or run.finished or dt <= 0:
-            return
-        dt = min(dt, run.time_left)
-        w = run.compost_window()
-        if w > 0 and run.time_left > w > run.time_left - dt:
-            first_dt = run.time_left - w
-            run._step_round(first_dt)
-            if not run.finished and dt - first_dt > 0:
-                run._step_round(dt - first_dt)
+        run.update(dt * self.fast)
+        show_floaters = self._floaters_enabled()
+        for ev in run.events:
+            if ev["kind"] == "evolve":
+                self.app.toast("%s EVOLVED! %s" % (ev["name"].upper(), ev["desc"].upper()), 3.0)
+                continue
+            if ev["kind"] == "compost":
+                self.app.toast("COMPOST HEAP! X2 VALUE FOR FINAL %dS!" % ev["window"], 2.5)
+                continue
+            if bool(ev.get("cellar")) != self.in_cellar():
+                continue
+            x, y, w, _h = plot_rect(ev["plot"]) if ev["plot"] < 12 else (0, 0, 0, 0)
+            if ev["kind"] == "harvest":
+                if show_floaters:
+                    self.floaters.append([x + w // 2, y + 8, "+$" + fmt(ev["amount"]), ACCENT, 0.0])
+            elif ev["kind"] == "mutate":
+                if show_floaters:
+                    self.floaters.append([x + w // 2, y + 8, "MUTATED!", data.RARITY_COLORS["mutant"], 0.0])
+                self.app.toast("%s MUTATED!" % ev["name"].upper(), 2.5)
+            elif ev["kind"] == "wither":
+                if show_floaters:
+                    self.floaters.append([x + w // 2, y + 8, "WITHERED!", BAD, 0.0])
+            elif ev["kind"] == "hail":
+                if show_floaters:
+                    self.floaters.append([x + w // 2, y + 8, "HAIL!", WATER, 0.0])
+            elif ev["kind"] == "rot":
+                if show_floaters:
+                    self.floaters.append([x + w // 2, y + 8, "ROT!", BAD, 0.0])
+                self.app.toast("%s ROTTED!" % ev.get("name", "A PLANT").upper(), 2.0)
+            elif ev["kind"] == "eaten":
+                if show_floaters:
+                    self.floaters.append([x + w // 2, y + 8, "EATEN!", BAD, 0.0])
+                self.app.toast("A CROW ATE YOUR %s!" % ev["name"].upper(), 2.0)
+        run.events.clear()
+        if show_floaters:
+            for f in self.floaters:
+                f[4] += dt
+            self.floaters = [f for f in self.floaters if f[4] < 1.0]
         else:
-            run._step_round(dt)
-
+            self.floaters.clear()
         if run.finished and not self.ended:
             self.ended = True
             self.app.after_round()
@@ -358,12 +392,11 @@ class RoundScene(Scene):
             if inside(mouse, r):
                 seed_hover = sid
         if len(seeds) > TRAY_SLOTS:
-            self.tray_left.enabled = self.tray_scroll > 0
-            self.tray_right.enabled = self.tray_scroll < self.max_scroll()
+            self._sync_tray_buttons()
             self.tray_left.draw(surf, mouse)
             self.tray_right.draw(surf, mouse)
 
-            self.shovel_btn.active = self.shovel_mode
+        self.shovel_btn.active = self.shovel_mode
         self.shovel_btn.border_color = BAD
         self.shovel_btn.color = (140, 62, 58) if self.shovel_mode else PANEL_LIGHT
         self.shovel_btn.draw(surf, mouse)

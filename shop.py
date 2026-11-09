@@ -26,6 +26,7 @@ class ShopScene(Scene):
         self.plot_btn = Button(4, 150, 88, 26, "", self.buy_plot)
         self.reroll_btn = Button(95, 150, 54, 26, "", self.reroll)
         self.next_btn = Button(253, 150, 63, 26, "NEXT\nROUND >", self.go, color=(70, 130, 70))
+        self.buttons = self.buy_buttons + self.sell_buttons + [self.plot_btn, self.reroll_btn, self.next_btn]
         self.refresh()
 
     def refresh(self):
@@ -106,9 +107,9 @@ class ShopScene(Scene):
     def on_key(self, key):
         import pygame
         if key == pygame.K_ESCAPE:
-             if hasattr(self.app, "open_pause"):
+            if hasattr(self.app, "open_pause"):
                 self.app.open_pause()
-        else:
+            else:
                 self.app.goto("title")
 
     def draw(self, surf):
@@ -168,7 +169,7 @@ class ShopScene(Scene):
         if run.is_quota_round(nxt):
             gfx.draw_text(surf, "$" + fmt(run.bill_for_round(nxt)), fx + fw - 4, fy + 3, BAD, align="right")
         else:
-           gfx.draw_text(surf, "NO BILL", fx + fw - 4, fy + 3, GOOD, align="right")
+            gfx.draw_text(surf, "NO BILL", fx + fw - 4, fy + 3, GOOD, align="right")
 
         wname = twist["name"].upper()
         while len(wname) > 1 and gfx.text_width(wname) > fw - 8:
@@ -181,7 +182,7 @@ class ShopScene(Scene):
         self.reroll_btn.draw(surf, self.mouse)
         self.next_btn.draw(surf, self.mouse)
 
-       # Hover tooltips
+        # Hover tooltips
         if fx <= self.mouse[0] < fx + fw and fy <= self.mouse[1] < fy + fh:
             bill_line = (("BILL DUE: $%s" % fmt(run.bill_for_round(nxt)), BAD)
                          if run.is_quota_round(nxt) else ("NO BILL DUE", GOOD))
