@@ -1,10 +1,16 @@
+"""Live growing round screen: planting, watering, shoveling, cellar toggle, and relic sidebar."""
+
 import math
+import pygame
+
 from . import data, gfx
 from .formatting import clock, fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
-from .settings import (ACCENT, BAD, DIM, CELLAR_PRICE, GOOD, PANEL_DARK, PANEL_LIGHT,
-                       SOIL, SOIL_DARK, TEXT, WATER)
+from .settings import (
+    ACCENT, BAD, BG, CANVAS_H, CANVAS_W, CELLAR_PRICE, COLS, DIM, GOOD,
+    MAX_PLOTS, PANEL_DARK, PANEL_LIGHT, SOIL, SOIL_DARK, TEXT, WATER,
+)
 
 CELL_W, CELL_H, GAP = 56, 34, 4
 GRID_X, GRID_Y = 4, 36
@@ -13,12 +19,9 @@ TRAY_SLOTS = 6
 
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": DIM}
 
+
 def plot_rect(i):
-    return (GRID_X + (i % 4) * (CELL_W + GAP), GRID_Y + (i // 4) * (CELL_H + GAP), CELL_W, CELL_H)
-
-
-def inside(pos, r):
-    return r[0] <= pos[0] < r[0] + r[2] and r[1] <= pos[1] < r[1] + r[3]
+    return (GRID_X + (i % COLS) * (CELL_W + GAP), GRID_Y + (i // COLS) * (CELL_H + GAP), CELL_W, CELL_H)
 
 
 class RoundScene(Scene):
@@ -33,13 +36,16 @@ class RoundScene(Scene):
         self.view = "surface"
         self.tray_scroll = 0
         self.pick_default()
+
         self.cellar_btn = Button(244, 148, 72, 13, "", self.cellar_click)
         self.cellar_btn.label = "CELLAR (TAB)" if self.run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
         self.start_btn = Button(244, 163, 72, 14, "START (SPACE)", self.toggle_clock, color=(70, 130, 70))
         self.tray_left = Button(6, TRAY_Y + 3, 8, 22, "<", self.scroll_tray_left)
         self.tray_right = Button(202, TRAY_Y + 3, 8, 22, ">", self.scroll_tray_right)
-        self.shovel_btn = Button(214, TRAY_Y, 26, 28, "DIG", self.toggle_shovel,
-                                 color=PANEL_LIGHT, icon="shovel", icon_scale=1)
+        self.shovel_btn = Button(
+            214, TRAY_Y, 26, 28, "DIG", self.toggle_shovel,
+            color=PANEL_LIGHT, icon="shovel", icon_scale=1,
+        )
         self.buttons = [self.cellar_btn, self.start_btn, self.tray_left, self.tray_right, self.shovel_btn]
         self._sync_tray_buttons()
 
@@ -47,22 +53,20 @@ class RoundScene(Scene):
         self.tray_left.enabled = self.tray_scroll > 0
         self.tray_right.enabled = self.tray_scroll < self.max_scroll()
 
+    def in_cellar(self):
+        return self.view == "cellar"
+
     def plant_list(self):
-        return self.run.cellar_plots if self.view == "cellar" else self.run.plots
+        return self.run.cellar_plots if self.in_cellar() else self.run.plots
 
     def view_seeds(self):
-        """Every seed plantable in the current view, in a fixed order so the
-        tray can page through it. An eclipse unlocks nocturnal seeds up top,
-        which is a screenful more than fits."""
+        """Return plantable species for the active board; Eclipse adds nocturnal seeds to the surface tray."""
         if self.in_cellar():
             return list(data.NOCTURNAL_PLANTS)
         seeds = list(data.SURFACE_PLANTS)
         if self.run.twist().get("eclipse"):
             seeds += [sid for sid in data.NOCTURNAL_PLANTS if sid not in seeds]
         return seeds
-
-    def in_cellar(self):
-        return self.view == "cellar"
 
     def toggle_shovel(self):
         self.shovel_mode = not self.shovel_mode
@@ -71,7 +75,6 @@ class RoundScene(Scene):
         else:
             self.pick_default()
 
-    # -------------------------------------------------------- tray paging
     def max_scroll(self):
         return max(0, len(self.view_seeds()) - TRAY_SLOTS)
 
@@ -92,7 +95,6 @@ class RoundScene(Scene):
         self.scroll_tray(-1 if dy > 0 else 1)
 
     def ensure_visible(self, sid):
-        """Bring a seed into view (used when the game picks one for you)."""
         seeds = self.view_seeds()
         if sid not in seeds:
             return
@@ -109,9 +111,11 @@ class RoundScene(Scene):
         return seeds[start:start + TRAY_SLOTS]
 
     def pick_default(self):
+        """Auto-select the highest-tier owned seed that can grow on the active board."""
         run = self.run
+        cellar = self.in_cellar()
         for sid in reversed(self.view_seeds()):
-            if run.seeds.get(sid, 0) > 0 and run.can_plant(sid, self.in_cellar()):
+            if run.seeds.get(sid, 0) > 0 and run.can_plant(sid, cellar):
                 self.selected = sid
                 self.ensure_visible(sid)
                 return
@@ -120,15 +124,14 @@ class RoundScene(Scene):
     def cellar_click(self):
         run = self.run
         if not run.cellar_unlocked:
-            if run.money >= CELLAR_PRICE:
-                run.buy_cellar()
+            if run.buy_cellar():
                 self.app.toast("THE CELLAR IS OPEN! NO WATER, NO WEATHER.", 3.0)
                 self.app.save_run()
             else:
                 self.app.toast("DIGGING COSTS $%d" % CELLAR_PRICE)
             self.cellar_btn.label = "CELLAR (TAB)" if run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
             return
-        self.view = "cellar" if self.view == "surface" else "surface"
+        self.view = "surface" if self.in_cellar() else "cellar"
         self.shovel_mode = False
         self.tray_scroll = 0
         self.pick_default()
@@ -159,7 +162,7 @@ class RoundScene(Scene):
             return True
         run = self.run
         for i, sid in enumerate(self.visible_seeds()):
-            if inside(pos, self.tray_rect(i)):
+            if gfx.inside(pos, self.tray_rect(i)):
                 if run.seeds.get(sid, 0) > 0:
                     if run.can_plant(sid, self.in_cellar()):
                         self.shovel_mode = False
@@ -171,7 +174,7 @@ class RoundScene(Scene):
                 return True
         plots = self.plant_list()
         for i in range(len(plots)):
-            if inside(pos, plot_rect(i)):
+            if gfx.inside(pos, plot_rect(i)):
                 self.click_plot(i)
                 return True
         return False
@@ -214,23 +217,22 @@ class RoundScene(Scene):
             return
 
         if plots[i].species is None:
-            if self.selected and run.plant(i, self.selected, in_cellar):
-                if run.seeds.get(self.selected, 0) <= 0:
-                    self.pick_default()
-            elif not self.selected:
-                self.app.toast("NO SEEDS! OPEN PACKS FIRST")
-            elif in_cellar:
-                self.app.toast("THE CELLAR WATERS ITSELF")
-        else:
-            if not run.started:
-                self.app.toast("PRESS START FIRST (OR USE SHOVEL)")
-            elif in_cellar:
-                self.app.toast("THE CELLAR WATERS ITSELF")
+            if self.selected:
+                if run.plant(i, self.selected, in_cellar):
+                    if run.seeds.get(self.selected, 0) <= 0:
+                        self.pick_default()
+                else:
+                    self.app.toast(self.plant_block_reason(self.selected))
             else:
-                run.water(i)
+                self.app.toast("NO SEEDS! OPEN PACKS FIRST")
+        elif not run.started:
+            self.app.toast("PRESS START FIRST (OR USE SHOVEL)")
+        elif in_cellar:
+            self.app.toast("THE CELLAR WATERS ITSELF")
+        else:
+            run.water(i)
 
     def on_key(self, key):
-        import pygame
         if key == pygame.K_SPACE and not self.run.started:
             self.toggle_clock()
         elif key == pygame.K_TAB:
@@ -260,51 +262,55 @@ class RoundScene(Scene):
         cfg = getattr(self.app, "settings_cfg", None)
         return True if cfg is None else bool(cfg.get("floaters", True))
 
-
     def update(self, dt):
         self.t += dt
         self._sync_tray_buttons()
         run = self.run
         run.update(dt * self.fast)
         show_floaters = self._floaters_enabled()
+
         for ev in run.events:
-            if ev["kind"] == "evolve":
+            kind = ev["kind"]
+            if kind == "evolve":
                 self.app.toast("%s EVOLVED! %s" % (ev["name"].upper(), ev["desc"].upper()), 3.0)
                 continue
-            if ev["kind"] == "compost":
+            if kind == "compost":
                 self.app.toast("COMPOST HEAP! X2 VALUE FOR FINAL %dS!" % ev["window"], 2.5)
                 continue
             if bool(ev.get("cellar")) != self.in_cellar():
                 continue
-            x, y, w, _h = plot_rect(ev["plot"]) if ev["plot"] < 12 else (0, 0, 0, 0)
-            if ev["kind"] == "harvest":
+            x, y, w, _h = plot_rect(ev["plot"]) if ev["plot"] < MAX_PLOTS else (0, 0, 0, 0)
+            fx, fy = x + w // 2, y + 8
+            if kind == "harvest":
                 if show_floaters:
-                    self.floaters.append([x + w // 2, y + 8, "+$" + fmt(ev["amount"]), ACCENT, 0.0])
-            elif ev["kind"] == "mutate":
+                    self.floaters.append([fx, fy, "+$" + fmt(ev["amount"]), ACCENT, 0.0])
+            elif kind == "mutate":
                 if show_floaters:
-                    self.floaters.append([x + w // 2, y + 8, "MUTATED!", data.RARITY_COLORS["mutant"], 0.0])
+                    self.floaters.append([fx, fy, "MUTATED!", data.RARITY_COLORS["mutant"], 0.0])
                 self.app.toast("%s MUTATED!" % ev["name"].upper(), 2.5)
-            elif ev["kind"] == "wither":
+            elif kind == "wither":
                 if show_floaters:
-                    self.floaters.append([x + w // 2, y + 8, "WITHERED!", BAD, 0.0])
-            elif ev["kind"] == "hail":
+                    self.floaters.append([fx, fy, "WITHERED!", BAD, 0.0])
+            elif kind == "hail":
                 if show_floaters:
-                    self.floaters.append([x + w // 2, y + 8, "HAIL!", WATER, 0.0])
-            elif ev["kind"] == "rot":
+                    self.floaters.append([fx, fy, "HAIL!", WATER, 0.0])
+            elif kind == "rot":
                 if show_floaters:
-                    self.floaters.append([x + w // 2, y + 8, "ROT!", BAD, 0.0])
+                    self.floaters.append([fx, fy, "ROT!", BAD, 0.0])
                 self.app.toast("%s ROTTED!" % ev.get("name", "A PLANT").upper(), 2.0)
-            elif ev["kind"] == "eaten":
+            elif kind == "eaten":
                 if show_floaters:
-                    self.floaters.append([x + w // 2, y + 8, "EATEN!", BAD, 0.0])
+                    self.floaters.append([fx, fy, "EATEN!", BAD, 0.0])
                 self.app.toast("A CROW ATE YOUR %s!" % ev["name"].upper(), 2.0)
         run.events.clear()
+
         if show_floaters:
             for f in self.floaters:
                 f[4] += dt
             self.floaters = [f for f in self.floaters if f[4] < 1.0]
         else:
             self.floaters.clear()
+
         if run.finished and not self.ended:
             self.ended = True
             self.app.after_round()
@@ -312,18 +318,18 @@ class RoundScene(Scene):
     def draw(self, surf):
         run = self.run
         mouse = self.mouse
-        gfx.rect(surf, (30, 26, 46), 0, 0, 320, 180)
+        gfx.rect(surf, BG, 0, 0, CANVAS_W, CANVAS_H)
         draw_topbar(surf, run, timer=clock(run.time_left), mouse=mouse)
-
 
         twist = run.twist()
         if self.shovel_mode:
             msg, col = "SHOVEL ACTIVE: CLICK A PLANTED PLOT TO REMOVE IT (X TO CANCEL).", BAD
         elif twist.get("boss"):
-            msg, col = "BOSS: %s! %s" % (twist["name"].upper(),
-                                          twist.get("short", twist["desc"]).upper()), BAD
+            msg = "BOSS: %s! %s" % (twist["name"].upper(), twist.get("short", twist["desc"]).upper())
+            col = BAD
         elif run.twist_id(run.round) != "none":
-            msg, col = "%s: %s" % (twist["name"].upper(), twist["desc"].upper()), TONE_COLORS[twist.get("tone", "neutral")]
+            msg = "%s: %s" % (twist["name"].upper(), twist["desc"].upper())
+            col = TONE_COLORS[twist.get("tone", "neutral")]
         elif self.in_cellar():
             msg, col = "THE CELLAR: SELF-WATERING, WEATHERPROOF.", WATER
         elif not run.started:
@@ -337,23 +343,23 @@ class RoundScene(Scene):
         bar_col = ACCENT if compost_now else (GOOD if frac > 0.25 else BAD)
         gfx.bar(surf, 4, 27, 312, 5, frac, bar_col)
 
-        # plots
         hover = None
         plots = self.plant_list()
-        for i in range(12):
-            x, y, w, h = plot_rect(i)
+        for i in range(MAX_PLOTS):
+            r = plot_rect(i)
+            x, y, w, h = r
             if i >= len(plots):
                 gfx.rect(surf, PANEL_DARK, x, y, w, h)
                 gfx.draw_text(surf, "LOCKED", x + w // 2, y + 14, (70, 62, 96), align="center")
                 continue
             self.draw_plot(plots, surf, i, x, y, w, h)
-            if inside(mouse, (x, y, w, h)):
+            if gfx.inside(mouse, r):
                 hover = i
         if hover is not None:
             x, y, w, h = plot_rect(hover)
             hcol = BAD if (self.shovel_mode and plots[hover].species) else ACCENT
-            for r in ((x, y, w, 1), (x, y + h - 1, w, 1), (x, y, 1, h), (x + w - 1, y, 1, h)):
-                gfx.rect(surf, hcol, *r)
+            for edge in ((x, y, w, 1), (x, y + h - 1, w, 1), (x, y, 1, h), (x + w - 1, y, 1, h)):
+                gfx.rect(surf, hcol, *edge)
 
         for fx, fy, text, color, age in self.floaters:
             gfx.draw_text(surf, text, fx, fy - age * 14, color, align="center", shadow=(20, 16, 28))
@@ -366,7 +372,7 @@ class RoundScene(Scene):
             active_tag = " *" if (rid == "compost" and compost_now) else ""
             rcol = GOOD if (rid == "compost" and compost_now) else data.RARITY_COLORS[data.RELICS[rid]["rarity"]]
             gfx.draw_text(surf, data.RELICS[rid]["name"] + plus + active_tag, 248, ry, rcol)
-            if 244 <= mouse[0] < 316 and ry - 1 <= mouse[1] < ry + 7:
+            if gfx.inside(mouse, (244, ry - 1, 72, 8)):
                 relic_hover = rid
         if not run.relics:
             gfx.draw_wrapped(surf, "NO RELICS YET. BUY THEM IN THE SHOP.", 248, 48, 64, DIM)
@@ -374,7 +380,6 @@ class RoundScene(Scene):
         gfx.draw_text(surf, "WATER %ds" % run.water_time(), 248, 120, WATER)
         gfx.draw_text(surf, "SEEDS: %d" % sum(run.seeds.values()), 248, 130, TEXT)
 
-        # Seed tray + Shovel button
         gfx.panel(surf, 4, TRAY_Y, 208, 28)
         seeds = self.view_seeds()
         visible = self.visible_seeds()
@@ -389,7 +394,7 @@ class RoundScene(Scene):
             gfx.draw_sprite(surf, sid, r[0] + 1, r[1] + 5, 1)
             gfx.draw_text(surf, "x%d" % count, r[0] + 14, r[1] + 3, TEXT if usable else DIM)
             gfx.draw_text(surf, str(i + 1), r[0] + 14, r[1] + 13, DIM)
-            if inside(mouse, r):
+            if gfx.inside(mouse, r):
                 seed_hover = sid
         if len(seeds) > TRAY_SLOTS:
             self._sync_tray_buttons()
@@ -408,21 +413,22 @@ class RoundScene(Scene):
         self.start_btn.color = (150, 70, 60) if run.started else (70, 130, 70)
         self.start_btn.draw(surf, mouse)
 
-        # tooltips
         if relic_hover:
             rel = data.RELICS[relic_hover]
             lv = run.relic_level(relic_hover)
-            lines = [(rel["name"] + (" +%d" % lv if lv else ""), data.RARITY_COLORS[rel["rarity"]]),
-                     (rel["desc"], TEXT)]
+            lines = [
+                (rel["name"] + (" +%d" % lv if lv else ""), data.RARITY_COLORS[rel["rarity"]]),
+                (rel["desc"], TEXT),
+            ]
             if relic_hover == "compost":
                 if compost_now:
                     lines.append(("ACTIVE NOW: X2 VALUE! (%.1FS)" % run.time_left, GOOD))
                 else:
-                    lines.append(("ACTIVATES IN FINAL 15S", ACCENT))
+                    lines.append(("ACTIVATES IN FINAL %dS" % int(run.compost_window()), ACCENT))
             for step in rel.get("levels", [])[:lv]:
                 lines.append((step["desc"], GOOD))
             for step in rel.get("levels", [])[lv:]:
-                lines.append(("%s AT %d %s" % ("EVOLVES", step["goal"], step["stat"].upper() + "S"), DIM))
+                lines.append(("EVOLVES AT %d %sS" % (step["goal"], step["stat"].upper()), DIM))
             gfx.tooltip(surf, lines, mouse, 102)
         elif self.shovel_btn.hover(mouse):
             gfx.tooltip(surf, [
@@ -439,7 +445,7 @@ class RoundScene(Scene):
                 ("SELL AT END: $%s" % fmt(sp["sell"]), ACCENT),
             ]
             gfx.tooltip(surf, lines, mouse, 104)
-        elif 4 <= mouse[0] < 316 and 16 <= mouse[1] < 27:
+        elif gfx.inside(mouse, (4, 16, 312, 11)):
             tcol = BAD if twist.get("boss") else TONE_COLORS.get(twist.get("tone", "neutral"), TEXT)
             gfx.tooltip(surf, [
                 ("WEATHER: " + twist["name"].upper(), tcol),
@@ -456,7 +462,7 @@ class RoundScene(Scene):
         for k in range(6):
             gfx.rect(surf, SOIL_DARK, x + 3 + (i * 7 + k * 11) % 50, y + 3 + (i * 5 + k * 13) % 28, 2, 1)
         if p.species is None:
-            if not self.shovel_mode and self.selected and inside(self.mouse, (x, y, w, h)):
+            if not self.shovel_mode and self.selected and gfx.inside(self.mouse, (x, y, w, h)):
                 gfx.draw_sprite(surf, "seed", x + 22, y + 10, 1)
                 gfx.draw_text(surf, "PLANT", x + w // 2, y + 24, TEXT, align="center")
             return
@@ -466,7 +472,7 @@ class RoundScene(Scene):
         sprite_name = gfx.plant_sprite_name(sp.get("base", p.species), frac)
         gfx.draw_sprite(surf, sprite_name, x + 16 + sway, y + 1, 2, sp.get("subs"))
         gfx.bar(surf, x + 4, y + 28, w - 8, 3, frac, sp["color"])
-        if self.shovel_mode and inside(self.mouse, (x, y, w, h)):
+        if self.shovel_mode and gfx.inside(self.mouse, (x, y, w, h)):
             gfx.rect(surf, (120, 36, 36), x + 8, y + 11, w - 16, 11)
             gfx.draw_text(surf, "REMOVE", x + w // 2, y + 14, TEXT, align="center")
         elif p.water_left > 0:
@@ -476,16 +482,15 @@ class RoundScene(Scene):
 
     def plot_tooltip(self, surf, i):
         run = self.run
-        plots = self.plant_list()
-        p = plots[i]
+        cellar = self.in_cellar()
+        p = self.plant_list()[i]
         sp = data.PLANTS[p.species]
         count = run.mastery.get(p.species, 0)
         nxt = next((t for t in data.MILESTONES if count < t), None)
-        speed = run.growth_speed() * (2.0 if p.water_left > 0 else 1.0)
-        if self.in_cellar():
-            speed = (1.0 + run._sum("growth")) * 0.75
+        speed = run.plot_growth_speed(i, cellar)
         mutant_col = data.RARITY_COLORS["mutant"]
         color = mutant_col if sp.get("mutant") else data.RARITY_COLORS[sp["rarity"]]
+
         lines = [(sp["name"], color)]
         if self.shovel_mode:
             lines.append(("CLICK TO REMOVE CROP", BAD))
@@ -497,12 +502,12 @@ class RoundScene(Scene):
             lines.append(("CURSED: -$%d UPKEEP AT ROUND END" % sp["upkeep"], BAD))
         if "aura" in sp:
             lines.append(("CURSED: OTHER PLANTS -50%", BAD))
-        if self.in_cellar():
+        if cellar:
             lines.append(("CELLAR: SELF-WATERING", WATER))
         if run.compost_active():
             lines.append(("COMPOST HEAP: X2 ACTIVE!", GOOD))
         lines += [
-            ("HARVEST: $" + fmt(run.harvest_value(i, self.in_cellar())), ACCENT),
+            ("HARVEST: $" + fmt(run.harvest_value(i, cellar)), ACCENT),
             ("RIPE IN: %.1fs" % max(0.0, (sp["grow"] - p.progress) / max(speed, 0.01)), TEXT),
             ("HARVESTED: %d" % count, DIM),
         ]

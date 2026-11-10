@@ -1,63 +1,50 @@
+"""Central configuration for display geometry, economy tuning, and UI colors."""
 
 TITLE = "Bloom & Bills"
-VERSION = "0.1.0"
 
-# --- display -----------------------------------------------------------
-CANVAS_W, CANVAS_H = 320, 180   
-START_SCALE = 6                 
+CANVAS_W, CANVAS_H = 320, 180
+START_SCALE = 6
 FPS = 60
-BORDERLESS = True  
+BORDERLESS = True
 
-# --- board -------------------------------------------------------------
-COLS = 4                        
+COLS = 4
 MAX_PLOTS = 12
 START_PLOTS = 4
 RELIC_SLOTS = 5
 
-# --- round structure ---------------------------------------------------
-ROUND_TIME = 45                
-LATE_ROUND_TIME_DROP = 2        
-LATE_ROUND_TIME_FLOOR = 30      
-QUOTA_EVERY = 3                 
-WIN_QUOTAS = 8                 
-BASE_FREE_PACKS = 2            
+ROUND_TIME = 45
+LATE_ROUND_TIME_DROP = 2
+LATE_ROUND_TIME_FLOOR = 30
+QUOTA_EVERY = 3
+WIN_QUOTAS = 8
+BASE_FREE_PACKS = 2
 SEEDS_PER_PACK = 3
 START_MONEY = 15
 
-# --- watering ----------------------------------------------------------
-WATER_BOOST = 2.0               
-WATER_TIME = 3.0                
-WATER_REST = 3.0                
+WATER_BOOST = 2.0
+WATER_TIME = 4.5
+WATER_REST = 3.0
 
-# --- prices ------------------------------------------------------------
-PRICE_GROWTH = 1.6            
+PRICE_GROWTH = 1.5
 PLOT_BASE_PRICE = 200
 PLOT_PRICE_GROWTH = 3.0
 REROLL_BASE_PRICE = 50
-RELIC_PRICE_GROWTH = 1.4
+RELIC_PRICE_GROWTH = 1.3
+RARE_RELIC_PRICE_GROWTH = 1.4
 
-RARE_RELIC_PRICE_GROWTH = 1.48
-
-# --- relics ------------------------------------------------------------
 COMPOST_WINDOW = 15.0
-
-# --- mutations ---------------------------------------------------------
 MUTATION_CHANCE = 0.1
 
+# Underground cellar: grows nocturnal plants automatically at reduced speed,
+# insulated from surface weather and boss hazards.
+CELLAR_PLOTS = 4
+CELLAR_SPEED = 0.75
+CELLAR_PRICE = 250
 
-# --- the cellar (underground growing area) ------------------------------
-CELLAR_PLOTS = 4                # plots inside the cellar
-CELLAR_SPEED = 0.75             # cellar grows steadily with no watering...
-CELLAR_PRICE = 250              # ...but you must dig it out first
-
-# --- boss rounds --------------------------------------------------------
-BOSS_EVERY = 9                  # every Nth round is a boss round
-
-# --- seasons ------------------------------------------------------------
+BOSS_EVERY = 9
 SEASON_LENGTH = 9
 
-# --- colors ------------------------------------------------------------
-BG = (24, 20, 36)
+BG = (30, 26, 46)
 PANEL = (44, 38, 66)
 PANEL_LIGHT = (64, 56, 92)
 PANEL_DARK = (32, 27, 50)

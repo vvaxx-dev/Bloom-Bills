@@ -1,3 +1,5 @@
+"""Registry mapping scene identifiers to their Scene classes."""
+
 from .gameover import GameOverScene, ShelfScene
 from .index import IndexScene
 from .packs import PacksScene

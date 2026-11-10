@@ -1,11 +1,15 @@
+"""Post-round ledger screen: itemized earnings, quota bill resolution, and next-round preview."""
+
 import pygame
+
 from . import gfx
 from .formatting import fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
-from .settings import ACCENT, BAD, DIM, GOOD, PANEL_DARK, TEXT, WATER, WIN_QUOTAS
+from .settings import ACCENT, BAD, BG, CANVAS_H, CANVAS_W, DIM, GOOD, PANEL_DARK, TEXT, WATER, WIN_QUOTAS
 
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": TEXT}
+
 
 class SummaryScene(Scene):
     def on_enter(self):
@@ -28,7 +32,7 @@ class SummaryScene(Scene):
         ok, _ = self.run.pay_pending_bill()
         self.app.save_run()
         if ok:
-            if self.run.won:            # the last bill is paid: the run is won
+            if self.run.won:
                 self.app.finish_run()
                 self.app.goto("gameover")
                 return
@@ -62,20 +66,17 @@ class SummaryScene(Scene):
     def on_key(self, key):
         if key in (pygame.K_SPACE, pygame.K_RETURN) and not self.run.pending_bill:
             self.go_shop()
-        elif key == pygame.K_ESCAPE:
-            if hasattr(self.app, "open_pause"):
-                self.app.open_pause()
+        elif key == pygame.K_ESCAPE and hasattr(self.app, "open_pause"):
+            self.app.open_pause()
 
     def draw(self, surf):
         run = self.run
-        gfx.rect(surf, (30, 26, 46), 0, 0, 320, 180)
+        gfx.rect(surf, BG, 0, 0, CANVAS_W, CANVAS_H)
         draw_topbar(surf, run, "ROUND %d DONE" % run.round, mouse=self.mouse)
         summary = run.last_summary or {}
 
-        # --- Left panel: Itemized Round Ledger ---
         lx, ly, lw, lh = 6, 20, 151, 124
-        gfx.panel(surf, lx, ly, lw, lh, "ROUND %d BREAKDOWN" % summary.get("round", run.round),
-                  fill=(38, 33, 58))
+        gfx.panel(surf, lx, ly, lw, lh, "ROUND %d BREAKDOWN" % summary.get("round", run.round), fill=(38, 33, 58))
         harvest = int(summary.get("harvest", 0))
         sale = int(summary.get("sale", 0))
         interest = int(summary.get("interest", 0))
@@ -107,8 +108,7 @@ class SummaryScene(Scene):
 
         net_prefix = "+$" if net >= 0 else "-$"
         gfx.draw_text(surf, "NET EARNED", lx + 6, ry, TEXT)
-        gfx.draw_text(surf, net_prefix + fmt(abs(net)), lx + lw - 6, ry,
-                      GOOD if net >= 0 else BAD, align="right")
+        gfx.draw_text(surf, net_prefix + fmt(abs(net)), lx + lw - 6, ry, GOOD if net >= 0 else BAD, align="right")
         ry += 12
 
         gfx.draw_text(surf, "TOTAL CASH", lx + 6, ry, TEXT)
@@ -118,15 +118,11 @@ class SummaryScene(Scene):
         gfx.draw_text(surf, "HEIRLOOMS EARNED:", lx + 6, ly + lh - 14, DIM)
         gfx.draw_text(surf, "+%d" % run.heirloom_reward(), lx + lw - 6, ly + lh - 14, ACCENT, align="right")
 
-        # --- Right panel: Bill Status & Next Forecast ---
         rx, ry0, rw, rh = 163, 20, 151, 124
         pending = bool(summary.get("pending_bill")) or bool(run.pending_bill)
-        gfx.panel(surf, rx, ry0, rw, rh,
-                  "BILL COLLECTOR" if pending else "QUOTA & NEXT ROUND",
-                  fill=(38, 33, 58))
+        gfx.panel(surf, rx, ry0, rw, rh, "BILL COLLECTOR" if pending else "QUOTA & NEXT ROUND", fill=(38, 33, 58))
 
         bp = run.bill_progress()
-        # Quota ladder pips inside summary
         gfx.draw_text(surf, "BILLS PAID: %d / %d" % (run.quotas_paid, WIN_QUOTAS), rx + 6, ry0 + 16, TEXT)
         for k in range(WIN_QUOTAS):
             px = rx + 6 + k * 17
@@ -152,15 +148,13 @@ class SummaryScene(Scene):
                 left_after = run.money - bill
                 gfx.draw_text(surf, "AFTER PAYING", rx + 6, ry0 + 69, DIM)
                 gfx.draw_text(surf, "$%s" % fmt(left_after), rx + rw - 6, ry0 + 69, GOOD, align="right")
-                msg = ("PAY TO WIN THE FARM!" if bp["quota_index"] >= WIN_QUOTAS
-                       else "QUOTA MET! PAY TO CONTINUE.")
+                msg = "PAY TO WIN THE FARM!" if bp["quota_index"] >= WIN_QUOTAS else "QUOTA MET! PAY TO CONTINUE."
                 gfx.draw_wrapped(surf, msg, rx + 6, ry0 + 86, rw - 12, GOOD)
             else:
                 short = bill - run.money
                 gfx.draw_text(surf, "SHORT BY", rx + 6, ry0 + 69, BAD)
                 gfx.draw_text(surf, "-$%s" % fmt(short), rx + rw - 6, ry0 + 69, BAD, align="right")
-                gfx.draw_wrapped(surf, "NOT ENOUGH FOR QUOTA. PRESS DON'T PAY TO END RUN.",
-                                 rx + 6, ry0 + 84, rw - 12, BAD)
+                gfx.draw_wrapped(surf, "NOT ENOUGH FOR QUOTA. PRESS DON'T PAY TO END RUN.", rx + 6, ry0 + 84, rw - 12, BAD)
         else:
             qr = bp["quota_round"]
             nbill = bp["bill"]
@@ -169,8 +163,10 @@ class SummaryScene(Scene):
             gfx.draw_text(surf, "NEXT BILL (R%d)" % qr, rx + 6, ry0 + 36, DIM)
             gfx.draw_text(surf, "$%s" % fmt(nbill), rx + rw - 6, ry0 + 36, ACCENT, align="right")
             gfx.bar(surf, rx + 6, ry0 + 46, rw - 12, 6, frac, GOOD if frac >= 1.0 else WATER)
-            status_txt = ("QUOTA ALREADY MET! (%d%%)" % pct if frac >= 1.0
-                          else "%d%% FUNDED ($%s TO GO)" % (pct, fmt(bp["shortfall"])))
+            status_txt = (
+                "QUOTA ALREADY MET! (%d%%)" % pct
+                if frac >= 1.0 else "%d%% FUNDED ($%s TO GO)" % (pct, fmt(bp["shortfall"]))
+            )
             gfx.draw_text(surf, status_txt, rx + 6, ry0 + 56, GOOD if frac >= 1.0 else DIM)
 
             gfx.rect(surf, PANEL_DARK, rx + 6, ry0 + 68, rw - 12, 1)
@@ -183,5 +179,4 @@ class SummaryScene(Scene):
             for k, line in enumerate(desc_lines[:3]):
                 gfx.draw_text(surf, line, rx + 6, ry0 + 94 + k * 7, DIM)
 
-        for button in self.buttons:
-            button.draw(surf, self.mouse)
+        self.draw_buttons(surf)

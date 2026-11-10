@@ -25,7 +25,7 @@ Every third round, the collector arrives. The bill is five times the last one. Y
 Besides the bill, the things that make rounds go sideways:
 
 - **Weather twists.** Drought slows everything 35%. Locusts cut harvest value 40%. Frost bans desert plants. Rain waters the whole farm for free. Eclipse lets nocturnal plants grow on the surface and makes sun-lovers sulk. Rounds between bills are mostly fair weather, with the odd lucky breeze.
- **Boss rounds**, every ninth. The roster rotates through Crazy Crows (one plant every six seconds, all round), Hailstorm, Root Rot, Heatwave, Eternal Night and Gale.
+- **Boss rounds**, every ninth. The roster rotates through Crazy Crows (one plant every six seconds, all round), Hailstorm, Root Rot, Heatwave, Eternal Night and Gale.
 - **Mutations.** A plant that keeps surviving harvests starts rolling for a mutation. Ten percent chance, and what comes out is worth two to three times the original. A Golden Sunflower sells for 3x and grows half as fast.
 - **Cursed plants.** Devil's Ivy pays well and charges $60 upkeep a round. Widow's Bloom is jealous of its neighbours.
 - **The cellar.** $250 to dig out. Four plots, nocturnal plants only, grows without any watering at all, but at three quarters speed. It's the one part of the farm that doesn't need you.
@@ -42,7 +42,7 @@ The permanent stuff, so a failed run still means something. You earn one heirloo
 
 ## Seeds
 
-Eighteen plants across eight packs. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron. They are all fully playable - Cranberries and Saffron just borrow the placeholder sprite until their art gets drawn.
+Eighteen plants across eight packs. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron, each with its own pixel-art sprite and mutation variant.
 
 An Eclipse puts the whole nocturnal shelf in the round's tray alongside everything else, which is more than one screenful, so the tray pages with the arrows, left/right or the mouse wheel.
 
@@ -89,10 +89,10 @@ All the art is generated at runtime from character grids in `sprites_data.py`, w
 ## Tests
 
 ```
-python3 -m unittest Plant_Game.test_balance
+PYTHONPATH=.. python3 -m unittest Bloom-Bills.test_balance
 ```
 
-Fifty-five tests on the economy and the mechanics: relic and pack prices climbing (and staying buyable), plot prices tripling, heirloom costs and payouts, the bill ladder, the win condition, seasons, the Farmer Pack, the Mutagen relic, and one test per weather twist proving it actually moves a number.
+Over a hundred tests on the economy, sprites, UI, and mechanics: relic and pack prices climbing (and staying buyable), plot prices tripling, heirloom costs and payouts, the bill ladder, the win condition, seasons, the Farmer Pack, the Mutagen relic, sprite coverage across all plants/mutants/relics, and one test per weather twist proving it actually moves a number.
 
 ## Where it's at
 

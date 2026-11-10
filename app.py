@@ -1,38 +1,32 @@
-import importlib.util
+"""Top-level Pygame application: window scaling, scene transitions, modal stack, and run lifecycle."""
+
 import os
 import sys
 from pathlib import Path
+
 import pygame
 
 if __package__ in (None, ""):
-    _root = Path(__file__).resolve().parent
-    _parent = _root.parent
-    if str(_parent) not in sys.path:
-        sys.path.insert(0, str(_parent))
-    _pkg_name = _root.name.replace("-", "_")
-    if _pkg_name:
-        _spec = importlib.util.spec_from_file_location(_pkg_name, _root / "__init__.py")
-        _module = importlib.util.module_from_spec(_spec)
-        sys.modules[_pkg_name] = _module
-        _module.__path__ = [str(_root)]
-        _module.__package__ = _pkg_name
-        _module.__spec__ = _spec
-        _module.__file__ = str(_root / "__init__.py")
-    __package__ = _pkg_name
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from main import bootstrap_package
+    __package__ = bootstrap_package()
 
 from . import gfx
 from .overlays import ConfirmModal, PauseModal, SettingsModal
 from .save import SaveManager
 from .scene import TOPBAR_PAUSE_RECT, draw_topbar_tooltip
 from .scenes import SCENES
-from .settings import (BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, START_SCALE,
-                       TITLE, TEXT, PANEL_DARK)
+from .settings import (
+    BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, PANEL_DARK, START_SCALE, TEXT, TITLE,
+)
 from .state import Run
 
 RUN_SCENE_NAMES = ("packs", "round", "summary", "shop")
 
 
 class App:
+    """Owns the 320x180 pixel canvas, integer-scaled presentation window, save manager, and active scene."""
+
     def __init__(self):
         pygame.init()
         pygame.display.set_caption(TITLE)
@@ -92,8 +86,9 @@ class App:
             if on_confirm:
                 on_confirm()
             return
-        self.confirm_modal = ConfirmModal(self, title, message, on_confirm,
-                                        confirm_label=confirm_label, danger=danger)
+        self.confirm_modal = ConfirmModal(
+            self, title, message, on_confirm, confirm_label=confirm_label, danger=danger,
+        )
 
     def open_settings(self):
         self.settings_modal = SettingsModal(self)
@@ -103,24 +98,26 @@ class App:
             self.pause_modal = PauseModal(self)
 
     def active_modal(self):
+        """Return the highest-priority open modal (confirm > settings > pause)."""
         return self.confirm_modal or self.settings_modal or self.pause_modal
 
     def _window_flags(self):
-        """No window chrome while borderless; plain resizable otherwise."""
         return pygame.NOFRAME if self.borderless else pygame.RESIZABLE
 
-    def _window_size(self):
-        """Borderless fills the screen without going exclusive-fullscreen."""
-        if not self.borderless or self.fullscreen:
-            return self.windowed_size
+    def _desktop_size(self):
         try:
             info = pygame.display.Info()
             width, height = int(info.current_w), int(info.current_h)
         except (pygame.error, ValueError):
             width = height = 0
         if width < CANVAS_W or height < CANVAS_H:
-            return self.windowed_size
+            return None
         return (width, height)
+
+    def _window_size(self):
+        if not self.borderless or self.fullscreen:
+            return self.windowed_size
+        return self._desktop_size() or self.windowed_size
 
     def rebuild_window(self):
         pygame.display.set_mode(self._window_size(), self._window_flags())
@@ -132,11 +129,13 @@ class App:
             self.fullscreen = False
             self.rebuild_window()
         else:
-            pygame.display.set_mode((1920, 1080), pygame.FULLSCREEN)
+            fs_size = self._desktop_size() or (1920, 1080)
+            pygame.display.set_mode(fs_size, pygame.FULLSCREEN)
+            pygame.display.set_caption(TITLE)
+            pygame.mouse.set_visible(False)
             self.fullscreen = True
-        pygame.display.set_caption(TITLE)
-        pygame.mouse.set_visible(False)
-        self.toast("FULLSCREEN" if self.fullscreen else "WINDOWED")
+        mode = "FULLSCREEN" if self.fullscreen else ("BORDERLESS" if self.borderless else "WINDOWED")
+        self.toast(mode)
 
     def toggle_borderless(self):
         self.borderless = not self.borderless
@@ -151,10 +150,19 @@ class App:
         self.goto("packs")
 
     def continue_run(self):
-        data = self.saves.load_run()
-        if not data:
+        saved = self.saves.load_run()
+        if not saved:
             return self.new_run()
-        self.run = Run.from_dict(data)
+        self.run = Run.from_dict(saved)
+        # Apply any permanent perks bought on the Heirloom Shelf while the run was parked.
+        changed = False
+        for key, target_lv in self.profile.get("perks", {}).items():
+            while self.run.perk(key) < int(target_lv):
+                self.run.perks[key] = self.run.perk(key) + 1
+                self.run._apply_perk(key)
+                changed = True
+        if changed:
+            self.save_run()
         if self.run.phase == "shop":
             self.goto("shop")
         elif self.run.phase == "summary":
@@ -176,12 +184,16 @@ class App:
             self.goto("summary")
 
     def finish_run(self):
+        """Credit earned heirlooms, merge lifetime stats into profile.json, and clear run.json."""
         run = self.run
         profile = self.profile
         gain = run.heirloom_reward()
         new_best = run.round > profile["best_round"]
         profile["heirlooms"] += gain
-        profile["perks"] = dict(run.perks)
+        merged_perks = dict(profile.get("perks", {}))
+        for key, lv in run.perks.items():
+            merged_perks[key] = max(int(merged_perks.get(key, 0)), int(lv))
+        profile["perks"] = merged_perks
         profile["best_round"] = max(profile["best_round"], run.round)
         profile["runs"] += 1
         if run.won:
@@ -201,6 +213,7 @@ class App:
         self.run = None
 
     def _layout(self):
+        """Compute integer letterboxed scale factor and top-left window offset."""
         w, h = pygame.display.get_surface().get_size()
         scale = max(1, min(w // CANVAS_W, h // CANVAS_H))
         return scale, (w - CANVAS_W * scale) // 2, (h - CANVAS_H * scale) // 2
@@ -255,11 +268,9 @@ class App:
         if modal:
             modal.on_click(pos)
             return
-        if self.run and self.scene_name in RUN_SCENE_NAMES:
-            px, py, pw, ph = TOPBAR_PAUSE_RECT
-            if px <= pos[0] < px + pw and py <= pos[1] < py + ph:
-                self.open_pause()
-                return
+        if self.run and self.scene_name in RUN_SCENE_NAMES and gfx.inside(pos, TOPBAR_PAUSE_RECT):
+            self.open_pause()
+            return
         self.scene.on_click(pos)
 
     def tick(self, dt):
@@ -277,6 +288,7 @@ class App:
             elif ev.type == pygame.KEYDOWN:
                 self.handle_key(ev.key)
         self.mouse = self.to_canvas(pygame.mouse.get_pos())
+
         modal = self.active_modal()
         if not modal:
             self.scene.update(dt)
@@ -284,6 +296,7 @@ class App:
             t[1] -= dt
         self.toasts = [t for t in self.toasts if t[1] > 0]
 
+        # Hide hover highlights on underlying scene widgets while a modal is active.
         real_mouse = self.mouse
         if modal:
             self.mouse = (-999, -999)
@@ -295,7 +308,7 @@ class App:
                 self.pause_modal.draw(self.canvas, (-999, -999))
             modal.draw(self.canvas, self.mouse)
         elif self.run and self.scene_name in RUN_SCENE_NAMES:
-            draw_topbar_tooltip(self.canvas, self.run, self.mouse)
+            draw_topbar_tooltip(self.canvas, self.mouse)
 
         self.draw_toasts()
         gfx.draw_cursor(self.canvas, self.mouse)
@@ -309,5 +322,4 @@ class App:
 
 
 if __name__ == "__main__":
-    app = App()
-    app.main_loop()
+    App().main_loop()

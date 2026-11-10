@@ -1,10 +1,12 @@
-"""The shop between rounds: relics, extra plots and rerolls."""
+"""Between-round shop: relic offers, relic resale, plot expansion, rerolls, and forecast."""
+
+import pygame
 
 from . import data, gfx
 from .formatting import fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
-from .settings import ACCENT, BAD, DIM, GOOD, MAX_PLOTS, PANEL_DARK, RELIC_SLOTS, TEXT
+from .settings import ACCENT, BAD, BG, CANVAS_H, CANVAS_W, DIM, GOOD, MAX_PLOTS, PANEL, PANEL_DARK, RELIC_SLOTS, TEXT
 
 FORECAST_RECT = (152, 150, 98, 26)
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": TEXT}
@@ -14,13 +16,13 @@ class ShopScene(Scene):
     def on_enter(self):
         self.run.phase = "shop"
         self.msg = ""
-        self.buy_buttons = []
-        for i in range(3):
-            b = Button(9 + i * 104, 98, 90, 16, "", lambda i=i: self.buy_relic(i), color=(70, 130, 70))
-            self.buy_buttons.append(b)
+        self.buy_buttons = [
+            Button(9 + i * 104, 98, 90, 16, "", lambda i=i: self.buy_relic(i), color=(70, 130, 70))
+            for i in range(3)
+        ]
         self.sell_buttons = []
         for i in range(RELIC_SLOTS):
-            b = Button(4 + i * 62 + 2, 141, 56, 8, "", lambda i=i: self.sell_relic_clicked(i), color=(150, 70, 60))
+            b = Button(6 + i * 62, 141, 56, 8, "", lambda i=i: self.sell_relic_clicked(i), color=(150, 70, 60))
             b.enabled = False
             self.sell_buttons.append(b)
         self.plot_btn = Button(4, 150, 88, 26, "", self.buy_plot)
@@ -48,13 +50,12 @@ class ShopScene(Scene):
         if len(run.plots) >= MAX_PLOTS:
             self.plot_btn.label, self.plot_btn.enabled = "PLOTS\nMAXED", False
         else:
-            self.plot_btn.label = "PLOT (%d/%d)\n$%s" % (len(run.plots), MAX_PLOTS, fmt(run.plot_price()))
-            self.plot_btn.enabled = run.money >= run.plot_price()
-        self.reroll_btn.label = "REROLL\n$" + fmt(run.reroll_price())
-        self.reroll_btn.enabled = run.money >= run.reroll_price()
-
-    def on_click(self, pos):
-        return super().on_click(pos)
+            plot_price = run.plot_price()
+            self.plot_btn.label = "PLOT (%d/%d)\n$%s" % (len(run.plots), MAX_PLOTS, fmt(plot_price))
+            self.plot_btn.enabled = run.money >= plot_price
+        reroll_price = run.reroll_price()
+        self.reroll_btn.label = "REROLL\n$" + fmt(reroll_price)
+        self.reroll_btn.enabled = run.money >= reroll_price
 
     def sell_relic_clicked(self, i):
         if not 0 <= i < len(self.run.relics):
@@ -105,18 +106,34 @@ class ShopScene(Scene):
         self.app.goto("packs")
 
     def on_key(self, key):
-        import pygame
         if key == pygame.K_ESCAPE:
             if hasattr(self.app, "open_pause"):
                 self.app.open_pause()
             else:
                 self.app.goto("title")
 
+    def _relic_tooltip_lines(self, rid, extra_lines=()):
+        rel = data.RELICS[rid]
+        col = data.RARITY_COLORS[rel["rarity"]]
+        lv = self.run.relic_level(rid)
+        lines = [
+            (rel["name"] + (" +%d" % lv if lv else ""), col),
+            (rel["rarity"].upper(), col),
+            (rel["desc"], TEXT),
+        ]
+        for step in rel.get("levels", [])[:lv]:
+            lines.append((step["desc"], GOOD))
+        for step in rel.get("levels", [])[lv:]:
+            lines.append(("EVOLVES AT %d %sS" % (step["goal"], step["stat"].upper()), DIM))
+        lines.extend(extra_lines)
+        return lines
+
     def draw(self, surf):
         run = self.run
-        gfx.rect(surf, (30, 26, 46), 0, 0, 320, 180)
+        gfx.rect(surf, BG, 0, 0, CANVAS_W, CANVAS_H)
         draw_topbar(surf, run, "SHOP", mouse=self.mouse)
 
+        offer_hover = None
         for i in range(3):
             x, y = 4 + i * 104, 18
             rid = run.shop_offers[i] if i < len(run.shop_offers) else None
@@ -127,23 +144,27 @@ class ShopScene(Scene):
             rel = data.RELICS[rid]
             col = data.RARITY_COLORS[rel["rarity"]]
             gfx.rect(surf, col, x, y, 100, 98)
-            gfx.rect(surf, (44, 38, 66), x + 1, y + 1, 98, 96)
+            gfx.rect(surf, PANEL, x + 1, y + 1, 98, 96)
             gfx.rect(surf, col, x + 5, y + 5, 16, 16)
-            gfx.draw_text(surf, rel["name"][0], x + 13, y + 10, PANEL_DARK, scale=1, align="center")
-            gfx.draw_text(surf, rel["name"], x + 26, y + 6, TEXT)
-            gfx.draw_text(surf, rel["rarity"], x + 26, y + 14, col)
-            gfx.draw_wrapped(surf, rel["desc"], x + 6, y + 28, 90, TEXT)
+            gfx.rect(surf, PANEL_DARK, x + 6, y + 6, 14, 14)
+            gfx.draw_sprite(surf, rid, x + 7, y + 7)
+            gfx.draw_text(surf, rel["name"], x + 25, y + 6, TEXT)
+            gfx.draw_text(surf, rel["rarity"], x + 25, y + 14, col)
+            gfx.draw_wrapped(surf, rel["desc"], x + 6, y + 26, 90, TEXT)
+            if rel.get("levels") and gfx.inside(self.mouse, (x, y, 100, 78)):
+                offer_hover = rid
         for b in self.buy_buttons:
             b.draw(surf, self.mouse)
 
-        # owned relics
         gfx.draw_text(surf, "YOUR RELICS %d/%d" % (len(run.relics), RELIC_SLOTS), 6, 119, DIM)
         if self.msg:
             gfx.draw_text(surf, self.msg, 314, 119, ACCENT, align="right")
+
         owned_hover = None
         for i in range(RELIC_SLOTS):
             x = 4 + i * 62
-            gfx.rect(surf, PANEL_DARK, x, 125, 60, 24)
+            slot_rect = (x, 125, 60, 24)
+            gfx.rect(surf, PANEL_DARK, *slot_rect)
             if i < len(run.relics):
                 rel = data.RELICS[run.relics[i]]
                 gfx.rect(surf, data.RARITY_COLORS[rel["rarity"]], x, 125, 60, 1)
@@ -151,12 +172,11 @@ class ShopScene(Scene):
                 for k, line in enumerate(lines[:2]):
                     gfx.draw_text(surf, line, x + 30, 128 + k * 7, TEXT, align="center")
                 self.sell_buttons[i].draw(surf, self.mouse)
-                if x <= self.mouse[0] < x + 60 and 125 <= self.mouse[1] < 149:
+                if gfx.inside(self.mouse, slot_rect):
                     owned_hover = i
             else:
                 gfx.draw_text(surf, "EMPTY", x + 30, 134, (70, 62, 96), align="center")
 
-        # Next round weather & bill forecast panel (never obscured by buttons)
         fx, fy, fw, fh = FORECAST_RECT
         nxt = run.round + 1
         twist = run.twist(nxt)
@@ -182,10 +202,11 @@ class ShopScene(Scene):
         self.reroll_btn.draw(surf, self.mouse)
         self.next_btn.draw(surf, self.mouse)
 
-        # Hover tooltips
-        if fx <= self.mouse[0] < fx + fw and fy <= self.mouse[1] < fy + fh:
-            bill_line = (("BILL DUE: $%s" % fmt(run.bill_for_round(nxt)), BAD)
-                         if run.is_quota_round(nxt) else ("NO BILL DUE", GOOD))
+        if gfx.inside(self.mouse, FORECAST_RECT):
+            bill_line = (
+                ("BILL DUE: $%s" % fmt(run.bill_for_round(nxt)), BAD)
+                if run.is_quota_round(nxt) else ("NO BILL DUE", GOOD)
+            )
             gfx.tooltip(surf, [
                 ("NEXT: ROUND %d (%s)" % (nxt, season["name"].upper()), ACCENT),
                 ("WEATHER: " + twist["name"].upper(), tcol),
@@ -193,12 +214,12 @@ class ShopScene(Scene):
                 bill_line,
             ], self.mouse, 118)
         elif owned_hover is not None:
-            rel = data.RELICS[run.relics[owned_hover]]
-            col = data.RARITY_COLORS[rel["rarity"]]
-            refund = max(1, int(run.relic_price(run.relics[owned_hover]) * 0.5))
-            gfx.tooltip(surf, [
-                (rel["name"], col),
-                (rel["rarity"].upper(), col),
-                (rel["desc"], TEXT),
-                ("SELL REFUND: $%s" % fmt(refund), ACCENT),
-            ], self.mouse, 110)
+            rid = run.relics[owned_hover]
+            refund = max(1, int(run.relic_price(rid) * 0.5))
+            gfx.tooltip(
+                surf,
+                self._relic_tooltip_lines(rid, [("SELL REFUND: $%s" % fmt(refund), ACCENT)]),
+                self.mouse, 110,
+            )
+        elif offer_hover is not None:
+            gfx.tooltip(surf, self._relic_tooltip_lines(offer_hover), self.mouse, 110)

@@ -1,9 +1,10 @@
+"""Compact currency and countdown formatting for low-resolution UI panels."""
 
 SUFFIXES = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
 
 
 def fmt(n):
-    """1234567 -> '1.23M'. Falls back to scientific notation (1.23e45) past Dc."""
+    """Format an integer with short-scale suffixes (1.23M) or scientific fallback past Dc."""
     n = int(n)
     if n < 0:
         return "-" + fmt(-n)
@@ -21,5 +22,6 @@ def fmt(n):
 
 
 def clock(seconds):
+    """Format remaining seconds as M:SS, rounding fractional seconds up so 0:00 means expired."""
     seconds = max(0, int(seconds + 0.999))
     return "%d:%02d" % (seconds // 60, seconds % 60)

@@ -1,3 +1,5 @@
+"""Persistent profile and mid-run save management using atomic temp-file writes."""
+
 import json
 
 from .paths import save_dir
@@ -9,25 +11,35 @@ PROFILE_DEFAULT = {
 }
 
 
+def _atomic_write(path, payload):
+    """Write JSON to a sibling .tmp file and replace atomically to prevent partial saves."""
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload), encoding="utf-8")
+    tmp.replace(path)
+
+
 class SaveManager:
+    """Reads and writes persistent profile progress and active-run snapshots."""
+
     def __init__(self):
         self.folder = save_dir()
         self.profile_path = self.folder / "profile.json"
         self.run_path = self.folder / "run.json"
 
-    def _load(self, path, default):
+    def _read_json(self, path):
         try:
-            with path.open("r", encoding="utf-8") as handle:
-                data = json.load(handle)
-            return data if isinstance(data, dict) else default.copy()
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
         except (OSError, json.JSONDecodeError):
-            return default.copy()
+            return None
 
     def load_profile(self):
-        profile = self._load(self.profile_path, PROFILE_DEFAULT)
+        """Load profile.json, filling missing keys and clamping settings to valid bounds."""
+        profile = self._read_json(self.profile_path) or PROFILE_DEFAULT.copy()
         for key, value in PROFILE_DEFAULT.items():
             profile.setdefault(key, value.copy() if isinstance(value, dict) else value)
         profile["perks"] = {key: int(value) for key, value in profile["perks"].items()}
+
         raw_settings = profile.get("settings")
         merged_settings = dict(SETTINGS_DEFAULT)
         if isinstance(raw_settings, dict):
@@ -38,6 +50,7 @@ class SaveManager:
             except (TypeError, ValueError):
                 merged_settings["scale"] = 6
         profile["settings"] = merged_settings
+
         raw_harvested = profile.get("harvested")
         profile["harvested"] = (
             {str(k): int(v) for k, v in raw_harvested.items() if isinstance(v, (int, float))}
@@ -46,19 +59,13 @@ class SaveManager:
         return profile
 
     def save_profile(self, profile):
-        self.profile_path.with_suffix(".json.tmp").write_text(json.dumps(profile), encoding="utf-8")
-        self.profile_path.with_suffix(".json.tmp").replace(self.profile_path)
+        _atomic_write(self.profile_path, profile)
 
     def load_run(self):
-        try:
-            data = json.loads(self.run_path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else None
-        except (OSError, json.JSONDecodeError):
-            return None
+        return self._read_json(self.run_path)
 
     def save_run(self, run):
-        self.run_path.with_suffix(".json.tmp").write_text(json.dumps(run), encoding="utf-8")
-        self.run_path.with_suffix(".json.tmp").replace(self.run_path)
+        _atomic_write(self.run_path, run)
 
     def clear_run(self):
         try:

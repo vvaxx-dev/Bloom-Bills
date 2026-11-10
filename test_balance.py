@@ -401,24 +401,30 @@ class FarmerPackTests(unittest.TestCase):
                 self.assertGreater(run.harvest_value(i), 0)
                 self.assertGreater(run.draw_seed("farmer") and 1, 0)
 
-    def test_four_crops_have_sprites_and_two_borrow_the_placeholder(self):
+    def test_all_farmer_crops_have_dedicated_sprites(self):
+        import pygame
+        from . import gfx
         from .sprites_data import GRIDS
-        for sid in ("potato", "wheat", "corn", "carrot"):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        unknown_bytes = pygame.image.tobytes(gfx.sprite("unknown"), "RGBA")
+        for sid in self.CROPS:
             self.assertIn(sid, GRIDS, "%s has no sprite" % sid)
-        # cranberries and saffron are stats-only for now: the renderer has to
-        # fall back instead of exploding
-        for sid in ("cranberries", "saffron"):
-            self.assertNotIn(sid, GRIDS)
+            surf = gfx.sprite(sid)
+            self.assertEqual(surf.get_size(), (12, 12))
+            self.assertNotEqual(pygame.image.tobytes(surf, "RGBA"), unknown_bytes)
 
     def test_missing_sprites_fall_back_to_placeholder_art(self):
         import pygame
         from . import gfx
         pygame.init()
         pygame.display.set_mode((1, 1))
-        for sid in ("cranberries", "saffron", "potato"):
-            surface = gfx.sprite(sid)
-            self.assertEqual(surface.get_size(), (12, 12))
-            self.assertNotEqual(surface, gfx.sprite("daisy"))
+        fallback = gfx.sprite("missing_sprite_id")
+        self.assertEqual(fallback.get_size(), (12, 12))
+        self.assertEqual(
+            pygame.image.tobytes(fallback, "RGBA"),
+            pygame.image.tobytes(gfx.sprite("unknown"), "RGBA"),
+        )
 
 
 class MutagenTests(unittest.TestCase):
@@ -1399,6 +1405,173 @@ class RegressionFixTests(unittest.TestCase):
                     os.environ["BLOOM_SAVE_DIR"] = old
 
 
+
+
+class SpriteAndCleanupTests(unittest.TestCase):
+    """Verify completed sprites, gear icon, shop relic icons, and simulation bug fixes."""
+
+    @classmethod
+    def setUpClass(cls):
+        import pygame
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def test_every_plant_relic_and_mutant_has_finished_sprite_art(self):
+        import pygame
+        from . import gfx
+        from .sprites_data import GRIDS, PALETTE
+
+        for name, rows in GRIDS.items():
+            widths = {len(row) for row in rows}
+            self.assertEqual(len(widths), 1, "%s has jagged rows" % name)
+            allowed = set(PALETTE) | {"."} | ({"1", "2"} if name == "pack" else set())
+            for row in rows:
+                self.assertTrue(set(row) <= allowed, "%s uses unknown palette keys" % name)
+
+        unknown_bytes = pygame.image.tobytes(gfx.sprite("unknown"), "RGBA")
+        for pid in data.PLANT_ORDER:
+            self.assertIn(pid, GRIDS, "missing plant sprite: %s" % pid)
+            surf = gfx.sprite(pid)
+            self.assertEqual(surf.get_size(), (12, 12))
+            self.assertNotEqual(pygame.image.tobytes(surf, "RGBA"), unknown_bytes)
+
+        for rid in data.RELIC_ORDER:
+            self.assertIn(rid, GRIDS, "missing relic sprite: %s" % rid)
+            surf = gfx.sprite(rid)
+            self.assertEqual(surf.get_size(), (12, 12))
+            self.assertNotEqual(pygame.image.tobytes(surf, "RGBA"), unknown_bytes)
+
+        for mid in data.MUTANTS:
+            sp = data.PLANTS[mid]
+            base_surf = gfx.sprite(sp["base"])
+            mut_surf = gfx.sprite(sp["base"], 1, sp.get("subs"))
+            self.assertNotEqual(
+                pygame.image.tobytes(base_surf, "RGBA"),
+                pygame.image.tobytes(mut_surf, "RGBA"),
+                "%s visually identical to %s" % (mid, sp["base"]),
+            )
+
+    def test_cog_sprite_is_toothed_gear_and_recolors_on_hover(self):
+        import pygame
+        from . import gfx
+        from .sprites_data import GRIDS
+
+        cog_rows = GRIDS["cog"]
+        self.assertEqual((len(cog_rows[0]), len(cog_rows)), (15, 15))
+        # Center axle hole is transparent; cardinal and diagonal tooth tips are opaque.
+        self.assertEqual(cog_rows[7][7], ".")
+        for tx, ty in ((7, 0), (7, 14), (0, 7), (14, 7), (2, 1), (12, 1), (2, 13), (12, 13)):
+            self.assertNotEqual(cog_rows[ty][tx], ".", "missing gear tooth at (%d, %d)" % (tx, ty))
+
+        normal = pygame.image.tobytes(gfx.sprite("cog"), "RGBA")
+        hovered = pygame.image.tobytes(gfx.sprite("cog", 1, gfx.COG_HOVER_SUBS), "RGBA")
+        self.assertNotEqual(normal, hovered)
+
+    def test_shop_cards_render_relic_sprites_and_evolution_tooltips(self):
+        import os
+        import tempfile
+        from .app import App
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("BLOOM_SAVE_DIR")
+            os.environ["BLOOM_SAVE_DIR"] = tmp
+            try:
+                app = App()
+                app.new_run()
+                app.run.enter_shop()
+                app.run.shop_offers = ["green_thumb", "mutagen", "beehive"]
+                app.goto("shop")
+                app.mouse = (14, 28)  # Hover evolving Green Thumb card
+                app.scene.draw(app.canvas)
+                # Multi-color pixel sprite inside first card's 12x12 icon box (x=11..22, y=25..36)
+                icon_colors = {
+                    app.canvas.get_at((x, y))[:3]
+                    for y in range(25, 37)
+                    for x in range(11, 23)
+                }
+                self.assertGreaterEqual(len(icon_colors), 4)
+            finally:
+                if old is None:
+                    os.environ.pop("BLOOM_SAVE_DIR", None)
+                else:
+                    os.environ["BLOOM_SAVE_DIR"] = old
+
+    def test_saved_evolved_relic_does_not_reemit_evolve_toast_after_load(self):
+        run = Run(seed=7)
+        run.relics = ["big_can"]
+        run.counters["water"] = 160
+        restored = Run.from_dict(run.to_dict())
+        self.assertEqual(restored._relic_lvls.get("big_can"), 1)
+        restored.begin_round()
+        restored.start_timer()
+        restored.update(0.1)
+        self.assertFalse(any(ev["kind"] == "evolve" for ev in restored.events))
+
+    def test_hailstorm_event_queue_is_bounded_and_plot_growth_speed_respects_twists(self):
+        from .settings import CELLAR_SPEED
+        from .state import MAX_EVENTS
+
+        run = Run(seed=9)
+        run.twist_id = lambda _rnd=None: "hailstorm"
+        run.begin_round()
+        run.plant(0, "daisy")
+        run.start_timer()
+        run.update(60.0)
+        self.assertLessEqual(len(run.events), MAX_EVENTS)
+
+        eclipse_run = Run(seed=10)
+        eclipse_run.twist_id = lambda _rnd=None: "eclipse"
+        eclipse_run.cellar_unlocked = True
+        eclipse_run.plots[0] = Plot("daisy")
+        eclipse_run.plots[1] = Plot("brown_mushroom")
+        eclipse_run.cellar_plots[0] = Plot("brown_mushroom")
+        self.assertAlmostEqual(eclipse_run.plot_growth_speed(0, False), 0.8)
+        self.assertAlmostEqual(eclipse_run.plot_growth_speed(1, False), 1.3)
+        self.assertAlmostEqual(eclipse_run.plot_growth_speed(0, True), CELLAR_SPEED)
+
+        gale_run = Run(seed=11)
+        gale_run.twist_id = lambda _rnd=None: "gale"
+        gale_run.plots[0] = Plot("daisy")
+        self.assertAlmostEqual(gale_run.plot_growth_speed(0, False), 0.8)
+
+    def test_shop_topbar_money_matches_round_position_left_of_pause(self):
+        import os
+        import tempfile
+        from .app import App
+        from .scene import TOPBAR_PAUSE_RECT
+        from .settings import ACCENT
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("BLOOM_SAVE_DIR")
+            os.environ["BLOOM_SAVE_DIR"] = tmp
+            try:
+                app = App()
+                app.new_run()
+                app.run.money = 1250
+
+                def money_xs():
+                    app.scene.draw(app.canvas)
+                    return {
+                        x
+                        for y in range(2, 8)
+                        for x in range(200, TOPBAR_PAUSE_RECT[0])
+                        if app.canvas.get_at((x, y))[:3] == ACCENT
+                    }
+
+                app.goto("round")
+                round_xs = money_xs()
+                self.assertTrue(round_xs)
+                self.assertLess(max(round_xs), TOPBAR_PAUSE_RECT[0] - 20)
+
+                app.run.enter_shop()
+                app.goto("shop")
+                shop_xs = money_xs()
+                self.assertEqual(shop_xs, round_xs)
+            finally:
+                if old is None:
+                    os.environ.pop("BLOOM_SAVE_DIR", None)
+                else:
+                    os.environ["BLOOM_SAVE_DIR"] = old
 
 
 if __name__ == "__main__":

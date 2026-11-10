@@ -1,3 +1,4 @@
+"""Platform-appropriate save directory resolution."""
 
 import os
 import sys
@@ -6,13 +7,8 @@ from pathlib import Path
 APP_FOLDER = "BloomAndBills"
 
 
-def resource_path(relative):
-    base = getattr(sys, "_MEIPASS", None)
-    root = Path(base) if base else Path(__file__).resolve().parent.parent
-    return root / relative
-
-
 def save_dir():
+    """Return (and ensure) the user data directory, honoring BLOOM_SAVE_DIR."""
     override = os.environ.get("BLOOM_SAVE_DIR")
     if override:
         folder = Path(override)
