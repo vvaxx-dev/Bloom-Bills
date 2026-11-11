@@ -698,15 +698,20 @@ class MutationCoverageTests(unittest.TestCase):
                 self.assertTrue(data.mutants_for(sid))
 
     def test_garden_flowers_have_more_than_one_mutation(self):
-        # Mycelium is the one deliberate exception: it never mutates.
+        # Two deliberate exceptions: Mycelium never mutates, and the Four-Leaf
+        # Clover has exactly one mutation - the Five-Leaf Clover.
+        one_mutation = {"four_leaf_clover": ["five_leaf_clover"]}
         garden = [
             sid for sid in data.SURFACE_PLANTS
-            if sid not in data.FARMER_PLANTS and not data.PLANTS[sid].get("no_mutations")
+            if sid not in data.FARMER_PLANTS and sid not in one_mutation
+            and not data.PLANTS[sid].get("no_mutations")
         ]
         for sid in garden:
             with self.subTest(plant=sid):
                 self.assertGreaterEqual(len(data.mutants_for(sid)), 2)
         self.assertFalse(data.mutants_for("mycelium"))
+        for sid, only in one_mutation.items():
+            self.assertEqual(data.mutants_for(sid), only)
 
     def test_cursed_plants_get_special_mutants(self):
         for sid in ("devil_ivy", "widow_bloom"):
@@ -1584,6 +1589,39 @@ class SpriteAndCleanupTests(unittest.TestCase):
                     os.environ["BLOOM_SAVE_DIR"] = old
 
 
+def sprite_patches(grid, key):
+    """Connected patches of one palette key in a sprite grid; diagonal neighbours count as touching."""
+    cells = {(x, y) for y, row in enumerate(grid) for x, char in enumerate(row) if char == key}
+    patches = []
+    while cells:
+        patch, todo = set(), [cells.pop()]
+        while todo:
+            x, y = todo.pop()
+            patch.add((x, y))
+            for near in ((x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+                if near in cells:
+                    cells.remove(near)
+                    todo.append(near)
+        patches.append(patch)
+    return patches
+
+
+def clover_leaves(grid):
+    """Split a clover sprite into its leaves: one set of (x, y) cells per leaf.
+
+    A leaf is a darker eye ('g') completely ringed by light green ('l'). The
+    hub and the stem use 'g' too, but they are open to the soil on some side,
+    so they are not leaves.
+    """
+    light = set().union(*sprite_patches(grid, "l"))
+    leaves = []
+    for eye in sprite_patches(grid, "g"):
+        ring = {(x + dx, y + dy) for x, y in eye for dx in (-1, 0, 1) for dy in (-1, 0, 1)} - eye
+        if ring <= light:
+            leaves.append(eye | ring)
+    return leaves
+
+
 class DesertAndLayoutPlantTests(unittest.TestCase):
     """The desert shelf, the layout plants, and the packs they live in."""
 
@@ -1671,11 +1709,60 @@ class DesertAndLayoutPlantTests(unittest.TestCase):
         self.assertTrue(all(len(row) == 12 for row in five))
         self.assertNotEqual(five, four)
         self.assertGreater(sum(row.count("l") for row in five), sum(row.count("l") for row in four))
+        # Count the leaves themselves. More green is not proof: a four-leaf
+        # drawing with a thicker middle used to pass as the five-leaf one.
+        self.assertEqual(len(clover_leaves(four)), 4)
+        leaves = clover_leaves(five)
+        self.assertEqual(len(leaves), 5)
+        # Five separate leaves: the light green makes five patches that never
+        # touch, not even at a corner, and each patch holds exactly one leaf.
+        patches = sprite_patches(five, "l")
+        self.assertEqual(len(patches), 5)
+        for patch in patches:
+            self.assertEqual(sum(1 for leaf in leaves if leaf & patch), 1)
         self.assertEqual(data.PLANTS["five_leaf_clover"]["art"], "five_leaf_clover")
         self.assertFalse(data.PLANTS["five_leaf_clover"]["pays"])
         self.assertGreater(
             data.PLANTS["five_leaf_clover"]["bloom_chance"],
             data.PLANTS["four_leaf_clover"]["bloom_chance"])
+
+    def test_a_ripe_five_leaf_clover_shows_its_five_leaves_on_the_plot(self):
+        import pygame
+        from types import SimpleNamespace
+        from . import gfx
+        from .round import RoundScene, CELL_W, CELL_H
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        sp = data.PLANTS["five_leaf_clover"]
+
+        def drawn(species, progress):
+            """Draw one plot through the round screen and return its pixels."""
+            app = SimpleNamespace(run=Run(seed=5), mouse=(319, 179),
+                                  toast=lambda *args: None, save_run=lambda: None)
+            scene = RoundScene(app)
+            scene.on_enter()
+            app.run.plots = [Plot(species, progress=progress)]
+            tile = pygame.Surface((CELL_W, CELL_H))
+            scene.draw_plot(app.run.plots, tile, 0, 0, 0, CELL_W, CELL_H)
+            return tile
+
+        def shows(tile, sprite_name):
+            """True if every opaque pixel of the (recoloured, 2x) sprite is somewhere on the tile."""
+            art = gfx.sprite(sprite_name, 2, sp["subs"])
+            w, h = art.get_size()
+            ink = [(x, y, tuple(art.get_at((x, y)))[:3])
+                   for y in range(h) for x in range(w) if art.get_at((x, y))[3]]
+            return any(
+                all(tuple(tile.get_at((ox + x, oy + y)))[:3] == rgb for x, y, rgb in ink)
+                for oy in range(tile.get_height() - h + 1)
+                for ox in range(tile.get_width() - w + 1)
+            )
+
+        ripe = drawn("five_leaf_clover", sp["grow"] * 0.9)
+        self.assertTrue(shows(ripe, "five_leaf_clover"))
+        self.assertFalse(shows(ripe, "four_leaf_clover"))
+        # Still growing, it is a sprout like any other plant.
+        self.assertFalse(shows(drawn("five_leaf_clover", sp["grow"] * 0.3), "five_leaf_clover"))
 
 
 class MyceliumTests(unittest.TestCase):
@@ -1812,9 +1899,60 @@ class CloverTests(unittest.TestCase):
         self.assertEqual(run.plots[0].bloom, 1.0)
 
     def test_the_mutant_is_the_five_leaf_clover(self):
-        mutants = data.mutants_for("four_leaf_clover")
-        self.assertIn("five_leaf_clover", mutants)
+        # The one and only: no second clover mutation sits beside it.
+        self.assertEqual(data.mutants_for("four_leaf_clover"), ["five_leaf_clover"])
         self.assertEqual(data.PLANTS["five_leaf_clover"]["name"], "Five-Leaf Clover")
+
+    def test_a_clover_can_only_ever_mutate_into_the_five_leaf_clover(self):
+        threshold = data.mutation_threshold("four_leaf_clover")
+        # Mid-round, once it has been harvested enough...
+        run = self.run_with("four_leaf_clover")
+        grown = set()
+        for _ in range(2000):
+            run.plots[0] = Plot("four_leaf_clover", harvests=threshold)
+            run._maybe_mutate(0)
+            grown.add(run.plots[0].species)
+        self.assertEqual(grown, {"four_leaf_clover", "five_leaf_clover"})
+        # ...and straight from the seed with the Mutagen relic.
+        run = self.run_with()
+        run.relics = ["mutagen"]
+        sprouted = set()
+        for _ in range(2000):
+            run.plots[0] = Plot()
+            run.seeds["four_leaf_clover"] = 1
+            self.assertTrue(run.plant(0, "four_leaf_clover"))
+            sprouted.add(run.plots[0].species)
+        self.assertEqual(sprouted, {"four_leaf_clover", "five_leaf_clover"})
+
+    def test_the_five_leaf_clover_is_nothing_but_a_clover_mutation(self):
+        five = data.PLANTS["five_leaf_clover"]
+        self.assertTrue(five["mutant"])
+        self.assertEqual(five["base"], "four_leaf_clover")
+        # Only the Four-Leaf Clover turns into it, and it mutates no further.
+        self.assertEqual(
+            [sid for sid in data.PLANTS if "five_leaf_clover" in data.mutants_for(sid)],
+            ["four_leaf_clover"])
+        self.assertEqual(data.mutants_for("five_leaf_clover"), [])
+        # It has no seed of its own: on no shelf and in no pack, so a run can
+        # only reach it by growing a Four-Leaf Clover.
+        self.assertNotIn("five_leaf_clover", data.PLANT_ORDER)
+        self.assertNotIn("five_leaf_clover", data.CELLAR_PLANTS)
+        for kind, pack in data.PACKS.items():
+            self.assertNotIn("five_leaf_clover", pack["pool"], kind)
+
+    def test_a_save_that_remembers_the_retired_shamrock_still_loads(self):
+        # "Lucky Shamrock" used to be a second clover mutation. Saves that
+        # counted its harvests must load cleanly now that it is gone.
+        self.assertIsNone(data.PLANTS.get("four_leaf_clover_shamrock"))
+        saved = Run(seed=5).to_dict()
+        saved["mastery"] = {"four_leaf_clover_shamrock": 7, "four_leaf_clover": 3}
+        saved["seeds"] = {"four_leaf_clover_shamrock": 2, "four_leaf_clover": 1}
+        saved["plots"] = [Plot("four_leaf_clover").to_dict()]
+        saved["plots"][0]["species"] = "four_leaf_clover_shamrock"
+        loaded = Run.from_dict(saved)
+        self.assertEqual(loaded.mastery, {"four_leaf_clover": 3})
+        self.assertEqual(loaded.seeds, {"four_leaf_clover": 1})
+        self.assertIsNone(loaded.plots[0].species)
 
 
 class RelicEvolutionFixTests(unittest.TestCase):
@@ -1855,6 +1993,201 @@ class RelicEvolutionFixTests(unittest.TestCase):
         events = [ev for ev in run.events if ev["kind"] == "evolve"]
         self.assertEqual(len(events), 1)
         self.assertIn("2.25", events[0]["desc"])
+
+        class SpritePreviewTests(unittest.TestCase):
+            """preview_sprites.py is only worth having if it shows what the game shows."""
+
+    def test_preview_draws_every_sprite_and_recolour_exactly_as_the_game_does(self):
+        import pygame
+        from types import SimpleNamespace
+        from unittest import mock
+        from . import gfx, preview_sprites
+        from .round import RoundScene, CELL_W, CELL_H
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        app = SimpleNamespace(run=Run(seed=5), mouse=(319, 179), toast=lambda *args: None, save_run=lambda: None)
+        scene = RoundScene(app)
+        scene.on_enter()
+
+        def on_a_plot(species):
+            """The sprite and the recolour the round screen asks for when `species` is ripe."""
+            app.run.plots = [Plot(species, progress=data.PLANTS[species]["grow"])]
+            with mock.patch.object(gfx, "draw_sprite") as draw:
+                scene.draw_plot(app.run.plots, pygame.Surface((CELL_W, CELL_H)), 0, 0, 0, CELL_W, CELL_H)
+            return draw.call_args_list[0].args[1], draw.call_args_list[0].args[5]
+
+        art = preview_sprites.load()
+        names = list(art.grids) + list(data.PLANTS)
+        for name in names + ["no_such_sprite"]:
+            grid_name, subs = on_a_plot(name) if name in data.PLANTS else (name, None)
+            self.assertEqual(preview_sprites.lookup(art, name), (grid_name, subs), name)
+            for scale in (1, 2):
+                self.assertEqual(
+                    pygame.image.tobytes(preview_sprites.render(art, name, scale), "RGBA"),
+                    pygame.image.tobytes(gfx.sprite(grid_name, scale, subs), "RGBA"), name)
+        # None of the game's own art trips the checks.
+        self.assertEqual(preview_sprites.report(art, names), [])
+
+    def test_preview_points_out_the_mistakes_a_hand_typed_grid_invites(self):
+        import pygame
+        from . import preview_sprites
+        from .settings import BAD
+        art = preview_sprites.load()
+        daisy = list(art.grids["daisy"])
+        art.grids["no_comma"] = daisy[:3] + [daisy[3] + daisy[4]] + daisy[5:]  # two rows run together
+        art.grids["short_row"] = daisy[:6] + [daisy[6][:-1]] + daisy[7:]
+        art.grids["typo"] = daisy[:6] + ["?" + daisy[6][1:]] + daisy[7:]
+        art.grids["daisy"] = daisy + daisy[:1]  # a plant's sprite with a thirteenth row
+        art.palette["q"] = (300, 0, 0)
+        art.grids["bad_colour"] = daisy[:6] + ["q" + daisy[6][1:]] + daisy[7:]
+        art.plants["bluebell"] = {"name": "Bluebell"}  # a plant added to data.py before its sprite is drawn
+        names = ["no_comma", "short_row", "typo", "daisy", "daisey", "bad_colour", "bluebell", "sunflower"]
+        said = {name: " / ".join(preview_sprites.problems(art, name)) for name in names}
+        self.assertIn("row 4 is 24 wide, the others are 12", said["no_comma"])
+        self.assertIn("comma", said["no_comma"])
+        self.assertIn("row 7 is 11 wide, the others are 12", said["short_row"])
+        self.assertNotIn("comma", said["short_row"])
+        self.assertIn("row 7 uses '?'", said["typo"])
+        self.assertIn("12x13", said["daisy"])
+        self.assertIn("did you mean daisy", said["daisey"])
+        self.assertIn("uses 'q', but its colour is (300, 0, 0)", said["bad_colour"])
+        self.assertIn("there is no sprite called 'bluebell'", said["bluebell"])
+        self.assertNotIn("did you mean bluebell", said["bluebell"])
+        self.assertEqual(said["sunflower"], "")
+        # The picture is still drawn, with a mark on each cell where the game would have crashed.
+        for name in ("typo", "bad_colour"):
+            self.assertEqual(tuple(preview_sprites.render(art, name, 1).get_at((0, 6)))[:3], preview_sprites.STRAY)
+
+        def red(surface):
+            return pygame.mask.from_threshold(surface, BAD, (1, 1, 1, 255)).count()
+
+        # Red is kept for trouble: the name over a sprite that has some, and the messages above the cards.
+        pygame.font.init()
+        face = pygame.font.Font(None, preview_sprites.TEXT_SIZE)
+        self.assertEqual(red(preview_sprites.compose(art, ["sunflower"], 2, 900)), 0)
+        flagged = red(preview_sprites.card(art, "typo", 2, face))
+        self.assertGreater(flagged, 0)
+        self.assertGreater(red(preview_sprites.compose(art, ["typo"], 2, 900)), flagged)
+        self.assertGreater(preview_sprites.compose(art, names, 2, 900).get_height(), 0)
+
+    def test_preview_follows_the_files_as_they_are_saved(self):
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        import pygame
+        from . import preview_sprites
+        with tempfile.TemporaryDirectory() as folder:
+            for name in preview_sprites.WATCHED:
+                shutil.copy(str(preview_sprites.FOLDER / name), folder)
+            sprites = Path(folder) / "sprites_data.py"
+            original = sprites.read_text(encoding="utf-8")
+            start = original.index('"daisy": [')
+            end = original.index("]", start)
+            repainted = original[:start] + original[start:end].replace("w", "r") + original[end:]
+            preview = preview_sprites.Preview(["daisy"], 2, folder)
+            saved_at = [os.stat(str(sprites)).st_mtime_ns]
+
+            def save(text):
+                """Save the file the way an editor would, then look at it twice as the window does."""
+                sprites.write_text(text, encoding="utf-8")
+                saved_at[0] += 10 ** 10  # a later timestamp even where the clock is coarse
+                os.utime(str(sprites), ns=(saved_at[0], saved_at[0]))
+                return preview.update(), preview.update()
+
+            def petals():
+                return set("".join(preview.art.grids["daisy"][1:7])) - set(".y")
+
+            def looks():
+                return pygame.image.tobytes(preview.picture(), "RGB")
+
+            before = looks()
+            self.assertEqual(petals(), {"w"})
+            self.assertFalse(preview.update())  # nothing was saved, so there is nothing to redraw
+            # The first look after a save only notes it; the second, finding it settled, redraws.
+            self.assertEqual(save(repainted), (False, True))
+            self.assertEqual(petals(), {"r"})
+            self.assertNotEqual(looks(), before)
+            self.assertEqual(preview.messages(), [])
+            # A half-typed edit keeps the last good picture up and says where the file broke.
+            self.assertEqual(save(original[:end] + '"' + original[end:]), (False, True))
+            self.assertIn("sprites_data.py, line", preview.error)
+            self.assertEqual(petals(), {"r"})
+            self.assertEqual(preview.messages(), [preview.error])
+            self.assertGreater(len(looks()), len(before))  # the sheet grew by the red lines
+            # So does a file that runs but leaves no sprites to draw.
+            self.assertEqual(save(original + "\nGRIDS = None\n"), (False, True))
+            self.assertIn("still showing the last version that loaded", preview.error)
+            self.assertEqual(petals(), {"r"})
+            self.assertGreater(len(looks()), len(before))
+            # Putting the file right clears the message.
+            self.assertEqual(save(original), (False, True))
+            self.assertEqual((preview.error, petals()), ("", {"w"}))
+            self.assertEqual(looks(), before)
+            # Saving again with nothing drawn differently is not worth a redraw.
+            self.assertEqual(save(original + "\n# a note to self\n"), (False, False))
+            # A file that cannot be opened at the moment it is looked at gets another go, with no new save needed.
+            with mock.patch.object(preview_sprites, "read", side_effect=PermissionError("in use")):
+                self.assertEqual(save(repainted), (False, True))
+            self.assertEqual(preview.error.split(" - ")[0], "PermissionError: in use")
+            self.assertEqual(petals(), {"w"})
+            self.assertEqual((preview.update(), preview.update()), (False, True))
+            self.assertEqual((preview.error, petals()), ("", {"r"}))
+            self.assertEqual((preview.update(), preview.update()), (False, False))
+
+    def test_preview_writes_a_picture_without_opening_a_window(self):
+        import contextlib
+        import io
+        import os
+        import tempfile
+        from unittest import mock
+        import pygame
+        from . import preview_sprites
+        from .sprites_data import GRIDS
+        with tempfile.TemporaryDirectory() as folder:
+            target = os.path.join(folder, "sheets", "clover")  # no ".png", in a folder that is not there yet
+            complaints = io.StringIO()
+            no_window = mock.patch("pygame.display.set_mode", side_effect=AssertionError("a window was opened"))
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(complaints), no_window:
+                self.assertEqual(preview_sprites.main(["five_leaf_clover", "--png", target, "--scale", "3"]), 0)
+                pixels = pygame.image.tobytes(pygame.image.load(target + ".png"), "RGB")
+                self.assertEqual(preview_sprites.main(["five_leaf_clovr", "--png", target]), 1)
+            self.assertIn("did you mean five_leaf_clover", complaints.getvalue())
+        # Every gold leaf rim cell is there twice: at 2x and at 1x, three screen pixels to the game pixel.
+        gold = bytes(data.PLANTS["five_leaf_clover"]["subs"]["l"])
+        rims = sum(row.count("l") for row in GRIDS["five_leaf_clover"])
+        self.assertEqual(
+            sum(pixels[i:i + 3] == gold for i in range(0, len(pixels), 3)), rims * (6 * 6 + 3 * 3))
+
+    def test_preview_window_takes_keys_and_closes(self):
+        from unittest import mock
+        import pygame
+        from . import preview_sprites
+        self.addCleanup(pygame.display.quit)
+        for closing in (pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE), pygame.event.Event(pygame.QUIT)):
+            preview = preview_sprites.Preview(["daisy"], 2)
+            frames = []
+
+            def flip():
+                """Stand in for the screen update: keep what was drawn, then press the next key."""
+                frames.append(pygame.image.tobytes(pygame.display.get_surface(), "RGB"))
+                if len(frames) == 1:
+                    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_g))
+                elif len(frames) == 2:
+                    pygame.event.post(closing)
+                elif len(frames) > 5:
+                    raise AssertionError("the window stayed open after %s" % closing)
+
+            pygame.display.init()
+            pygame.event.clear()
+            with mock.patch("pygame.display.flip", flip):
+                preview_sprites.watch(preview)
+            # One frame as it opens, one with the pixel grid G asked for, and none once it is closed.
+            self.assertEqual(len(frames), 2)
+            self.assertNotEqual(frames[0], frames[1])
+            self.assertTrue(preview.grid)
+            self.assertFalse(pygame.display.get_init())
 
 
 if __name__ == "__main__":

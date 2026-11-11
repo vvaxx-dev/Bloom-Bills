@@ -46,7 +46,7 @@ Twenty-four base plants across eight packs, plus mutant offshoots that start app
 
 The **Desert Pack** is desert-only: Cactus, Aloe Vera, Prickly Pear and Agave. The **Harvest Pack** is autumn-themed: Pumpkin, Corn, Cranberries, Wheat, Potato and Carrot. The **Garden Pack** still stocks Daisy, Tomato and Sunflower, plus Venus Flytrap and Mycelium, and the Golden Orchid is now its one-in-a-hundred jackpot — Cactus swapped out to the Rare Pack. The **Rare Pack** carries Sunflower, Cactus, Pumpkin, Four Leaf Clover and a slim chance at Golden Orchid. Mycelium turns up in both the Garden Pack and the Nocturnal (cellar) pack.
 
-New plants bring new decisions: **Mycelium** spreads into empty neighbouring plots on harvest and every connected Mycelium boosts the whole patch's value; **Venus Flytrap** pays little itself but gets fed by every other harvest you take, and its Man-Eater mutation devours an adjacent plant for half its base payout; **Four Leaf Clover** pays nothing but rolls a 25% chance to 1.5x a neighbour's harvest each grow, and its mutant **Five Leaf Clover** actually shows five leaves with a stronger boost.
+New plants bring new decisions: **Mycelium** spreads into empty neighbouring plots on harvest and every connected Mycelium boosts the whole patch's value; **Venus Flytrap** pays little itself but gets fed by every other harvest you take, and its Man-Eater mutation devours an adjacent plant for half its base payout; **Four Leaf Clover** pays nothing but rolls a 25% chance to 1.5x a neighbour's harvest each grow, and it has exactly one mutation, the **Five Leaf Clover**: drawn with five separate leaves, it rolls a 50% chance to 2x instead.
 
 An Eclipse puts the whole nocturnal shelf in the round's tray alongside everything else, which is more than one screenful, so the tray pages with the arrows, left/right or the mouse wheel.
 
@@ -89,6 +89,8 @@ Small enough to read in an evening:
 - `gfx.py` text, panels, buttons, tooltips and the mouse pointer drawn from a pixel font, no image files anywhere.
 
 All the art is generated at runtime from character grids in `sprites_data.py`, which is why the repo is text. That includes the cursor: an outlined, shaded pixel arrow rendered at 2x drawn on the canvas in the same 1px chunks as the font, with the system pointer hidden. Tooltips open with their bottom-left corner on the cursor tip, so the pointer always marks the box it opened.
+
+To look at sprites without starting the game, run `python3 preview_sprites.py daisy my_new_flower` (with no names it shows every sprite). Each one is drawn the way it appears on a plot and in the seed tray, mutant ids like `sunflower_gold` come out in their recolour, and the window redraws whenever `sprites_data.py` is saved, so it can sit open beside the editor. The slips a hand-typed grid invites are spelled out in red: a row that is too long or too short, a letter that is not in `PALETTE`. Add `--png sheet.png` to write a picture instead of opening a window.
 
 ## Tests
 

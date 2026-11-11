@@ -266,12 +266,9 @@ MUTANTS = {
         "grow_mult": 0.9, "yield_mult": 3.2, "sell_mult": 3.2, "yield_add": 10,
         "color": (170, 230, 200), "subs": {"g": (170, 230, 200), "G": (90, 175, 145), "l": (215, 250, 230), "y": (255, 235, 130), "Y": (225, 175, 70)},
     },
-    "four_leaf_clover_shamrock": {
-        "base": "four_leaf_clover", "name": "Lucky Shamrock",
-        "desc": "x2 value, +$2 a harvest, grows 20% faster.",
-        "grow_mult": 0.8, "yield_mult": 2.0, "sell_mult": 2.0, "yield_add": 2,
-        "color": (95, 225, 120), "subs": {"g": (105, 230, 125), "G": (60, 165, 85), "l": (175, 250, 150)},
-    },
+    # The Four-Leaf Clover has exactly one mutation, and this is it: the same
+    # plant with a fifth leaf (its own art) and a luckier roll. It exists only
+    # as a mutation - it is in no pack and has no seed of its own.
     "five_leaf_clover": {
         "base": "four_leaf_clover", "name": "Five-Leaf Clover",
         "desc": "Still pays nothing. 50% chance to x2 a neighbour's base harvest.",
@@ -430,7 +427,7 @@ RELICS = {
     "clover":        {"name": "Lucky Clover",   "rarity": "rare",     "cost": 650,
                       "desc": "Rare seeds are twice as likely in packs.",
                       "effects": {"pack_luck": 2.0}},
-    "gardener":      {"name": "Hired Gardener", "rarity": "rare",     "cost": 760,
+    "gardener":      {"name": "Hired Gardener", "rarity": "rare",     "cost": 650,
                       "desc": "Plots water themselves, non-stop.",
                       "effects": {"auto_water": True}},
     "spore_lantern": {"name": "Spore Lantern",  "rarity": "uncommon", "cost": 600,
@@ -442,13 +439,13 @@ RELICS = {
                           {"stat": "mushroom", "goal": 300, "effects": {"yield_mult": [("mushroom", 1.0)]},
                            "desc": "Mushroom harvests x4 total."},
                       ]},
-    "catalog":       {"name": "Seed Catalog",   "rarity": "rare",     "cost": 700,
+    "catalog":       {"name": "Seed Catalog",   "rarity": "rare",     "cost": 625,
                       "desc": "One extra free pack each round.",
                       "effects": {"free_packs": 1}},
-    "greenhouse":    {"name": "Greenhouse",     "rarity": "rare",     "cost": 850,
+    "greenhouse":    {"name": "Greenhouse",     "rarity": "rare",     "cost": 700,
                       "desc": "All harvests x2. Plants grow 10% faster.",
                       "effects": {"yield_mult": [("all", 2.0)], "growth": 0.1}},
-    "mutagen":       {"name": "Mutagen",        "rarity": "rare",     "cost": 800,
+    "mutagen":       {"name": "Mutagen",        "rarity": "rare",     "cost": 700,
                       "desc": "25% chance a seed sprouts already mutated. Mutants are 1.2x better.",
                       "effects": {"mutate_on_plant": 0.25, "mutant_bonus": 0.2},
                       "levels": [{"stat": "harvest", "goal": 200, "effects": {"mutate_on_plant": 0.15},
