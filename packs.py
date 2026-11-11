@@ -372,6 +372,10 @@ class PacksScene(Scene):
                 lines.append(("CURSED: -$%s UPKEEP" % fmt(sp["upkeep"]), BAD))
             if sp.get("aura") == "jealous":
                 lines.append(("JEALOUS: OTHERS -50%", BAD))
+            if sp.get("pays", True) is False:
+                lines.append(("PAYS NOTHING ITSELF", ACCENT))
+            if sp.get("note"):
+                lines.append((sp["note"], GOOD))
             if twist["ban"] and twist["ban"] in sp["tags"]:
                 lines.append(("BANNED BY %s THIS ROUND!" % twist["name"].upper(), BAD))
             gfx.tooltip(surf, lines, self.mouse, 112)

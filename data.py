@@ -33,11 +33,38 @@ PLANTS = {
     "carrot":         {"name": "Carrot",             "tags": ["veg", "root"],                 "grow": 10, "yield": 19,  "sell": 32,  "rarity": "uncommon",  "color": (236, 122, 48)},
     "cranberries":    {"name": "Cranberries",        "tags": ["fruit", "berry"],              "grow": 18, "yield": 72,  "sell": 125, "rarity": "rare",      "color": (198, 44, 74)},
     "saffron":        {"name": "Saffron",            "tags": ["flower", "spice"],             "grow": 26, "yield": 285, "sell": 490, "rarity": "legendary", "color": (226, 128, 68)},
+
+    # Desert shelf. Frost bans the whole tag; the Desert Pack draws only from it.
+    "aloe_vera":      {"name": "Aloe Vera",          "tags": ["desert", "succulent"],         "grow": 13, "yield": 30,  "sell": 52,  "rarity": "uncommon",  "color": (120, 200, 130),
+                       "note": "Thick leaves hold water: a steady desert earner."},
+    "prickly_pear":   {"name": "Prickly Pear",       "tags": ["desert", "fruit"],             "grow": 17, "yield": 55,  "sell": 95,  "rarity": "rare",      "color": (202, 92, 148),
+                       "note": "Slow and spiny, with fruit worth the wait."},
+    "agave":          {"name": "Agave",              "tags": ["desert", "flower"],            "grow": 24, "yield": 180, "sell": 300, "rarity": "legendary", "color": (150, 195, 170),
+                       "note": "The twin flower: one tall bloom and a huge payday."},
+
+    # Layout plants: they reward planning the board around them.
+    "four_leaf_clover": {"name": "Four-Leaf Clover", "tags": ["flower", "lucky"],             "grow": 11, "yield": 3,   "sell": 12,  "rarity": "uncommon",  "color": (110, 200, 110),
+                       "pays": False, "bloom_chance": 0.25, "bloom_mult": 1.5,
+                       "note": "Pays nothing itself. Each harvest has a 25% chance to x1.5 a neighbour's base harvest for the round."},
+    "venus_flytrap":  {"name": "Venus Flytrap",      "tags": ["carnivore"],                   "grow": 12, "yield": 4,   "sell": 16,  "rarity": "rare",      "color": (200, 70, 100),
+                       "feed": 2,
+                       "note": "A poor payer alone, but every harvest anywhere feeds it $2 toward its next bite."},
+    "mycelium":       {"name": "Mycelium",           "tags": ["mushroom", "fungus"],          "grow": 8,  "yield": 12,  "sell": 24,  "rarity": "uncommon",  "color": (222, 204, 168),
+                       "network": 0.35, "spread": 0.25, "no_mutations": True,
+                       "note": "Harvests can spread it into an empty neighbouring plot. Each connected mycelium adds +35% to the whole patch."},
 }
 FARMER_PLANTS = ["potato", "wheat", "corn", "carrot", "cranberries", "saffron"]
-SURFACE_PLANTS = ["daisy", "tomato", "sunflower", "cactus", "pumpkin", "orchid"] + FARMER_PLANTS
+DESERT_PLANTS = ["cactus", "aloe_vera", "prickly_pear", "agave"]
+# Fungi are the one family that grows both up top and down in the cellar.
+FUNGUS_PLANTS = ["mycelium"]
+SURFACE_PLANTS = [
+    "daisy", "tomato", "sunflower", "cactus", "pumpkin", "orchid",
+    "aloe_vera", "prickly_pear", "agave", "four_leaf_clover", "venus_flytrap", "mycelium",
+] + FARMER_PLANTS
 NOCTURNAL_PLANTS = ["brown_mushroom", "red_mushroom", "moonflower", "queen_night", "devil_ivy", "widow_bloom"]
+CELLAR_PLANTS = NOCTURNAL_PLANTS + FUNGUS_PLANTS
 PLANT_ORDER = SURFACE_PLANTS + NOCTURNAL_PLANTS
+GARDEN_PLANTS = [s for s in SURFACE_PLANTS if s not in FARMER_PLANTS]
 
 MUTANTS = {
     "daisy_shiny": {
@@ -203,6 +230,68 @@ MUTANTS = {
         "grow_mult": 1.4, "yield_mult": 4.0, "sell_mult": 4.0, "upkeep_add": 40,
         "color": (240, 95, 130), "subs": {"r": (240, 95, 130), "R": (145, 30, 65)},
     },
+    "aloe_vera_bloom": {
+        "base": "aloe_vera", "name": "Aloe Bloom",
+        "desc": "x2.2 value, +$3 a harvest, grows 20% faster.",
+        "grow_mult": 0.8, "yield_mult": 2.2, "sell_mult": 2.2, "yield_add": 3,
+        "color": (155, 230, 165), "subs": {"g": (155, 230, 165), "G": (90, 165, 100), "l": (205, 245, 190)},
+    },
+    "aloe_vera_royal": {
+        "base": "aloe_vera", "name": "Royal Aloe",
+        "desc": "x2.8 value, +$5 a harvest, grows 25% slower.",
+        "grow_mult": 1.25, "yield_mult": 2.8, "sell_mult": 2.8, "yield_add": 5,
+        "color": (225, 200, 110), "subs": {"g": (225, 200, 110), "G": (170, 140, 60), "l": (250, 235, 170)},
+    },
+    "prickly_pear_gold": {
+        "base": "prickly_pear", "name": "Golden Pear",
+        "desc": "x2.4 value, +$5 a harvest, grows 20% slower.",
+        "grow_mult": 1.2, "yield_mult": 2.4, "sell_mult": 2.4, "yield_add": 5,
+        "color": (250, 190, 80), "subs": {"m": (255, 215, 90), "g": (185, 200, 105), "G": (110, 145, 70)},
+    },
+    "prickly_pear_blood": {
+        "base": "prickly_pear", "name": "Crimson Pear",
+        "desc": "x3 value, +$7 a harvest, grows 35% slower.",
+        "grow_mult": 1.35, "yield_mult": 3.0, "sell_mult": 3.0, "yield_add": 7,
+        "color": (225, 45, 70), "subs": {"m": (235, 50, 70), "g": (150, 175, 90), "G": (90, 120, 60)},
+    },
+    "agave_century": {
+        "base": "agave", "name": "Century Plant",
+        "desc": "x2.6 value, +$8 a harvest, grows 50% slower.",
+        "grow_mult": 1.5, "yield_mult": 2.6, "sell_mult": 2.6, "yield_add": 8,
+        "color": (175, 210, 190), "subs": {"g": (175, 210, 190), "G": (105, 150, 125), "l": (215, 235, 215), "y": (240, 225, 150), "Y": (195, 170, 90)},
+    },
+    "agave_twin": {
+        "base": "agave", "name": "Twin Bloom Agave",
+        "desc": "x3.2 value, +$10 a harvest, grows 10% faster.",
+        "grow_mult": 0.9, "yield_mult": 3.2, "sell_mult": 3.2, "yield_add": 10,
+        "color": (170, 230, 200), "subs": {"g": (170, 230, 200), "G": (90, 175, 145), "l": (215, 250, 230), "y": (255, 235, 130), "Y": (225, 175, 70)},
+    },
+    "four_leaf_clover_shamrock": {
+        "base": "four_leaf_clover", "name": "Lucky Shamrock",
+        "desc": "x2 value, +$2 a harvest, grows 20% faster.",
+        "grow_mult": 0.8, "yield_mult": 2.0, "sell_mult": 2.0, "yield_add": 2,
+        "color": (95, 225, 120), "subs": {"g": (105, 230, 125), "G": (60, 165, 85), "l": (175, 250, 150)},
+    },
+    "five_leaf_clover": {
+        "base": "four_leaf_clover", "name": "Five-Leaf Clover",
+        "desc": "Still pays nothing. 50% chance to x2 a neighbour's base harvest.",
+        "grow_mult": 1.0, "yield_mult": 3.0, "sell_mult": 3.0,
+        "art": "five_leaf_clover", "bloom_chance": 0.5, "bloom_mult": 2.0,
+        "color": (255, 225, 110),
+        "subs": {"g": (255, 225, 110), "G": (205, 165, 45), "l": (255, 245, 175)},
+    },
+    "venus_flytrap_maneater": {
+        "base": "venus_flytrap", "name": "Man-Eater",
+        "desc": "Every harvest it eats a neighbouring plant and gains half that plant's base harvest.",
+        "grow_mult": 1.1, "yield_mult": 2.0, "sell_mult": 2.5, "consume": True,
+        "color": (245, 60, 85), "subs": {"r": (245, 60, 85), "R": (165, 20, 45), "w": (255, 200, 200)},
+    },
+    "venus_flytrap_gilded": {
+        "base": "venus_flytrap", "name": "Gilded Trap",
+        "desc": "x2.4 value, +$2 a harvest, grows 20% faster.",
+        "grow_mult": 0.8, "yield_mult": 2.4, "sell_mult": 2.4, "yield_add": 2,
+        "color": (250, 205, 80), "subs": {"r": (250, 215, 100), "R": (185, 140, 40), "w": (255, 250, 215)},
+    },
 }
 
 
@@ -223,6 +312,9 @@ def mutation_threshold(species):
 
 # Materialize mutant entries directly into PLANTS so harvest/sell/tag queries
 # treat base species and mutants uniformly while preserving cursed penalties.
+# Layout mechanics (spread / network / feed / consume / bloom / pays) are
+# inherited from the base plant and can be overridden by a mutant.
+_MECHANIC_KEYS = ("spread", "network", "feed", "consume", "bloom_chance", "bloom_mult", "pays", "no_mutations")
 for _mid, _mutant in MUTANTS.items():
     _base = PLANTS[_mutant["base"]]
     _upkeep = int(round(_base.get("upkeep", 0) * _mutant.get("upkeep_mult", 1.0))) + _mutant.get("upkeep_add", 0)
@@ -240,6 +332,13 @@ for _mid, _mutant in MUTANTS.items():
         "desc": _mutant["desc"],
         "subs": _mutant.get("subs"),
     }
+    if _mutant.get("art"):
+        _entry["art"] = _mutant["art"]
+    for _key in _MECHANIC_KEYS:
+        if _key in _mutant:
+            _entry[_key] = _mutant[_key]
+        elif _key in _base:
+            _entry[_key] = _base[_key]
     if _upkeep:
         _entry["upkeep"] = _upkeep
     if _base.get("aura") or _mutant.get("aura"):
@@ -250,19 +349,23 @@ MILESTONES = [10, 25, 50, 100, 150, 200, 300, 400, 500, 750, 1000]
 
 PACKS = {
     "garden":    {"name": "Garden Pack",    "short": "GARDEN",    "cost": 30,  "unlock": 1, "color": (88, 170, 72),  "dark": (46, 120, 62),
-                  "pool": {"daisy": 50, "tomato": 35, "sunflower": 12, "cactus": 3}},
+                  # The cactus moved out to the desert shelf; the Golden Orchid
+                  # is the garden's 1-in-100 jackpot now.
+                  "pool": {"daisy": 50, "tomato": 32, "sunflower": 14, "venus_flytrap": 2, "mycelium": 2, "orchid": 1}},
     "farmer":    {"name": "Farmer Pack",    "short": "FARMER",    "cost": 120, "unlock": 2, "color": (190, 150, 70), "dark": (120, 88, 44),
                   "pool": {"potato": 40, "wheat": 30, "carrot": 16, "corn": 10, "cranberries": 3, "saffron": 1}},
+    # The autumn shelf: everything you would bring in before the frost.
     "harvest":   {"name": "Harvest Pack",   "short": "HARVEST",   "cost": 100, "unlock": 3, "color": (240, 140, 50), "dark": (190, 100, 40),
-                  "pool": {"tomato": 30, "sunflower": 40, "cactus": 22, "pumpkin": 8}},
+                  "pool": {"pumpkin": 30, "corn": 25, "cranberries": 20, "wheat": 15, "potato": 7, "carrot": 3}},
+    # Desert only: every seed here is frost-banned and loves a dry round.
     "desert":    {"name": "Desert Pack",    "short": "DESERT",    "cost": 250, "unlock": 6, "color": (214, 120, 70), "dark": (150, 80, 50),
-                  "pool": {"cactus": 50, "pumpkin": 30, "sunflower": 15, "orchid": 5}},
+                  "pool": {"cactus": 40, "aloe_vera": 28, "prickly_pear": 22, "agave": 10}},
     "golden":    {"name": "Golden Pack",    "short": "GOLDEN",    "cost": 750, "unlock": 9, "color": (250, 210, 70), "dark": (214, 150, 40),
                   "pool": {"pumpkin": 50, "cactus": 30, "orchid": 20}},
     "nocturnal": {"name": "Nocturnal Pack", "short": "NOCTURNAL", "cost": 120, "unlock": 2, "color": (110, 80, 60), "dark": (70, 50, 40),
-                  "pool": {"brown_mushroom": 40, "red_mushroom": 35, "moonflower": 20, "queen_night": 5}},
+                  "pool": {"brown_mushroom": 34, "red_mushroom": 30, "mycelium": 18, "moonflower": 15, "queen_night": 3}},
     "rare":      {"name": "Rare Pack",      "short": "RARE",      "cost": 400, "unlock": 4, "color": (150, 90, 200), "dark": (96, 56, 140),
-                  "luck": 2.5, "pool": {"sunflower": 30, "cactus": 30, "pumpkin": 25, "orchid": 15}},
+                  "luck": 2.5, "pool": {"sunflower": 28, "cactus": 24, "pumpkin": 20, "four_leaf_clover": 16, "orchid": 12}},
     "cursed":    {"name": "Cursed Pack",    "short": "CURSED",    "cost": 600, "unlock": 6, "color": (120, 40, 60), "dark": (70, 24, 40),
                   "pool": {"devil_ivy": 35, "widow_bloom": 20, "moonflower": 25, "queen_night": 20}},
 }

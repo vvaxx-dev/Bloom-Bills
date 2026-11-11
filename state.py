@@ -38,16 +38,26 @@ def milestone_level(count):
 
 
 class Plot:
-    """State of a single soil plot on either the surface garden or underground cellar."""
+    """State of a single soil plot on either the surface garden or underground cellar.
 
-    __slots__ = ("species", "progress", "water_left", "water_cd", "harvests")
+    Besides the growth timers a plot carries the layout-mechanic bookkeeping:
+    `fed` is flytrap food collected since its last harvest, `gorged` is the
+    base harvest a Man-Eater has eaten for good, and `bloom` is the multiplier
+    a lucky clover has stacked onto this plant.
+    """
 
-    def __init__(self, species=None, progress=0.0, water_left=0.0, water_cd=0.0, harvests=0):
+    __slots__ = ("species", "progress", "water_left", "water_cd", "harvests", "fed", "gorged", "bloom")
+
+    def __init__(self, species=None, progress=0.0, water_left=0.0, water_cd=0.0, harvests=0,
+                 fed=0, gorged=0.0, bloom=1.0):
         self.species = species
         self.progress = progress
         self.water_left = water_left
         self.water_cd = water_cd
         self.harvests = harvests
+        self.fed = fed
+        self.gorged = gorged
+        self.bloom = bloom
 
     def clear(self):
         self.species = None
@@ -55,12 +65,16 @@ class Plot:
         self.water_left = 0.0
         self.water_cd = 0.0
         self.harvests = 0
+        self.fed = 0
+        self.gorged = 0.0
+        self.bloom = 1.0
 
     def to_dict(self):
         return {
             "species": self.species, "progress": self.progress,
             "water_left": self.water_left, "water_cd": self.water_cd,
-            "harvests": self.harvests,
+            "harvests": self.harvests, "fed": self.fed,
+            "gorged": self.gorged, "bloom": self.bloom,
         }
 
     @classmethod
@@ -74,6 +88,9 @@ class Plot:
             float(d.get("water_left", 0)),
             float(d.get("water_cd", 0)),
             int(d.get("harvests", 0)),
+            int(d.get("fed", 0)),
+            float(d.get("gorged", 0)),
+            float(d.get("bloom", 1.0)),
         )
 
 
@@ -193,7 +210,14 @@ class Run:
                 eff = dict(data.RELICS[rid]["effects"])
                 for step in data.RELICS[rid].get("levels", [])[:lv]:
                     for k, val in step["effects"].items():
-                        if isinstance(val, list):
+                        if k == "yield_mult":
+                            # Evolution steps describe an *increase* ("x2.25
+                            # total" from a 1.5 relic and a 0.5 step), so each
+                            # entry is a multiplier of (1 + amount), not a bare
+                            # factor. Reading 0.5 as x0.5 used to make an
+                            # evolved Scarecrow worse than an un-evolved one.
+                            eff[k] = list(eff.get(k, [])) + [(tag, 1.0 + amount) for tag, amount in val]
+                        elif isinstance(val, list):
                             eff[k] = list(eff.get(k, [])) + list(val)
                         elif isinstance(val, (int, float)) and not isinstance(val, bool):
                             eff[k] = eff.get(k, 0) + val
@@ -339,6 +363,37 @@ class Run:
             out.append(i + COLS)
         return out
 
+    def mycelium_network(self, i, cellar=False):
+        """Indices of the connected mycelium patch that plot `i` belongs to.
+
+        Connectivity is orthogonal adjacency on the same board, so a patch can
+        snake around other crops and the whole network pays out together.
+        """
+        plot_list = self.cellar_plots if cellar else self.plots
+        if not 0 <= i < len(plot_list):
+            return []
+        species = plot_list[i].species
+        if not species or not data.PLANTS[species].get("network"):
+            return []
+        seen = {i}
+        stack = [i]
+        while stack:
+            current = stack.pop()
+            for n in self.neighbours(current, cellar):
+                if n in seen:
+                    continue
+                other = plot_list[n].species
+                if other and data.PLANTS[other].get("network"):
+                    seen.add(n)
+                    stack.append(n)
+        return sorted(seen)
+
+    def network_share(self, size):
+        """Bonus multiplier a mycelium patch of `size` members applies to each of them."""
+        if size <= 1:
+            return 1.0
+        return 1.0 + data.PLANTS["mycelium"]["network"] * (size - 1)
+
     def harvest_breakdown(self, i, cellar=False):
         """Compute `(chips, mult)` for plot `i` before final integer rounding."""
         plot_list = self.cellar_plots if cellar else self.plots
@@ -350,8 +405,16 @@ class Run:
 
         sp = data.PLANTS[plot.species]
         tags = sp["tags"]
-        chips = sp["yield"]
+        chips = float(sp["yield"])
         effects = self._effects()
+
+        # Layout mechanics reshape the base harvest before relics multiply it.
+        chips += plot.fed + plot.gorged
+        if sp.get("network"):
+            chips *= self.network_share(len(self.mycelium_network(i, cellar)))
+        if plot.bloom != 1.0:
+            chips *= plot.bloom
+        chips = int(round(chips))
 
         for e in effects:
             for tag, amount in e.get("yield_add", []):
@@ -404,6 +467,10 @@ class Run:
         Uses half-up rounding (`floor(x + 0.5)`) rather than Python's round-to-even
         so +25% modifiers like Market Day still lift $2 yields to $3 instead of $2.
         """
+        plot_list = self.cellar_plots if cellar else self.plots
+        species = plot_list[i].species if 0 <= i < len(plot_list) else None
+        if species and data.PLANTS[species].get("pays", True) is False:
+            return 0
         chips, mult = self.harvest_breakdown(i, cellar)
         return max(1, int(math.floor(chips * min(mult, 1e250) + 0.5)))
 
@@ -461,7 +528,8 @@ class Run:
         sp = data.PLANTS[species]
         nocturnal = "nocturnal" in sp["tags"]
         if cellar:
-            return nocturnal
+            # Fungi are the exception: they grow in the dark and up top.
+            return nocturnal or "fungus" in sp["tags"]
         if nocturnal and not self.twist().get("eclipse"):
             return False
         ban = self.twist()["ban"]
@@ -658,20 +726,95 @@ class Run:
             self.finished = True
 
     def _harvest(self, i, cellar=False):
-        value = self.harvest_value(i, cellar)
         plot_list = self.cellar_plots if cellar else self.plots
-        species = plot_list[i].species
+        plot = plot_list[i]
+        species = plot.species
+        sp = data.PLANTS[species]
+
+        # A Man-Eater feeds before it is paid, so the bite counts this harvest.
+        if sp.get("consume"):
+            self._devour(i, cellar)
+        value = self.harvest_value(i, cellar)
+
         self.money += value
         self.round_income += value
         self.total_earned += value
         self.mastery[species] = self.mastery.get(species, 0) + 1
         self.counters["harvest"] = self.counters.get("harvest", 0) + 1
-        for tag in data.PLANTS[species]["tags"]:
+        for tag in sp["tags"]:
             self.counters[tag] = self.counters.get(tag, 0) + 1
-        plot_list[i].harvests += 1
+        plot.harvests += 1
         self._emit("harvest", plot=i, amount=value, cellar=cellar)
+        if sp.get("feed"):
+            plot.fed = 0                        # the collected food is paid out
+        if sp.get("bloom_chance"):
+            self._clover_bloom(i, cellar)
+        if sp.get("spread"):
+            self._spread_mycelium(i, cellar)
+        self._feed_flytraps(i, cellar)
         self.refresh_relic_levels()
         self._maybe_mutate(i, cellar)
+
+    def _feed_flytraps(self, i, cellar=False):
+        """Every harvest on the farm feeds each growing flytrap a little."""
+        for board_cellar, group in ((False, self.plots), (True, self.cellar_plots)):
+            for j, other in enumerate(group):
+                if other.species is None or (j == i and board_cellar == cellar):
+                    continue
+                feed = data.PLANTS[other.species].get("feed", 0)
+                if feed:
+                    other.fed += feed
+
+    def _devour(self, i, cellar=False):
+        """A Man-Eater eats one orthogonal neighbour and keeps half its base harvest."""
+        plot_list = self.cellar_plots if cellar else self.plots
+        targets = [n for n in self.neighbours(i, cellar) if plot_list[n].species]
+        if not targets:
+            return
+        victim_index = self.rng.choice(targets)
+        victim = plot_list[victim_index].species
+        gained = data.PLANTS[victim]["yield"] * 0.5
+        plot_list[i].gorged += gained
+        plot_list[victim_index].clear()
+        self._emit(
+            "devour", plot=victim_index, cellar=cellar,
+            name=data.PLANTS[victim]["name"], gained=int(round(gained)),
+        )
+
+    def _clover_bloom(self, i, cellar=False):
+        """Roll the lucky clover: sometimes a neighbouring plant gets a base-harvest boost."""
+        plot_list = self.cellar_plots if cellar else self.plots
+        sp = data.PLANTS[plot_list[i].species]
+        chance = sp.get("bloom_chance", 0.0)
+        if chance <= 0 or self.rng.random() >= chance:
+            return
+        targets = [
+            n for n in self.neighbours(i, cellar)
+            if plot_list[n].species and data.PLANTS[plot_list[n].species].get("pays", True) is not False
+        ]
+        if not targets:
+            return
+        target = self.rng.choice(targets)
+        mult = sp.get("bloom_mult", 1.5)
+        plot_list[target].bloom *= mult
+        self._emit(
+            "bloom", plot=target, cellar=cellar, mult=mult,
+            name=data.PLANTS[plot_list[target].species]["name"],
+        )
+
+    def _spread_mycelium(self, i, cellar=False):
+        """Mycelium sometimes creeps into an empty neighbouring plot."""
+        plot_list = self.cellar_plots if cellar else self.plots
+        sp = data.PLANTS[plot_list[i].species]
+        chance = sp.get("spread", 0.0)
+        if chance <= 0 or self.rng.random() >= chance:
+            return
+        empties = [n for n in self.neighbours(i, cellar) if plot_list[n].species is None]
+        if not empties:
+            return
+        target = self.rng.choice(empties)
+        plot_list[target] = Plot(plot_list[i].species)
+        self._emit("spread", plot=target, cellar=cellar)
 
     def _maybe_mutate(self, i, cellar=False):
         """Roll for mid-round species mutation once a plot clears its harvest threshold."""

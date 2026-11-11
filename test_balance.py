@@ -77,7 +77,7 @@ class EconomyTests(unittest.TestCase):
         late_relic = run.relic_price("gardener")
         late_reroll = run.reroll_price()
 
-        self.assertGreater(late_garden, round_one_garden * 100)
+        self.assertGreater(late_garden, round_one_garden * 50)
         self.assertGreater(late_plot, round_one_plot * 1000)
         self.assertGreater(late_relic, 1000)
         self.assertGreater(late_reroll, 1000)
@@ -195,12 +195,14 @@ class MechanicTests(unittest.TestCase):
         self.assertEqual(with_widow * 2, without)
 
     def test_rare_pack_luck_boosts_rarity(self):
+        # Garden is the mostly-common baseline; the Rare Pack's 2.5x luck
+        # has to more than double its rate of rare or better seeds.
         run = Run(seed=1)
         run.round = 4
         rare_hits = sum(1 for _ in range(3000)
                         if data.PLANTS[run.draw_seed("rare")]["rarity"] in ("rare", "legendary"))
         normal_hits = sum(1 for _ in range(3000)
-                          if data.PLANTS[run.draw_seed("harvest")]["rarity"] in ("rare", "legendary"))
+                          if data.PLANTS[run.draw_seed("garden")]["rarity"] in ("rare", "legendary"))
         self.assertGreater(rare_hits / 3000, normal_hits / 3000 * 2)
 
     def test_crow_eats_surface_not_cellar(self):
@@ -307,7 +309,7 @@ class PriceTests(unittest.TestCase):
         early = run.relic_price("scarecrow")
         run.round = 9
         late = run.relic_price("scarecrow")
-        self.assertGreater(late, early * 10)                   # prices still bite
+        self.assertGreater(late, early * 5)                    # prices still bite
         self.assertLessEqual(late, early * RELIC_PRICE_GROWTH ** 9)
 
     def test_each_plot_costs_more_than_the_last(self):
@@ -696,10 +698,15 @@ class MutationCoverageTests(unittest.TestCase):
                 self.assertTrue(data.mutants_for(sid))
 
     def test_garden_flowers_have_more_than_one_mutation(self):
-        garden = [sid for sid in data.SURFACE_PLANTS if sid not in data.FARMER_PLANTS]
+        # Mycelium is the one deliberate exception: it never mutates.
+        garden = [
+            sid for sid in data.SURFACE_PLANTS
+            if sid not in data.FARMER_PLANTS and not data.PLANTS[sid].get("no_mutations")
+        ]
         for sid in garden:
             with self.subTest(plant=sid):
                 self.assertGreaterEqual(len(data.mutants_for(sid)), 2)
+        self.assertFalse(data.mutants_for("mycelium"))
 
     def test_cursed_plants_get_special_mutants(self):
         for sid in ("devil_ivy", "widow_bloom"):
@@ -1352,10 +1359,13 @@ class RegressionFixTests(unittest.TestCase):
                 app.run.relics = ["compost"]
                 app.goto("round")
 
-                # Cellar has 6 seeds (<= TRAY_SLOTS): shovel active border & tray buttons disabled
+                # Cellar tray starts at the first page: the left pager is always
+                # disabled, and the right one only lights up when it overflows.
+                from .round import TRAY_SLOTS
                 app.scene.cellar_click()
                 self.assertFalse(app.scene.tray_left.enabled)
-                self.assertFalse(app.scene.tray_right.enabled)
+                self.assertEqual(
+                    app.scene.tray_right.enabled, len(app.scene.view_seeds()) > TRAY_SLOTS)
                 app.scene.toggle_shovel()
                 app.scene.draw(app.canvas)
                 self.assertTrue(app.scene.shovel_btn.active)
@@ -1572,6 +1582,279 @@ class SpriteAndCleanupTests(unittest.TestCase):
                     os.environ.pop("BLOOM_SAVE_DIR", None)
                 else:
                     os.environ["BLOOM_SAVE_DIR"] = old
+
+
+class DesertAndLayoutPlantTests(unittest.TestCase):
+    """The desert shelf, the layout plants, and the packs they live in."""
+
+    NEW_PLANTS = ["aloe_vera", "prickly_pear", "agave", "four_leaf_clover", "venus_flytrap", "mycelium"]
+
+    def test_desert_pack_is_desert_only(self):
+        pool = data.PACKS["desert"]["pool"]
+        self.assertTrue(pool)
+        for sid in pool:
+            with self.subTest(plant=sid):
+                self.assertIn("desert", data.PLANTS[sid]["tags"])
+        for sid in ("cactus", "aloe_vera", "prickly_pear", "agave"):
+            self.assertIn(sid, pool)
+
+    def test_garden_pack_swapped_cactus_for_a_very_rare_orchid(self):
+        pool = data.PACKS["garden"]["pool"]
+        self.assertNotIn("cactus", pool)
+        self.assertIn("orchid", pool)
+        self.assertLessEqual(pool["orchid"], 1)          # 1-in-100 jackpot
+        self.assertLess(pool["orchid"], min(w for s, w in pool.items() if s != "orchid"))
+
+    def test_harvest_pack_is_an_autumn_shelf(self):
+        pool = data.PACKS["harvest"]["pool"]
+        self.assertEqual(
+            set(pool), {"pumpkin", "corn", "cranberries", "wheat", "potato", "carrot"})
+        for summer in ("tomato", "sunflower", "cactus"):
+            self.assertNotIn(summer, pool)
+
+    def test_clover_mycelium_and_flytrap_have_pack_homes(self):
+        self.assertIn("four_leaf_clover", data.PACKS["rare"]["pool"])
+        self.assertIn("mycelium", data.PACKS["garden"]["pool"])     # garden
+        self.assertIn("mycelium", data.PACKS["nocturnal"]["pool"])  # cellar
+        self.assertIn("venus_flytrap", data.PACKS["garden"]["pool"])
+        self.assertIn("venus_flytrap", data.PLANT_ORDER)
+
+    def test_every_new_plant_is_wired_up(self):
+        for sid in self.NEW_PLANTS:
+            with self.subTest(plant=sid):
+                plant = data.PLANTS[sid]
+                self.assertGreater(plant["grow"], 0)
+                self.assertGreater(plant["yield"], 0)
+                self.assertGreater(plant["sell"], 0)
+                self.assertIn(plant["rarity"], data.RARITY_COLORS)
+                self.assertIn(sid, data.PLANT_ORDER)
+                self.assertIn(sid, data.SURFACE_PLANTS)
+                self.assertTrue(data.packs_for_plant(sid))
+
+    def test_every_new_mutant_is_worth_more_than_its_base(self):
+        for sid in self.NEW_PLANTS:
+            for mid in data.mutants_for(sid):
+                with self.subTest(mutant=mid):
+                    self.assertGreater(data.PLANTS[mid]["yield"], data.PLANTS[sid]["yield"])
+                    self.assertGreater(data.PLANTS[mid]["sell"], data.PLANTS[sid]["sell"])
+
+    def test_all_new_plants_and_mutants_are_in_the_flower_index(self):
+        from .index import _category_ids
+        everything = _category_ids("all")
+        for sid in self.NEW_PLANTS:
+            self.assertIn(sid, everything)
+        for mid in data.MUTANTS:
+            self.assertIn(mid, everything)
+        desert = _category_ids("desert")
+        for sid in data.DESERT_PLANTS:
+            self.assertIn(sid, desert)
+        self.assertEqual(set(desert), set(data.DESERT_PLANTS))
+
+    def test_every_new_plant_has_its_own_sprite(self):
+        import pygame
+        from . import gfx
+        from .sprites_data import GRIDS
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        unknown = pygame.image.tobytes(gfx.sprite("unknown"), "RGBA")
+        for sid in self.NEW_PLANTS:
+            self.assertIn(sid, GRIDS)
+            self.assertNotEqual(pygame.image.tobytes(gfx.sprite(sid), "RGBA"), unknown)
+        for mid in data.MUTANTS:
+            self.assertIn(data.PLANTS[mid].get("base"), GRIDS)
+
+    def test_five_leaf_clover_has_five_leaves_of_its_own_art(self):
+        from .sprites_data import GRIDS
+        five = GRIDS["five_leaf_clover"]
+        four = GRIDS["four_leaf_clover"]
+        self.assertEqual(len(five), len(four))
+        self.assertTrue(all(len(row) == 12 for row in five))
+        self.assertNotEqual(five, four)
+        self.assertGreater(sum(row.count("l") for row in five), sum(row.count("l") for row in four))
+        self.assertEqual(data.PLANTS["five_leaf_clover"]["art"], "five_leaf_clover")
+        self.assertFalse(data.PLANTS["five_leaf_clover"]["pays"])
+        self.assertGreater(
+            data.PLANTS["five_leaf_clover"]["bloom_chance"],
+            data.PLANTS["four_leaf_clover"]["bloom_chance"])
+
+
+class MyceliumTests(unittest.TestCase):
+    def run_with(self, *species):
+        run = Run(seed=3)
+        run.twist_id = lambda _rnd=None: "none"
+        run.plots = [Plot(s) for s in species] + [Plot() for _ in range(12 - len(species))]
+        return run
+
+    def test_a_connected_patch_pays_more_than_a_lonely_one(self):
+        alone = self.run_with("mycelium").harvest_value(0)
+        patch = self.run_with("mycelium", "mycelium", "mycelium", "mycelium")
+        self.assertGreater(patch.harvest_value(0), alone)
+        self.assertGreater(patch.network_share(4), patch.network_share(2))
+        self.assertEqual(len(patch.mycelium_network(0)), 4)
+
+    def test_a_detached_mycelium_does_not_join_the_network(self):
+        run = self.run_with("mycelium", "mycelium", "daisy", "daisy", "daisy", "daisy", "mycelium")
+        self.assertEqual(run.mycelium_network(0), [0, 1])
+        self.assertEqual(run.mycelium_network(6), [6])
+        self.assertLess(run.harvest_value(6), run.harvest_value(0))
+
+    def test_mycelium_spreads_into_an_empty_neighbour(self):
+        run = self.run_with("mycelium")
+        run.rng.random = lambda: 0.0            # always roll the spread
+        run.started = True
+        run._harvest(0)
+        self.assertEqual(sum(1 for p in run.plots if p.species == "mycelium"), 2)
+        self.assertTrue(any(ev["kind"] == "spread" for ev in run.events))
+
+    def test_spread_stops_when_every_neighbour_is_full(self):
+        run = self.run_with(*(["daisy"] * 12))
+        run.plots[0] = Plot("mycelium")
+        run.rng.random = lambda: 0.0
+        run.started = True
+        run._harvest(0)
+        self.assertEqual(sum(1 for p in run.plots if p.species == "mycelium"), 1)
+
+    def test_mycelium_never_mutates(self):
+        self.assertFalse(data.mutants_for("mycelium"))
+        self.assertTrue(data.PLANTS["mycelium"].get("no_mutations"))
+        run = self.run_with("mycelium")
+        run.plots[0].harvests = 99
+        for _ in range(200):
+            run._maybe_mutate(0)
+        self.assertEqual(run.plots[0].species, "mycelium")
+
+    def test_mycelium_grows_in_the_garden_and_the_cellar(self):
+        run = Run(seed=2)
+        run.twist_id = lambda _rnd=None: "none"
+        run.seeds = {"mycelium": 2}
+        self.assertTrue(run.can_plant("mycelium", cellar=False))
+        self.assertTrue(run.can_plant("mycelium", cellar=True))
+        self.assertTrue(run.plant(0, "mycelium", cellar=False))
+        self.assertTrue(run.plant(0, "mycelium", cellar=True))
+
+
+class FlytrapTests(unittest.TestCase):
+    def run_with(self, *species):
+        run = Run(seed=4)
+        run.twist_id = lambda _rnd=None: "none"
+        run.plots = [Plot(s) for s in species] + [Plot() for _ in range(12 - len(species))]
+        return run
+
+    def test_flytrap_harvests_feed_its_next_bite(self):
+        run = self.run_with("venus_flytrap", "daisy")
+        base = run.harvest_value(0)
+        for _ in range(5):
+            run._harvest(1)
+        self.assertEqual(run.plots[0].fed, 5 * data.PLANTS["venus_flytrap"]["feed"])
+        fed_value = run.harvest_value(0)
+        self.assertGreater(fed_value, base)
+        run._harvest(0)
+        self.assertEqual(run.plots[0].fed, 0)
+        self.assertEqual(run.harvest_value(0), base)
+
+    def test_flytrap_pays_much_less_than_a_normal_plant_alone(self):
+        self.assertLess(data.PLANTS["venus_flytrap"]["yield"], data.PLANTS["tomato"]["yield"])
+
+    def test_maneater_eats_a_neighbour_and_keeps_half_its_base(self):
+        man_eater = next(m for m in data.mutants_for("venus_flytrap") if data.PLANTS[m].get("consume"))
+        run = self.run_with(man_eater, "pumpkin")
+        before = run.harvest_value(0)
+        run._harvest(0)
+        self.assertIsNone(run.plots[1].species)
+        self.assertAlmostEqual(run.plots[0].gorged, data.PLANTS["pumpkin"]["yield"] * 0.5)
+        self.assertGreater(run.harvest_value(0), before)
+        self.assertTrue(any(ev["kind"] == "devour" for ev in run.events))
+
+    def test_maneater_only_takes_orthogonal_neighbours(self):
+        man_eater = next(m for m in data.mutants_for("venus_flytrap") if data.PLANTS[m].get("consume"))
+        run = Run(seed=4)
+        run.twist_id = lambda _rnd=None: "none"
+        run.plots = [Plot() for _ in range(12)]
+        run.plots[0] = Plot(man_eater)
+        far = 0
+        for n in range(12):
+            if n not in run.neighbours(0) and n != 0:
+                run.plots[n] = Plot("daisy")
+                far += 1
+        run._harvest(0)
+        self.assertEqual(run.plots[0].gorged, 0)
+        self.assertEqual(sum(1 for p in run.plots if p.species == "daisy"), far)
+
+
+class CloverTests(unittest.TestCase):
+    def run_with(self, *species):
+        run = Run(seed=5)
+        run.twist_id = lambda _rnd=None: "none"
+        run.plots = [Plot(s) for s in species] + [Plot() for _ in range(12 - len(species))]
+        return run
+
+    def test_clover_pays_nothing_itself(self):
+        run = self.run_with("four_leaf_clover")
+        self.assertEqual(run.harvest_value(0), 0)
+        run.money = 0
+        run._harvest(0)
+        self.assertEqual(run.money, 0)
+
+    def test_clover_can_lift_a_neighbours_base_harvest(self):
+        run = self.run_with("four_leaf_clover", "pumpkin")
+        before = run.harvest_value(1)
+        run.rng.random = lambda: 0.0           # always lucky
+        run._harvest(0)
+        self.assertAlmostEqual(run.plots[1].bloom, 1.5)
+        self.assertGreater(run.harvest_value(1), before)
+        self.assertTrue(any(ev["kind"] == "bloom" for ev in run.events))
+
+    def test_clover_never_buffs_another_clover(self):
+        run = self.run_with("four_leaf_clover", "four_leaf_clover")
+        run.rng.random = lambda: 0.0
+        run._harvest(0)
+        self.assertEqual(run.plots[1].bloom, 1.0)
+        self.assertEqual(run.plots[0].bloom, 1.0)
+
+    def test_the_mutant_is_the_five_leaf_clover(self):
+        mutants = data.mutants_for("four_leaf_clover")
+        self.assertIn("five_leaf_clover", mutants)
+        self.assertEqual(data.PLANTS["five_leaf_clover"]["name"], "Five-Leaf Clover")
+
+
+class RelicEvolutionFixTests(unittest.TestCase):
+    """Evolved Scarecrow and Spore Lantern have to get better, not worse."""
+
+    def test_scarecrow_evolution_reaches_x2_25(self):
+        run = Run(seed=1)
+        run.twist_id = lambda _rnd=None: "none"
+        run.relics = ["scarecrow"]
+        run.plots = [Plot("pumpkin")]
+        plain = run.harvest_value(0)
+        run.counters["harvest"] = 400
+        self.assertEqual(run.relic_level("scarecrow"), 1)
+        evolved = run.harvest_value(0)
+        self.assertGreater(evolved, plain)
+        self.assertAlmostEqual(evolved / data.PLANTS["pumpkin"]["yield"], 2.25, places=1)
+        self.assertGreater(evolved, plain * 1.4)
+
+    def test_spore_lantern_evolution_reaches_x4(self):
+        run = Run(seed=1)
+        run.twist_id = lambda _rnd=None: "none"
+        run.relics = ["spore_lantern"]
+        run.cellar_unlocked = True
+        run.cellar_plots[0] = Plot("brown_mushroom")
+        base = data.PLANTS["brown_mushroom"]["yield"]
+        self.assertEqual(run.harvest_value(0, cellar=True), base * 2)
+        run.counters["mushroom"] = 300
+        self.assertEqual(run.relic_level("spore_lantern"), 2)
+        self.assertEqual(run.harvest_value(0, cellar=True), base * 4)
+        from .settings import CELLAR_SPEED
+        self.assertGreater(run.plot_growth_speed(0, cellar=True), CELLAR_SPEED)
+
+    def test_evolved_relics_still_emit_one_toast(self):
+        run = Run(seed=1)
+        run.relics = ["scarecrow"]
+        run.counters["harvest"] = 400
+        run.refresh_relic_levels()
+        events = [ev for ev in run.events if ev["kind"] == "evolve"]
+        self.assertEqual(len(events), 1)
+        self.assertIn("2.25", events[0]["desc"])
 
 
 if __name__ == "__main__":

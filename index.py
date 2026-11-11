@@ -14,17 +14,20 @@ PER_PAGE = GRID_COLS * GRID_ROWS
 CATEGORIES = [
     ("all", "ALL"),
     ("garden", "GARDEN"),
+    ("desert", "DESERT"),
     ("farmer", "FARMER"),
     ("night", "NIGHT"),
     ("mutant", "MUTANTS"),
 ]
 _CATEGORY_LABELS = dict(CATEGORIES)
-_GARDEN_PLANTS = [s for s in data.SURFACE_PLANTS if s not in data.FARMER_PLANTS]
+_GARDEN_PLANTS = list(data.GARDEN_PLANTS)
 
 
 def _category_ids(cat):
     if cat == "garden":
         return list(_GARDEN_PLANTS)
+    if cat == "desert":
+        return list(data.DESERT_PLANTS)
     if cat == "farmer":
         return list(data.FARMER_PLANTS)
     if cat == "night":
@@ -40,7 +43,7 @@ class IndexScene(Scene):
         self.page = 0
         self.selected = data.PLANT_ORDER[0]
         self.tab_buttons = []
-        tx = 88
+        tx = 72
         for cid, label in CATEGORIES:
             bw = gfx.text_width(label) + 10
             b = Button(tx, 2, bw, 13, label, lambda c=cid: self.set_category(c))
@@ -171,7 +174,7 @@ class IndexScene(Scene):
             gfx.rect(surf, border, x, y, w, h)
             gfx.rect(surf, fill, x + 1, y + 1, w - 2, h - 2)
             gfx.rect(surf, rcol, x + 1, y + 1, w - 2, 2)
-            gfx.draw_sprite(surf, sp.get("base", sid), x + (w - 24) // 2, y + 3, 2, sp.get("subs"))
+            gfx.draw_sprite(surf, sp.get("art", sp.get("base", sid)), x + (w - 24) // 2, y + 3, 2, sp.get("subs"))
             short = sp["name"]
             while len(short) > 1 and gfx.text_width(short) > w - 4:
                 short = short[:-1]
@@ -191,7 +194,7 @@ class IndexScene(Scene):
         px, py = 168, 26
         gfx.rect(surf, rcol, px, py, 30, 30)
         gfx.rect(surf, (28, 24, 42), px + 1, py + 1, 28, 28)
-        gfx.draw_sprite(surf, sp.get("base", self.selected), px + 3, py + 3, 2, sp.get("subs"))
+        gfx.draw_sprite(surf, sp.get("art", sp.get("base", self.selected)), px + 3, py + 3, 2, sp.get("subs"))
 
         name_lines = gfx.wrap(sp["name"], 102)
         for k, line in enumerate(name_lines[:2]):
@@ -203,10 +206,14 @@ class IndexScene(Scene):
         gfx.rect(surf, PANEL_DARK, 168, 59, 136, 1)
 
         dps = sp["yield"] / sp["grow"] if sp["grow"] > 0 else 0
+        pays = sp.get("pays", True) is not False
         gfx.draw_text(surf, "GROW TIME:", 168, 63, DIM)
         gfx.draw_text(surf, "%gs" % sp["grow"], 304, 63, TEXT, align="right")
         gfx.draw_text(surf, "HARVEST:", 168, 71, DIM)
-        gfx.draw_text(surf, "$%s ($%.1f/S)" % (fmt(sp["yield"]), dps), 304, 71, GOOD, align="right")
+        if pays:
+            gfx.draw_text(surf, "$%s ($%.1f/S)" % (fmt(sp["yield"]), dps), 304, 71, GOOD, align="right")
+        else:
+            gfx.draw_text(surf, "$0 (NO PAYOUT)", 304, 71, DIM, align="right")
         gfx.draw_text(surf, "END-ROUND SELL:", 168, 79, DIM)
         gfx.draw_text(surf, "$%s" % fmt(sp["sell"]), 304, 79, ACCENT, align="right")
 
@@ -214,12 +221,20 @@ class IndexScene(Scene):
         if "nocturnal" in sp["tags"]:
             gfx.draw_text(surf, "NEEDS CELLAR OR ECLIPSE", 168, y, WATER)
             y += 8
+        if "fungus" in sp["tags"]:
+            gfx.draw_text(surf, "GROWS TOP OR IN CELLAR", 168, y, WATER)
+            y += 8
         if sp.get("upkeep"):
             gfx.draw_text(surf, "CURSED UPKEEP: -$%s/RND" % fmt(sp["upkeep"]), 168, y, BAD)
             y += 8
         if sp.get("aura") == "jealous":
             gfx.draw_text(surf, "JEALOUS: OTHERS -50% VAL", 168, y, BAD)
             y += 8
+        if not pays:
+            gfx.draw_text(surf, "PAYS NOTHING ITSELF", 168, y, ACCENT)
+            y += 8
+        if sp.get("note"):
+            y += gfx.draw_wrapped(surf, sp["note"], 168, y, 136, GOOD) * 7 + 1
 
         gfx.rect(surf, PANEL_DARK, 168, y + 1, 136, 1)
         y += 5
@@ -240,17 +255,19 @@ class IndexScene(Scene):
             y += gfx.draw_wrapped(surf, pack_str, 168, y, 136, TEXT) * 7 + 2
 
             muts = data.mutants_for(self.selected)
-            if muts:
+            if muts and y < 148:
                 thresh = data.mutation_threshold(self.selected)
                 gfx.draw_text(surf, "MUTATIONS (%d+ HARV):" % thresh, 168, y, data.RARITY_COLORS["mutant"])
                 y += 8
                 for mid in muts[:2]:
+                    if y + 12 > 168:
+                        break
                     msp = data.PLANTS[mid]
                     mr = (168, y, 136, 12)
                     hov = gfx.inside(self.mouse, mr)
                     gfx.rect(surf, ACCENT if hov else data.RARITY_COLORS["mutant"], *mr)
                     gfx.rect(surf, (52, 44, 78) if hov else (32, 27, 48), mr[0] + 1, mr[1] + 1, mr[2] - 2, mr[3] - 2)
-                    gfx.draw_sprite(surf, sp.get("base", self.selected), mr[0] + 2, mr[1], 1, msp.get("subs"))
+                    gfx.draw_sprite(surf, msp.get("art", msp.get("base", self.selected)), mr[0] + 2, mr[1], 1, msp.get("subs"))
                     gfx.draw_text(surf, msp["name"], mr[0] + 16, mr[1] + 4, TEXT)
                     gfx.draw_text(surf, ">", mr[0] + mr[2] - 5, mr[1] + 4, ACCENT, align="right")
                     self.mutant_rects.append((mid, mr))

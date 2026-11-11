@@ -42,7 +42,11 @@ The permanent stuff, so a failed run still means something. You earn one heirloo
 
 ## Seeds
 
-Eighteen plants across eight packs. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron, each with its own pixel-art sprite and mutation variant.
+Twenty-four base plants across eight packs, plus mutant offshoots that start appearing once a plant has been harvested enough times. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron, each with its own pixel-art sprite and mutation variant.
+
+The **Desert Pack** is desert-only: Cactus, Aloe Vera, Prickly Pear and Agave. The **Harvest Pack** is autumn-themed: Pumpkin, Corn, Cranberries, Wheat, Potato and Carrot. The **Garden Pack** still stocks Daisy, Tomato and Sunflower, plus Venus Flytrap and Mycelium, and the Golden Orchid is now its one-in-a-hundred jackpot — Cactus swapped out to the Rare Pack. The **Rare Pack** carries Sunflower, Cactus, Pumpkin, Four Leaf Clover and a slim chance at Golden Orchid. Mycelium turns up in both the Garden Pack and the Nocturnal (cellar) pack.
+
+New plants bring new decisions: **Mycelium** spreads into empty neighbouring plots on harvest and every connected Mycelium boosts the whole patch's value; **Venus Flytrap** pays little itself but gets fed by every other harvest you take, and its Man-Eater mutation devours an adjacent plant for half its base payout; **Four Leaf Clover** pays nothing but rolls a 25% chance to 1.5x a neighbour's harvest each grow, and its mutant **Five Leaf Clover** actually shows five leaves with a stronger boost.
 
 An Eclipse puts the whole nocturnal shelf in the round's tray alongside everything else, which is more than one screenful, so the tray pages with the arrows, left/right or the mouse wheel.
 

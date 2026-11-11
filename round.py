@@ -62,7 +62,7 @@ class RoundScene(Scene):
     def view_seeds(self):
         """Return plantable species for the active board; Eclipse adds nocturnal seeds to the surface tray."""
         if self.in_cellar():
-            return list(data.NOCTURNAL_PLANTS)
+            return list(data.CELLAR_PLANTS)
         seeds = list(data.SURFACE_PLANTS)
         if self.run.twist().get("eclipse"):
             seeds += [sid for sid in data.NOCTURNAL_PLANTS if sid not in seeds]
@@ -181,8 +181,8 @@ class RoundScene(Scene):
 
     def plant_block_reason(self, sid):
         sp = data.PLANTS[sid]
-        if self.in_cellar() and "nocturnal" not in sp["tags"]:
-            return "ONLY NOCTURNAL PLANTS GROW DOWN HERE"
+        if self.in_cellar() and "nocturnal" not in sp["tags"] and "fungus" not in sp["tags"]:
+            return "ONLY NOCTURNAL PLANTS AND FUNGI GROW DOWN HERE"
         if "nocturnal" in sp["tags"]:
             return "NEEDS DARK: CELLAR OR ECLIPSE"
         return "%s: CAN'T PLANT THAT" % self.run.twist()["name"].upper()
@@ -282,7 +282,7 @@ class RoundScene(Scene):
             x, y, w, _h = plot_rect(ev["plot"]) if ev["plot"] < MAX_PLOTS else (0, 0, 0, 0)
             fx, fy = x + w // 2, y + 8
             if kind == "harvest":
-                if show_floaters:
+                if show_floaters and ev["amount"] > 0:
                     self.floaters.append([fx, fy, "+$" + fmt(ev["amount"]), ACCENT, 0.0])
             elif kind == "mutate":
                 if show_floaters:
@@ -302,6 +302,20 @@ class RoundScene(Scene):
                 if show_floaters:
                     self.floaters.append([fx, fy, "EATEN!", BAD, 0.0])
                 self.app.toast("A CROW ATE YOUR %s!" % ev["name"].upper(), 2.0)
+            elif kind == "spread":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "SPREAD!", GOOD, 0.0])
+                self.app.toast("THE MYCELIUM SPREAD TO A NEW PLOT!", 2.0)
+            elif kind == "devour":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "EATEN!", BAD, 0.0])
+                self.app.toast(
+                    "A MAN-EATER ATE YOUR %s! +$%d BASE" % (ev["name"].upper(), ev.get("gained", 0)), 2.0)
+            elif kind == "bloom":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "LUCKY!", GOOD, 0.0])
+                self.app.toast(
+                    "LUCKY CLOVER! %s IS X%g FOR THE ROUND." % (ev["name"].upper(), ev.get("mult", 1.5)), 2.0)
         run.events.clear()
 
         if show_floaters:
@@ -439,11 +453,17 @@ class RoundScene(Scene):
             self.plot_tooltip(surf, hover)
         elif seed_hover is not None:
             sp = data.PLANTS[seed_hover]
+            pays = sp.get("pays", True) is not False
             lines = [
                 (sp["name"], data.RARITY_COLORS[sp["rarity"]]),
-                ("GROW: %gS   HARVEST: $%s" % (sp["grow"], fmt(sp["yield"])), TEXT),
+                ("GROW: %gS   HARVEST: %s" % (
+                    sp["grow"], "$" + fmt(sp["yield"]) if pays else "$0"), TEXT),
                 ("SELL AT END: $%s" % fmt(sp["sell"]), ACCENT),
             ]
+            if not pays:
+                lines.append(("PAYS NOTHING ITSELF", ACCENT))
+            if sp.get("note"):
+                lines.append((sp["note"], GOOD))
             gfx.tooltip(surf, lines, mouse, 104)
         elif gfx.inside(mouse, (4, 16, 312, 11)):
             tcol = BAD if twist.get("boss") else TONE_COLORS.get(twist.get("tone", "neutral"), TEXT)
@@ -469,8 +489,12 @@ class RoundScene(Scene):
         sp = data.PLANTS[p.species]
         frac = min(1.0, p.progress / sp["grow"])
         sway = 1 if (run.started and math.sin(self.t * 3 + i) > 0.6) else 0
-        sprite_name = gfx.plant_sprite_name(sp.get("base", p.species), frac)
-        gfx.draw_sprite(surf, sprite_name, x + 16 + sway, y + 1, 2, sp.get("subs"))
+        # Some mutants (Five-Leaf Clover) have entirely different mature art.
+        if frac >= 0.75 and sp.get("art"):
+            sprite_name, subs = sp["art"], sp.get("subs")
+        else:
+            sprite_name, subs = gfx.plant_sprite_name(sp.get("base", p.species), frac), sp.get("subs")
+        gfx.draw_sprite(surf, sprite_name, x + 16 + sway, y + 1, 2, subs)
         gfx.bar(surf, x + 4, y + 28, w - 8, 3, frac, sp["color"])
         if self.shovel_mode and gfx.inside(self.mouse, (x, y, w, h)):
             gfx.rect(surf, (120, 36, 36), x + 8, y + 11, w - 16, 11)
@@ -506,8 +530,28 @@ class RoundScene(Scene):
             lines.append(("CELLAR: SELF-WATERING", WATER))
         if run.compost_active():
             lines.append(("COMPOST HEAP: X2 ACTIVE!", GOOD))
+        if sp.get("network"):
+            size = len(run.mycelium_network(i, cellar))
+            lines.append((
+                "PATCH: %d MYCELIUM (+%d%%)" % (size, round(100 * (run.network_share(size) - 1))), GOOD,
+            ))
+        if sp.get("spread"):
+            lines.append(("SPREADS: %d%% A HARVEST" % round(100 * sp["spread"]), GOOD))
+        if sp.get("feed"):
+            lines.append(("FED: +$%s NEXT HARVEST" % fmt(p.fed), TEXT))
+        if sp.get("consume"):
+            lines.append(("EATS A NEIGHBOUR EACH HARVEST", BAD))
+            if p.gorged:
+                lines.append(("EATEN BASE: +$%s" % fmt(int(round(p.gorged))), GOOD))
+        if sp.get("bloom_chance"):
+            lines.append(("LUCKY: %d%% X%g NEIGHBOUR" % (round(100 * sp["bloom_chance"]), sp.get("bloom_mult", 1.5)), GOOD))
+        if p.bloom > 1.0:
+            lines.append(("CLOVER BOOST: x%g BASE" % p.bloom, GOOD))
+        if sp.get("pays", True) is False:
+            lines.append(("HARVEST: $0 (PAYS NOTHING)", DIM))
+        else:
+            lines.append(("HARVEST: $" + fmt(run.harvest_value(i, cellar)), ACCENT))
         lines += [
-            ("HARVEST: $" + fmt(run.harvest_value(i, cellar)), ACCENT),
             ("RIPE IN: %.1fs" % max(0.0, (sp["grow"] - p.progress) / max(speed, 0.01)), TEXT),
             ("HARVESTED: %d" % count, DIM),
         ]
