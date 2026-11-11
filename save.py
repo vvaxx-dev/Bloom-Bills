@@ -4,7 +4,7 @@ import json
 
 from .paths import save_dir
 
-SETTINGS_DEFAULT = {"confirmations": True, "floaters": True, "scale": 6}
+SETTINGS_DEFAULT = {"confirmations": True, "floaters": True, "auto_harvest": False, "scale": 6}
 PROFILE_DEFAULT = {
     "v": 1, "heirlooms": 0, "perks": {}, "best_round": 0, "runs": 0, "wins": 0,
     "settings": SETTINGS_DEFAULT.copy(), "harvested": {},
@@ -45,6 +45,7 @@ class SaveManager:
         if isinstance(raw_settings, dict):
             merged_settings["confirmations"] = bool(raw_settings.get("confirmations", True))
             merged_settings["floaters"] = bool(raw_settings.get("floaters", True))
+            merged_settings["auto_harvest"] = bool(raw_settings.get("auto_harvest", False))
             try:
                 merged_settings["scale"] = max(2, min(8, int(raw_settings.get("scale", 6))))
             except (TypeError, ValueError):

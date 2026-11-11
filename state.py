@@ -13,7 +13,8 @@ try:
     from .settings import (
         BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE, CELLAR_SPEED,
         COLS, LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
-        MUTATION_CHANCE, PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
+        MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
+        PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
         QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
         REROLL_BASE_PRICE, ROUND_TIME, SEEDS_PER_PACK, START_MONEY,
         START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WIN_QUOTAS,
@@ -23,7 +24,8 @@ except ImportError:
     from settings import (
         BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE, CELLAR_SPEED,
         COLS, LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
-        MUTATION_CHANCE, PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
+        MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
+        PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
         QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
         REROLL_BASE_PRICE, ROUND_TIME, SEEDS_PER_PACK, START_MONEY,
         START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WIN_QUOTAS,
@@ -44,12 +46,17 @@ class Plot:
     `fed` is flytrap food collected since its last harvest, `gorged` is the
     base harvest a Man-Eater has eaten for good, and `bloom` is the multiplier
     a lucky clover has stacked onto this plant.
+
+    Mycelium adds `creep_cd`: seconds its creep meter has banked. A mycelium
+    with a full meter grows into an empty orthogonal neighbour on its own, so a
+    patch keeps advancing round after round instead of sitting still.
     """
 
-    __slots__ = ("species", "progress", "water_left", "water_cd", "harvests", "fed", "gorged", "bloom")
+    __slots__ = ("species", "progress", "water_left", "water_cd", "harvests", "fed", "gorged", "bloom",
+                 "creep_cd", "mature_time")
 
     def __init__(self, species=None, progress=0.0, water_left=0.0, water_cd=0.0, harvests=0,
-                 fed=0, gorged=0.0, bloom=1.0):
+                fed=0, gorged=0.0, bloom=1.0, creep_cd=0.0, mature_time=0.0):
         self.species = species
         self.progress = progress
         self.water_left = water_left
@@ -58,6 +65,8 @@ class Plot:
         self.fed = fed
         self.gorged = gorged
         self.bloom = bloom
+        self.creep_cd = creep_cd
+        self.mature_time = mature_time
 
     def clear(self):
         self.species = None
@@ -68,6 +77,8 @@ class Plot:
         self.fed = 0
         self.gorged = 0.0
         self.bloom = 1.0
+        self.creep_cd = 0.0
+        self.mature_time = 0.0
 
     def to_dict(self):
         return {
@@ -75,6 +86,8 @@ class Plot:
             "water_left": self.water_left, "water_cd": self.water_cd,
             "harvests": self.harvests, "fed": self.fed,
             "gorged": self.gorged, "bloom": self.bloom,
+            "creep_cd": self.creep_cd,
+            "mature_time": self.mature_time,
         }
 
     @classmethod
@@ -91,6 +104,8 @@ class Plot:
             int(d.get("fed", 0)),
             float(d.get("gorged", 0)),
             float(d.get("bloom", 1.0)),
+            float(d.get("creep_cd", 0)),
+            float(d.get("mature_time", 0.0)),
         )
 
 
@@ -123,6 +138,12 @@ class Run:
 
         self.time_total = ROUND_TIME
         self.time_left = ROUND_TIME
+        self.auto_harvest = False
+        self.weather_cleared = False
+        self.weather_roll_done = False
+        self._suppress_blight = False
+        self.chosen_plant = None
+        self._chosen_ref = None
         self.started = False
         self.finished = False
         self.round_income = 0
@@ -131,6 +152,7 @@ class Run:
         self.crow_timer = 0.0
         self.hail_timer = 0.0
         self.rot_timer = 0.0
+        self.creep_grown = {False: 0, True: 0}
         self.events = []
         self.last_summary = None
         self.pending_bill = 0
@@ -180,6 +202,9 @@ class Run:
             self.plots_bought += 1
         elif key == "packs":
             self.packs.append(self.pick_free_pack_kind())
+        elif key == "relics" and self.perk(key) == 3 and self.phase == "shop":
+            # Add the new slot without rerolling existing or already sold offers.
+            self._fill_relic_offers()
 
     def relic_level(self, rid):
         """Number of evolution thresholds met by `self.counters` for relic `rid`."""
@@ -297,6 +322,8 @@ class Run:
         return random.Random(self.seed * 104729 + rnd).choice(data.MINOR_TWISTS)
 
     def twist(self, rnd=None):
+        if self.weather_cleared and (rnd is None or rnd == self.round):
+            return data.TWISTS["none"]
         return data.TWISTS[self.twist_id(self.round if rnd is None else rnd)]
 
     def season(self, rnd=None):
@@ -318,8 +345,8 @@ class Run:
             return 0.0
         p = plot_list[i]
         if cellar:
-            return (1.0 + self._sum("growth")) * CELLAR_SPEED
-        speed = self.growth_speed()
+            return (1.0 + self._sum("growth")) * CELLAR_SPEED * (1.5 if self.is_chosen(i, cellar) else 1.0)
+        speed = self.growth_speed() * (1.5 if self.is_chosen(i, cellar) else 1.0)
         if p.species and self.twist().get("eclipse"):
             speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
         if p.water_left > 0:
@@ -405,7 +432,7 @@ class Run:
 
         sp = data.PLANTS[plot.species]
         tags = sp["tags"]
-        chips = float(sp["yield"])
+        chips = float(sp["yield"]) + sp.get("mature_bonus", 0) * int(plot.mature_time + 1e-9)
         effects = self._effects()
 
         # Layout mechanics reshape the base harvest before relics multiply it.
@@ -450,6 +477,8 @@ class Run:
             mult *= self.compost_mult()
         mult *= 1.0 + 0.10 * self.perk("yield")
         mult *= self.twist()["yield"]
+        if self.is_chosen(i, cellar):
+            mult *= 2.0
 
         if "cursed" not in tags:
             has_jealous = any(
@@ -548,6 +577,34 @@ class Run:
             self._emit("mutate", plot=i, cellar=cellar, name=data.PLANTS[planted]["name"])
         return True
 
+    def is_chosen(self, i, cellar=False):
+        plots = self.cellar_plots if cellar else self.plots
+        return (self.chosen_plant == (bool(cellar), i) and 0 <= i < len(plots)
+                and plots[i] is self._chosen_ref and plots[i].species is not None
+                and self._has("choose_plant"))
+
+    def choose_plant(self, i, cellar=False):
+        plots = self.cellar_plots if cellar else self.plots
+        if (self.phase != "round" or self.finished or not self._has("choose_plant")
+                or self.chosen_plant is not None or not 0 <= i < len(plots)
+                or not plots[i].species):
+            return False
+        self.chosen_plant = (bool(cellar), i)
+        self._chosen_ref = plots[i]
+        return True
+
+    def harvest(self, i, cellar=False):
+        plots = self.cellar_plots if cellar else self.plots
+        if self.phase != "round" or not self.started or self.finished or not 0 <= i < len(plots):
+            return False
+        p = plots[i]
+        if not p.species or p.progress < data.PLANTS[p.species]["grow"]:
+            return False
+        self._harvest(i, cellar)
+        p.progress = 0.0
+        p.mature_time = 0.0
+        return True
+
     def remove_plant(self, i, cellar=False):
         """Uproot the crop in plot `i` without refunding its seed."""
         plot_list = self.cellar_plots if cellar else self.plots
@@ -555,6 +612,8 @@ class Run:
             return False, "Nothing planted there."
         name = data.PLANTS[plot_list[i].species]["name"]
         plot_list[i].clear()
+        if self.chosen_plant == (bool(cellar), i):
+            self.chosen_plant = (None, -1)
         return True, "Removed %s." % name
 
     def _starting_mutation(self, species):
@@ -589,6 +648,11 @@ class Run:
 
     def begin_round(self):
         self.phase = "round"
+        self.weather_cleared = False
+        self.weather_roll_done = False
+        self._suppress_blight = False
+        self.chosen_plant = None
+        self._chosen_ref = None
         self.pending_bill = 0
         self.time_total = self.round_time()
         self.time_left = self.time_total
@@ -599,6 +663,7 @@ class Run:
         self.crow_timer = 0.0
         self.hail_timer = 0.0
         self.rot_timer = 0.0
+        self.creep_grown = {False: 0, True: 0}
         self.round_income = 0
         self.events = []
         for group in (self.plots, self.cellar_plots):
@@ -622,36 +687,75 @@ class Run:
                 continue
             if auto and not cellar and p.water_cd <= 0:
                 self.water(i)
-            boosted = 0.0 if cellar else min(dt, max(p.water_left, 0.0))
+            boosted = 0.0 if cellar else min(dt, max(p.water_left, 0.0) / dry)
             plot_speed = speed
             if eclipse and not cellar:
                 plot_speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
-            p.progress += plot_speed * (dt + (WATER_BOOST - 1.0) * boosted)
+            if self.is_chosen(i, cellar):
+                plot_speed *= 1.5
+            grow = data.PLANTS[p.species]["grow"]
+            if self.auto_harvest:
+                p.progress += plot_speed * (dt + (WATER_BOOST - 1.0) * boosted)
+                if p.progress >= grow and p.mature_time:
+                    self._harvest(i, cellar)
+                    p.progress -= grow
+                    p.mature_time = 0.0
+                guard = 0
+                while p.progress >= data.PLANTS[p.species]["grow"] and guard < 1000:
+                    p.progress -= data.PLANTS[p.species]["grow"]
+                    self._harvest(i, cellar)
+                    guard += 1
+                if guard >= 1000:
+                    p.progress = 0.0
+                self._creep_patches(plot_list, cellar, dt)
+            elif p.progress >= grow:
+                p.progress = grow
+                p.mature_time += dt
+            else:
+                # Water boost is applied first, then normal growth for the remainder.
+                needed = grow - p.progress
+                boosted_growth = plot_speed * WATER_BOOST * boosted
+                total_growth = boosted_growth + plot_speed * (dt - boosted)
+                if total_growth >= needed and plot_speed > 0:
+                    reach = (needed / (plot_speed * WATER_BOOST) if needed <= boosted_growth
+                             else boosted + (needed - boosted_growth) / plot_speed)
+                    p.progress = grow
+                    p.mature_time += max(0.0, dt - reach)
+                else:
+                    p.progress += total_growth
             if not cellar:
                 p.water_left = max(0.0, p.water_left - dt * dry)
                 p.water_cd = max(0.0, p.water_cd - dt)
-            grow = data.PLANTS[p.species]["grow"]
-            guard = 0
-            while p.progress >= grow and guard < 1000:
-                p.progress -= grow
-                self._harvest(i, cellar)
-                guard += 1
-            if guard >= 1000:
-                p.progress = 0.0
 
     def update(self, dt):
-        """Step the active round forward by `dt`, splitting across the Compost Heap boundary."""
+        """Step the active round, splitting at weather and Compost Heap boundaries."""
         if self.phase != "round" or not self.started or self.finished or dt <= 0:
             return
         dt = min(dt, self.time_left)
-        w = self.compost_window()
-        if w > 0 and self.time_left > w > self.time_left - dt:
-            first_dt = self.time_left - w
-            self._step_round(first_dt)
-            if not self.finished and dt - first_dt > 0:
-                self._step_round(dt - first_dt)
-        else:
-            self._step_round(dt)
+        # Split at both boundaries so growth, payouts and weather events use
+        # the correct effects even when a single update crosses halfway.
+        remaining = dt
+        while remaining > 1e-9 and not self.finished:
+            half = self.time_total / 2.0
+            crosses_half = (not self.weather_roll_done and self.time_left > half
+                            and self.time_left - remaining <= half)
+            step = remaining
+            if crosses_half:
+                step = min(step, self.time_left - half)
+            w = self.compost_window()
+            if w > 0 and self.time_left > w > self.time_left - step:
+                step = self.time_left - w
+                crosses_half = False
+            clearing = crosses_half and self._has("clear_weather") and self.rng.random() < 0.25
+            self._suppress_blight = clearing
+            self._step_round(step)
+            self._suppress_blight = False
+            remaining -= step
+            if crosses_half:
+                self.weather_roll_done = True
+                if clearing:
+                    self.weather_cleared = True
+                    self._emit("weather_clear")
 
     def _announce_compost(self, window):
         if window > 0 and not self.compost_announced and self.time_left <= window + 1e-9:
@@ -677,7 +781,7 @@ class Run:
             self._announce_compost(w)
 
         half = self.time_total / 2.0
-        if tw["blight"] and not self.blight_done and previous > half >= self.time_left:
+        if tw["blight"] and not self._suppress_blight and not self.blight_done and previous > half >= self.time_left:
             self.blight_done = True
             alive = [i for i, p in enumerate(self.plots) if p.species]
             if alive:
@@ -706,7 +810,8 @@ class Run:
                 self.hail_timer -= hail
                 for i, p in enumerate(self.plots):
                     if p.species:
-                        p.progress *= 0.5
+                        if p.progress < data.PLANTS[p.species]["grow"]:
+                            p.progress *= 0.5
                         self._emit("hail", plot=i, cellar=False)
 
         rot = tw.get("rot")
@@ -802,19 +907,113 @@ class Run:
             name=data.PLANTS[plot_list[target].species]["name"],
         )
 
-    def _spread_mycelium(self, i, cellar=False):
-        """Mycelium sometimes creeps into an empty neighbouring plot."""
-        plot_list = self.cellar_plots if cellar else self.plots
+    def _is_creeping(self, plot_list, i):
+        """True when plot `i` is a mycelium that spreads from where it stands."""
+        p = plot_list[i]
+        return p.species is not None and bool(data.PLANTS[p.species].get("spread"))
+
+    def _can_creep(self, plot_list, i, cellar):
+        """A mycelium can take a plot only if it has an empty orthogonal neighbour."""
+        return self._is_creeping(plot_list, i) and any(
+            plot_list[n].species is None for n in self.neighbours(i, cellar)
+        )
+
+    def _spread_cap(self, plot_list, i):
+        """How many plots one mycelium seed may grow this round (from `data`)."""
         sp = data.PLANTS[plot_list[i].species]
-        chance = sp.get("spread", 0.0)
-        if chance <= 0 or self.rng.random() >= chance:
-            return
+        return int(sp.get("spread_cap", MYCELIUM_MAX_SPREAD))
+
+    def creep_cap(self, plot_list, i):
+        """Public cap lookup so the round screen can show how much patch is left."""
+        return self._spread_cap(plot_list, i)
+
+    def _creep_from(self, plot_list, i, cellar, chance=1.0):
+        """Roll plot `i`'s chance to push into one empty orthogonal neighbour.
+
+        The new plot starts a fresh mycelium of the same species, and the patch
+        may only grow `spread_cap` plots this round, so one lucky seed cannot
+        take over the garden for free.
+        """
+        p = plot_list[i]
+        if chance <= 0 or self.creep_grown.get(cellar, 0) >= self._spread_cap(plot_list, i):
+            return False
+        if chance < 1.0 and self.rng.random() >= chance:
+            return False
         empties = [n for n in self.neighbours(i, cellar) if plot_list[n].species is None]
         if not empties:
-            return
+            return False
         target = self.rng.choice(empties)
-        plot_list[target] = Plot(plot_list[i].species)
-        self._emit("spread", plot=target, cellar=cellar)
+        plot_list[target] = Plot(p.species)
+        # The parent's creep meter pays for the new plot and starts filling again.
+        p.creep_cd = 0.0
+        self.creep_grown[cellar] = self.creep_grown.get(cellar, 0) + 1
+        self._emit(
+            "spread", plot=target, cellar=cellar,
+            source=i, size=len(self.mycelium_network(target, cellar)),
+        )
+        return True
+
+    def _spread_mycelium(self, i, cellar=False):
+        """Harvest-spread: harvesting any mycelium rolls for the patch to grow.
+
+        `spread` in `data.PLANTS` scales the chance on each harvest, tempered by
+        MYCELIUM_CREEP_SHARE so a fast mycelium does not outrun its guaranteed
+        creep. The roll is the patch's, not the harvested plot's, so a mycelium
+        that has already surrounded itself still pushes the fungus outward.
+        """
+        plot_list = self.cellar_plots if cellar else self.plots
+        if not (0 <= i < len(plot_list)):
+            return False
+        sp = data.PLANTS[plot_list[i].species]
+        chance = sp.get("spread", 0.0) * MYCELIUM_CREEP_SHARE
+        if chance <= 0 or self.rng.random() >= chance:
+            return False
+        front = self._patch_front(plot_list, cellar, i)
+        if front is None:
+            return False
+        return self._creep_from(plot_list, front, cellar, 1.0)
+
+    def _patch_front(self, plot_list, cellar, near=None):
+        """The mycelium plot that should grow next: the patch's outer edge.
+
+        Growth stems from whichever member has the most room around it, which
+        makes the fungus expand as a blob instead of backfilling gaps behind
+        the front. Ties go to the plot nearest `near`, then to the lower index.
+        """
+        ready = [j for j in range(len(plot_list)) if self._can_creep(plot_list, j, cellar)]
+        if not ready:
+            return None
+        anchor = None
+        if near is not None and 0 <= near < len(plot_list):
+            anchor = divmod(near, COLS)
+        def key(j):
+            r, c = divmod(j, COLS)
+            dist = 0 if anchor is None else abs(r - anchor[0]) + abs(c - anchor[1])
+            room = sum(1 for n in self.neighbours(j, cellar) if plot_list[n].species is None)
+            return (room, -dist, j)
+        return max(ready, key=key)
+
+    def _creep_patches(self, plot_list, cellar, dt):
+        """Fill every mycelium's creep meter and book the guaranteed spreads.
+
+        MYCELIUM_CREEP_TIME seconds of round per new plot, so a lone seed always
+        becomes a patch you can watch grow; harvest rolls in `_spread_mycelium`
+        make the good rounds much faster. A meter only fills while its plot has
+        an empty neighbour, so a walled-in mycelium never banks free expansions.
+        """
+        for i, p in enumerate(plot_list):
+            if not self._can_creep(plot_list, i, cellar):
+                continue
+            cap = self._spread_cap(plot_list, i)
+            if self.creep_grown.get(cellar, 0) >= cap:
+                continue
+            p.creep_cd = min(MYCELIUM_CREEP_TIME, p.creep_cd + dt)
+        while True:
+            front = self._patch_front(plot_list, cellar)
+            if front is None or plot_list[front].creep_cd < MYCELIUM_CREEP_TIME:
+                break
+            if not self._creep_from(plot_list, front, cellar, 1.0):
+                break
 
     def _maybe_mutate(self, i, cellar=False):
         """Roll for mid-round species mutation once a plot clears its harvest threshold."""
@@ -915,10 +1114,20 @@ class Run:
         self.rerolls = 0
         self.roll_offers()
 
+    def relic_slots(self):
+        return RELIC_SLOTS + (1 if self.perk("relics") >= 2 else 0)
+
+    def relic_offer_slots(self):
+        return 3 + (1 if self.perk("relics") >= 3 else 0)
+
     def roll_offers(self):
-        pool = [r for r in data.RELIC_ORDER if r not in self.relics]
-        offers = []
-        for _ in range(3):
+        self.shop_offers = []
+        self._fill_relic_offers()
+
+    def _fill_relic_offers(self):
+        offers = self.shop_offers
+        pool = [r for r in data.RELIC_ORDER if r not in self.relics and r not in offers]
+        for _ in range(max(0, self.relic_offer_slots() - len(offers))):
             if not pool:
                 break
             weights = [data.RARITY_WEIGHT[data.RELICS[r]["rarity"]] for r in pool]
@@ -930,9 +1139,9 @@ class Run:
     def relic_price(self, rid):
         """Price of relic `rid` for the current round; rare relics scale slightly steeper."""
         rarity = data.RELICS[rid]["rarity"]
-        rarity_mult = {"common": 1.0, "uncommon": 1.2, "rare": 1.45, "legendary": 1.6}[rarity]
-        growth = RARE_RELIC_PRICE_GROWTH if rarity == "rare" else RELIC_PRICE_GROWTH
-        return int(data.RELICS[rid]["cost"] * rarity_mult * growth ** (self.round - 1))
+        rarity_mult = {"common": 1.0, "uncommon": 1.2, "rare": 1.45, "legendary": 1.6, "exquisite": 1.8}[rarity]
+        growth = RARE_RELIC_PRICE_GROWTH if rarity in ("rare", "exquisite") else RELIC_PRICE_GROWTH
+        return int(data.RELICS[rid]["cost"] * rarity_mult * growth ** (self.round - 1) * (0.85 if self.perk("relics") >= 1 else 1.0))
 
     def reroll_price(self):
         return int(REROLL_BASE_PRICE * 2.0 ** self.rerolls * RELIC_PRICE_GROWTH ** (self.round - 1))
@@ -949,7 +1158,7 @@ class Run:
     def buy_relic(self, index):
         if not (0 <= index < len(self.shop_offers)) or self.shop_offers[index] is None:
             return False, "Nothing there."
-        if len(self.relics) >= RELIC_SLOTS:
+        if len(self.relics) >= self.relic_slots():
             return False, "Relic slots are full."
         rid = self.shop_offers[index]
         price = self.relic_price(rid)
@@ -983,6 +1192,7 @@ class Run:
         return True
 
     def start_next_round(self):
+        self.weather_cleared = False
         self.round += 1
         self.phase = "packs"
         self.grant_round_packs()
@@ -1023,7 +1233,7 @@ class Run:
         if cellar:
             run.cellar_plots = cellar[:CELLAR_PLOTS]
         run.cellar_unlocked = bool(d.get("cellar_unlocked", False))
-        run.relics = [r for r in d.get("relics", []) if r in data.RELICS][:RELIC_SLOTS]
+        run.relics = [r for r in d.get("relics", []) if r in data.RELICS][:run.relic_slots()]
         run.mastery = {k: int(v) for k, v in d.get("mastery", {}).items() if k in data.PLANTS}
         run.counters = {k: int(v) for k, v in d.get("counters", {}).items()}
         run.shop_offers = [r if r in data.RELICS else None for r in d.get("shop_offers", [])]

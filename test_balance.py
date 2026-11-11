@@ -612,6 +612,7 @@ class TwistTests(unittest.TestCase):
     def test_events_know_which_board_they_happened_on(self):
         """Cellar harvests used to pop up over the surface plots."""
         run = Run(seed=2)
+        run.auto_harvest = True
         run.begin_round()
         run.started = True
         run.cellar_unlocked = True
@@ -977,6 +978,7 @@ class CompostHeapTests(unittest.TestCase):
 
     def test_compost_splits_single_large_update_across_15s_threshold(self):
         run = Run(seed=1)
+        run.auto_harvest = True
         run.twist_id = lambda _rnd=None: "none"
         run.relics = ["compost"]
         run.begin_round()
@@ -1384,6 +1386,7 @@ class RegressionFixTests(unittest.TestCase):
                 app.pause_modal.resume()
 
                 # Surface: update processes fast mode, t sway, floaters, compost toast, and clears events
+                app.settings_cfg["auto_harvest"] = True
                 app.scene.cellar_click()
                 app.run.seeds["daisy"] = 5
                 app.run.plant(0, "daisy")
@@ -1800,6 +1803,81 @@ class MyceliumTests(unittest.TestCase):
         run.started = True
         run._harvest(0)
         self.assertEqual(sum(1 for p in run.plots if p.species == "mycelium"), 1)
+
+        def test_a_patch_keeps_creeping_from_its_edge_after_a_harvest_spread(self):
+        # Regression: the roll used to belong to the harvested plot alone, so
+        # once that plot had all four neighbours filled the patch stopped
+        # growing even though the rest of it had room.
+            run = self.run_with("mycelium")
+        run.rng.random = lambda: 0.0
+        run.started = True
+        for _ in range(3):
+            for p in run.plots:
+                p.creep_cd = 0.0
+            run._harvest(0)                       # always the original, boxed-in plot
+        grown = [i for i, p in enumerate(run.plots) if p.species == "mycelium"]
+        self.assertEqual(len(grown), 4, "the patch edge must keep spreading")
+        self.assertTrue(
+            all(any(n in grown for n in run.neighbours(i)) for i in grown),
+            "new plots must land orthogonally beside the existing patch",
+        )
+
+    def test_creep_meter_books_a_guaranteed_spread_even_with_no_harvest_luck(self):
+        from .settings import MYCELIUM_CREEP_TIME
+        run = self.run_with()
+        run.begin_round()
+        run.plots = [Plot("mycelium")] + [Plot() for _ in range(11)]
+        run.rng.random = lambda: 0.99             # every harvest roll fails
+        run.start_timer()
+        step = MYCELIUM_CREEP_TIME / 4.0
+        run.update(step * 3)
+        self.assertEqual(len([p for p in run.plots if p.species == "mycelium"]), 1)
+        run.update(step)
+        self.assertEqual(
+            len([p for p in run.plots if p.species == "mycelium"]), 2,
+            "a full creep meter must spread on its own",
+        )
+        self.assertEqual(run.plots[0].creep_cd, 0.0, "spreading resets the meter")
+
+    def test_one_seed_cannot_take_over_the_whole_board(self):
+        from .settings import MYCELIUM_CREEP_TIME
+        cap = data.PLANTS["mycelium"]["spread_cap"]
+        run = self.run_with()
+        run.begin_round()
+        run.plots = [Plot("mycelium")] + [Plot() for _ in range(11)]
+        run.rng.random = lambda: 0.0
+        run.start_timer()
+        for _ in range(40):
+            for p in run.plots:
+                p.creep_cd = 0.0
+            run.update(MYCELIUM_CREEP_TIME)
+        self.assertLessEqual(run.creep_grown[False], cap)
+        self.assertLessEqual(
+            len([p for p in run.plots if p.species == "mycelium"]), cap + 1,
+        )
+
+    def test_creep_does_nothing_before_the_clock_starts(self):
+        run = self.run_with()
+        run.begin_round()
+        run.plots = [Plot("mycelium")] + [Plot() for _ in range(11)]
+        run.plots[0].creep_cd = 0.0
+        for _ in range(200):
+            run.update(0.5)
+        self.assertEqual(len([p for p in run.plots if p.species == "mycelium"]), 1)
+
+    def test_a_walled_in_mycelium_does_not_bank_creep(self):
+        run = self.run_with()
+        run.begin_round()
+        run.plots = [Plot("mycelium")] + [Plot("daisy") for _ in range(11)]
+        run.start_timer()
+        run.update(30.0)
+        self.assertEqual(run.plots[0].creep_cd, 0.0)
+        self.assertEqual(run.creep_grown[False], 0)
+
+    def test_a_plot_carries_its_creep_meter_through_a_snapshot(self):
+        restored = Plot.from_dict(Plot("mycelium", creep_cd=6.5).to_dict())
+        self.assertEqual(restored.species, "mycelium")
+        self.assertAlmostEqual(restored.creep_cd, 6.5)
 
     def test_mycelium_never_mutates(self):
         self.assertFalse(data.mutants_for("mycelium"))

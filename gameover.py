@@ -51,15 +51,15 @@ class GameOverScene(Scene):
 class ShelfScene(Scene):
     """Meta-progression shop spending banked heirlooms on permanent run perks."""
 
-    ROW_Y = 30
-    ROW_H = 25
+    ROW_Y = 27
+    ROW_H = 23
 
     def on_enter(self):
         self.msg = ""
         self.buy_buttons = []
         for i, key in enumerate(data.PERK_ORDER):
             b = Button(
-                214, self.ROW_Y + i * self.ROW_H + 2, 100, 21, "",
+                214, self.ROW_Y + i * self.ROW_H + 1, 100, 20, "",
                 lambda k=key: self.buy(k), color=(70, 130, 70),
             )
             b.key = key
@@ -130,8 +130,7 @@ class ShelfScene(Scene):
         for i, key in enumerate(data.PERK_ORDER):
             self.draw_row(surf, i, key, self.ROW_Y + i * self.ROW_H)
 
-        gfx.draw_text(surf, "EARN MORE: +1 FOR EVERY ROUND SURVIVED, +3 FOR EVERY BILL PAID.", 6, 136, DIM)
-        gfx.draw_text(surf, "BUY AS SOON AS YOU CAN - THE PRICE CLIMBS EACH LEVEL.", 6, 145, DIM)
+        gfx.draw_text(surf, "EARN MORE: +1 FOR EVERY ROUND SURVIVED, +3 FOR EVERY BILL PAID.", 6, 145, DIM)
         self.back_btn.draw(surf, self.mouse)
 
     def draw_row(self, surf, idx, key, y):
@@ -142,12 +141,18 @@ class ShelfScene(Scene):
         gfx.rect(surf, GOOD if owned else (66, 58, 92), 4, y, 2, 23)
         gfx.draw_text(surf, perk["name"], 12, y + 3, TEXT)
         gfx.draw_text(surf, "%d/%d" % (level, perk["max"]), 206, y + 3, GOOD if owned else DIM, align="right")
-        x = 12
-        if owned:
-            x += gfx.draw_text(surf, "HAVE " + self.heirloom_now(key), x, y + 9, GOOD) + 7
-        if level < perk["max"]:
-            gfx.draw_text(surf, "> " + self.heirloom_now(key, level + 1), x, y + 9, ACCENT)
-        gfx.draw_text(surf, perk["desc"], 12, y + 16, DIM)
+        if key == "relics":
+            gfx.draw_text(surf, "HAVE " + self.heirloom_now(key) if owned else perk["desc"],
+                          12, y + 9, GOOD if owned else DIM)
+            if level < perk["max"]:
+                gfx.draw_text(surf, "> " + self.heirloom_now(key, level + 1), 12, y + 16, ACCENT)
+        else:
+            x = 12
+            if owned:
+                x += gfx.draw_text(surf, "HAVE " + self.heirloom_now(key), x, y + 9, GOOD) + 7
+            if level < perk["max"]:
+                gfx.draw_text(surf, "> " + self.heirloom_now(key, level + 1), x, y + 9, ACCENT)
+            gfx.draw_text(surf, perk["desc"], 12, y + 16, DIM)
         self.buy_buttons[idx].draw(surf, self.mouse)
 
     def heirloom_now(self, key, level=None):

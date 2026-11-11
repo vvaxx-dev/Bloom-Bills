@@ -35,6 +35,16 @@ RARE_RELIC_PRICE_GROWTH = 1.3
 COMPOST_WINDOW = 15.0
 MUTATION_CHANCE = 0.1
 
+# Mycelium: every harvest rolls `spread` for the patch to push into an empty
+# orthogonal neighbour, and each mycelium also fills a creep meter that books
+# one guaranteed expansion every MYCELIUM_CREEP_TIME seconds of round. The
+# guaranteed creep is what makes a patch visibly grow across a round instead of
+# depending on a coin flip you might never win. MYCELIUM_MAX_SPREAD caps how
+# many plots ONE seed can take over, so mycelium cannot fill the garden free.
+MYCELIUM_CREEP_TIME = 14.0
+MYCELIUM_MAX_SPREAD = 6
+MYCELIUM_CREEP_SHARE = 0.5    # of a plant's `spread`, rolled per harvest
+
 # Underground cellar: grows nocturnal plants automatically at reduced speed,
 # insulated from surface weather and boss hazards.
 CELLAR_PLOTS = 4

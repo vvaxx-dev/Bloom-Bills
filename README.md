@@ -14,7 +14,7 @@ You open two free seed packs (three seeds each), click a seed, click a plot. The
 
 A plant grows on its own, slowly. Clicking a growing plot waters it, and a watered plant grows **twice as fast** for three seconds. After that the soil needs three seconds to recover before it'll take water again, so a plot is only running double speed half the time, and only if you keep coming back to it. Four plots at the start, twelve later, all wanting attention, forty-five seconds on the clock.
 
-Harvests fire on their own the moment a plant finishes, pay out immediately, and the plant starts over. A Daisy pays out every five seconds; a Golden Orchid takes twenty-eight and pays 300 when it does. Whatever you've grown by the time the round ends gets sold at the fraction it managed to reach, then it's gone. That's the decision every round: how much seed to commit to something slow, and whether the money should have gone into a plot instead.
+Click a mature plant to collect its harvest and start its next growth cycle; you can optionally enable automatic harvesting in Settings. A Daisy pays out every five seconds; a Golden Orchid takes twenty-eight and pays 300 when it does. Whatever you've grown by the time the round ends gets sold at the fraction it managed to reach, then it's gone. That's the decision every round: how much seed to commit to something slow, and whether the money should have gone into a plot instead.
 
 Seeds come from packs, and the good packs cost money, which is the loop closing on itself.
 
@@ -32,21 +32,21 @@ Besides the bill, the things that make rounds go sideways:
 
 ## Relics
 
-Seventeen relics, five slots. Relics are what turn a decent round into a silly one: Monoculture pays 2.5x if every plant is the same species, Biodiversity pays for the opposite, a Beehive turns a wall of flowers into a money printer, Scarecrow multiplies every harvest by 1.5, and the Greenhouse doubles all of it.
+Nineteen relics, five slots by default. Relics are what turn a decent round into a silly one: Monoculture pays 2.5x if every plant is the same species, Biodiversity pays for the opposite, a Beehive turns a wall of flowers into a money printer, Scarecrow multiplies every harvest by 1.5, and the Greenhouse doubles all of it.
 
 They get dearer every round - 1.65x, which is deliberately under the 1.71x a round the bills climb, so the shop never prices itself out of the game - and seed packs climb 1.6x alongside them. The interesting question is whether to buy a cheap relic now or save for a scary one later. Some of them also level up mid-run if you hit their counter, which is worth playing around.
 
 ## Heirlooms
 
-The permanent stuff, so a failed run still means something. You earn one heirloom per round survived, three per bill paid, and ten for winning. Spend them at the Heirloom Shelf on four things: end-of-round cash interest (+2% per level up to +25% at max, stacking with Piggy Bank), an extra starting plot, a free pack every round, and ten percent to every harvest. Prices climb with each level, so the shelf is where a pile of mediocre runs eventually turns into a good one.
+The permanent stuff, so a failed run still means something. You earn one heirloom per round survived, three per bill paid, and ten for winning. Spend them at the Heirloom Shelf on five things: end-of-round cash interest (+2% per level up to +25% at max, stacking with Piggy Bank), an extra starting plot, a free pack every round, ten percent to every harvest, and the Relic Cabinet. Prices climb with each level, so the shelf is where a pile of mediocre runs eventually turns into a good one.
 
 ## Seeds
 
-Twenty-four base plants across eight packs, plus mutant offshoots that start appearing once a plant has been harvested enough times. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron, each with its own pixel-art sprite and mutation variant.
+Twenty-five base plants across eight packs, plus mutant offshoots that start appearing once a plant has been harvested enough times. The **Farmer Pack** (unlocks round 2) is the field-crop shelf: Potato, Wheat, Corn, Carrot, Cranberries and Saffron, each with its own pixel-art sprite and mutation variant.
 
 The **Desert Pack** is desert-only: Cactus, Aloe Vera, Prickly Pear and Agave. The **Harvest Pack** is autumn-themed: Pumpkin, Corn, Cranberries, Wheat, Potato and Carrot. The **Garden Pack** still stocks Daisy, Tomato and Sunflower, plus Venus Flytrap and Mycelium, and the Golden Orchid is now its one-in-a-hundred jackpot — Cactus swapped out to the Rare Pack. The **Rare Pack** carries Sunflower, Cactus, Pumpkin, Four Leaf Clover and a slim chance at Golden Orchid. Mycelium turns up in both the Garden Pack and the Nocturnal (cellar) pack.
 
-New plants bring new decisions: **Mycelium** spreads into empty neighbouring plots on harvest and every connected Mycelium boosts the whole patch's value; **Venus Flytrap** pays little itself but gets fed by every other harvest you take, and its Man-Eater mutation devours an adjacent plant for half its base payout; **Four Leaf Clover** pays nothing but rolls a 25% chance to 1.5x a neighbour's harvest each grow, and it has exactly one mutation, the **Five Leaf Clover**: drawn with five separate leaves, it rolls a 50% chance to 2x instead.
+New plants bring new decisions: **Mycelium** creeps into the empty plot to its left, right, up or down, and every connected Mycelium boosts the whole patch's value. Every harvest of the patch has better than a one-in-six chance to push it out one more plot, and on top of that each mycelium fills a creep meter that books a guaranteed spread every 14 seconds of round — you can watch the pale bar under the mushroom fill. A patch only creeps while it has somewhere to go, and one seed stops at six new plots, so a lucky mycelium is a floor under your income, not a free garden; the spread front always grows from the patch's outer edge, so harvesting the original plot never stalls it; **Venus Flytrap** pays little itself but gets fed by every other harvest you take, and its Man-Eater mutation devours an adjacent plant for half its base payout; **Four Leaf Clover** pays nothing but rolls a 25% chance to 1.5x a neighbour's harvest each grow, and it has exactly one mutation, the **Five Leaf Clover**: drawn with five separate leaves, it rolls a 50% chance to 2x instead.
 
 An Eclipse puts the whole nocturnal shelf in the round's tray alongside everything else, which is more than one screenful, so the tray pages with the arrows, left/right or the mouse wheel.
 
@@ -56,7 +56,7 @@ The pack screen is three shelves, and every one of them fits on screen: the unop
 
 | Key | Does |
 |---|---|
-| Left click | everything. Seed, plot, water, shovel, buttons |
+| Left click | seed, plot, water, harvest, shovel, relic selection, buttons |
 | Space | start the round clock |
 | X / Backspace / Delete | toggle the shovel to dig up a planted crop |
 | Tab | switch between the garden and the cellar |
@@ -103,3 +103,13 @@ Over a hundred tests on the economy, sprites, UI, and mechanics: relic and pack 
 ## Where it's at
 
 Version 0.1.0. Playable start to finish, wins at round 24.
+
+## Harvesting and new treasures
+
+Harvesting is manual by default: click a ready plant on either board to collect it; clicking a growing surface plant waters it. Ready plants stay mature until harvested (or sold when the round ends). Enable **Auto Harvest** in Settings to collect immediately, as in the old game. This preference is saved across runs.
+
+**Crystal Bloom** is a slow legendary seed in Rare Packs. Once mature, its next harvest gains $20 base value for every full second left unharvested, before multipliers. The counter resets after harvest; auto-harvesting collects immediately, so it doesn't build this bonus. End-of-round plant sales are separate and don't collect that harvest.
+
+Two rare-to-find **exquisite** relics can appear in the shop. **Clear Skies** rolls once at halfway: on a 25% success the weather or boss ends for the rest of the round, even if it was beneficial. A round's starting duration stays fixed, and effects that already happened aren't undone. **Chosen Bloom** lets you click its name in the relic panel, then click one planted plot on either board each round. That plant grows 50% faster and harvests for twice as much. The choice is spent even if the plant is removed or destroyed.
+
+The three-level **Relic Cabinet** heirloom gives 15% off relics at level 1, a sixth owned relic slot at level 2, and a fourth shop offer at level 3. All benefits carry into future runs.

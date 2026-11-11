@@ -251,7 +251,7 @@ class App:
             modal.on_key(key)
             return
         if key == pygame.K_ESCAPE and self.run and self.scene_name in RUN_SCENE_NAMES:
-            if not getattr(self.scene, "shovel_mode", False):
+            if not (getattr(self.scene, "shovel_mode", False) or getattr(self.scene, "choose_mode", False)):
                 self.open_pause()
                 return
         if self.debug and self.run:

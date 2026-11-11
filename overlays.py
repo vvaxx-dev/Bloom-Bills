@@ -67,19 +67,20 @@ class SettingsModal:
 
     def __init__(self, app):
         self.app = app
-        self.box = (36, 16, 248, 148)
+        self.box = (36, 3, 248, 174)
         bx, by, bw, bh = self.box
         rx = bx + bw - 82
         self.fs_btn = Button(rx, by + 28, 70, 15, "", self._toggle_fs)
-        self.bl_btn = Button(rx, by + 48, 70, 15, "", self._toggle_bl)
-        self.scale_down = Button(rx, by + 68, 18, 15, "-", lambda: self._step_scale(-1))
-        self.scale_up = Button(rx + 52, by + 68, 18, 15, "+", lambda: self._step_scale(1))
-        self.conf_btn = Button(rx, by + 88, 70, 15, "", self._toggle_confirm)
-        self.float_btn = Button(rx, by + 108, 70, 15, "", self._toggle_floaters)
+        self.bl_btn = Button(rx, by + 47, 70, 15, "", self._toggle_bl)
+        self.scale_down = Button(rx, by + 66, 18, 15, "-", lambda: self._step_scale(-1))
+        self.scale_up = Button(rx + 52, by + 66, 18, 15, "+", lambda: self._step_scale(1))
+        self.conf_btn = Button(rx, by + 85, 70, 15, "", self._toggle_confirm)
+        self.float_btn = Button(rx, by + 104, 70, 15, "", self._toggle_floaters)
+        self.harvest_btn = Button(rx, by + 123, 70, 15, "", self._toggle_harvest)
         self.done_btn = Button(bx + (bw - 80) // 2, by + bh - 21, 80, 16, "DONE", self.close, color=(70, 130, 70))
         self.buttons = [
             self.fs_btn, self.bl_btn, self.scale_down, self.scale_up,
-            self.conf_btn, self.float_btn, self.done_btn,
+            self.conf_btn, self.float_btn, self.harvest_btn, self.done_btn,
         ]
         self.refresh()
 
@@ -96,6 +97,9 @@ class SettingsModal:
         conf = bool(cfg.get("confirmations", True))
         self.conf_btn.label = "ON" if conf else "OFF"
         self.conf_btn.color = (70, 130, 70) if conf else PANEL_LIGHT
+        auto = bool(cfg.get("auto_harvest", False))
+        self.harvest_btn.label = "[X] ON" if auto else "[ ] OFF"
+        self.harvest_btn.color = (70, 130, 70) if auto else PANEL_LIGHT
         flt = bool(cfg.get("floaters", True))
         self.float_btn.label = "ON" if flt else "OFF"
         self.float_btn.color = (70, 130, 70) if flt else PANEL_LIGHT
@@ -119,6 +123,11 @@ class SettingsModal:
 
     def _toggle_floaters(self):
         self.app.settings_cfg["floaters"] = not bool(self.app.settings_cfg.get("floaters", True))
+        self.app.save_settings()
+        self.refresh()
+
+    def _toggle_harvest(self):
+        self.app.settings_cfg["auto_harvest"] = not self.app.settings_cfg.get("auto_harvest", False)
         self.app.save_settings()
         self.refresh()
 
@@ -149,16 +158,17 @@ class SettingsModal:
 
         rows = (
             ("FULLSCREEN (F11)", by + 33),
-            ("BORDERLESS (F12)", by + 53),
-            ("WINDOW SCALE", by + 73),
-            ("CONFIRM PROMPTS", by + 93),
-            ("FLOATING TEXT", by + 113),
+            ("BORDERLESS (F12)", by + 52),
+            ("WINDOW SCALE", by + 71),
+            ("CONFIRM PROMPTS", by + 90),
+            ("FLOATING TEXT", by + 109),
+            ("AUTO HARVEST", by + 128),
         )
         for label, ry in rows:
             gfx.draw_text(surf, label, bx + 12, ry, TEXT)
         scale_txt = "%dX" % int(self.app.settings_cfg.get("scale", 6))
         col = DIM if (self.app.fullscreen or self.app.borderless) else ACCENT
-        gfx.draw_text(surf, scale_txt, bx + bw - 47, by + 73, col, align="center")
+        gfx.draw_text(surf, scale_txt, bx + bw - 47, by + 71, col, align="center")
 
         for b in self.buttons:
             b.draw(surf, mouse)
@@ -267,14 +277,14 @@ class PauseModal:
         for i, key in enumerate(data.PERK_ORDER):
             perk = data.PERKS[key]
             level = run.perk(key) if run else int(self.app.profile["perks"].get(key, 0))
-            ry = hy + 15 + i * 20
+            ry = hy + 15 + i * 16
             owned = level > 0
-            gfx.rect(surf, (44, 38, 66), hx + 4, ry, hw - 8, 18)
-            gfx.rect(surf, GOOD if owned else (66, 58, 92), hx + 4, ry, 2, 18)
+            gfx.rect(surf, (44, 38, 66), hx + 4, ry, hw - 8, 15)
+            gfx.rect(surf, GOOD if owned else (66, 58, 92), hx + 4, ry, 2, 15)
             gfx.draw_text(surf, perk["name"], hx + 9, ry + 2, TEXT if owned else DIM)
             gfx.draw_text(surf, "%d/%d" % (level, perk["max"]), hx + hw - 7, ry + 2, GOOD if owned else DIM, align="right")
             bonus = data.perk_text(key, level) if owned else "NONE OWNED"
-            gfx.draw_text(surf, bonus, hx + 9, ry + 10, ACCENT if owned else DIM)
+            gfx.draw_text(surf, bonus, hx + 9, ry + 9, ACCENT if owned else DIM)
 
         if run:
             gfx.draw_text(surf, "EARNED SO FAR: +%d" % run.heirloom_reward(), hx + hw // 2, hy + hh - 10, ACCENT, align="center")

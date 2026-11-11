@@ -11,10 +11,13 @@ RARITY_COLORS = {
     "rare": (110, 170, 250),
     "legendary": (250, 190, 60),
     "mutant": (255, 110, 230),
+    "exquisite": (100, 235, 225),
 }
-RARITY_WEIGHT = {"common": 60, "uncommon": 28, "rare": 10, "legendary": 3}
+RARITY_WEIGHT = {"common": 60, "uncommon": 28, "rare": 10, "legendary": 3, "exquisite": 2}
 
 PLANTS = {
+    "crystal_bloom": {"name": "Crystal Bloom", "tags": ["flower"], "grow": 25, "yield": 200, "sell": 350, "rarity": "legendary", "color": (100, 210, 250), "mature_bonus": 20, "no_mutations": True,
+                      "note": "+$20 base harvest per full second spent mature. Auto-harvest collects immediately."},
     "daisy":          {"name": "Daisy",              "tags": ["flower"],                      "grow": 5,  "yield": 2,   "sell": 4,   "rarity": "common",    "color": (245, 240, 230)},
     "tomato":         {"name": "Tomato",             "tags": ["veg", "fruit"],                "grow": 8,  "yield": 6,   "sell": 10,  "rarity": "common",    "color": (214, 64, 56)},
     "sunflower":      {"name": "Sunflower",          "tags": ["flower"],                      "grow": 11, "yield": 14,  "sell": 24,  "rarity": "uncommon",  "color": (250, 210, 70)},
@@ -50,8 +53,8 @@ PLANTS = {
                        "feed": 2,
                        "note": "A poor payer alone, but every harvest anywhere feeds it $2 toward its next bite."},
     "mycelium":       {"name": "Mycelium",           "tags": ["mushroom", "fungus"],          "grow": 8,  "yield": 12,  "sell": 24,  "rarity": "uncommon",  "color": (222, 204, 168),
-                       "network": 0.35, "spread": 0.25, "no_mutations": True,
-                       "note": "Harvests can spread it into an empty neighbouring plot. Each connected mycelium adds +35% to the whole patch."},
+                       "network": 0.35, "spread": 0.35, "spread_cap": 6, "no_mutations": True,
+                       "note": "Creeps into empty plots to its left, right, up or down: roughly one harvest in six spreads the patch, and a full creep meter always grows it one plot. Each connected mycelium adds +35% to the whole patch."},
 }
 FARMER_PLANTS = ["potato", "wheat", "corn", "carrot", "cranberries", "saffron"]
 DESERT_PLANTS = ["cactus", "aloe_vera", "prickly_pear", "agave"]
@@ -59,7 +62,7 @@ DESERT_PLANTS = ["cactus", "aloe_vera", "prickly_pear", "agave"]
 FUNGUS_PLANTS = ["mycelium"]
 SURFACE_PLANTS = [
     "daisy", "tomato", "sunflower", "cactus", "pumpkin", "orchid",
-    "aloe_vera", "prickly_pear", "agave", "four_leaf_clover", "venus_flytrap", "mycelium",
+    "aloe_vera", "prickly_pear", "agave", "crystal_bloom", "four_leaf_clover", "venus_flytrap", "mycelium",
 ] + FARMER_PLANTS
 NOCTURNAL_PLANTS = ["brown_mushroom", "red_mushroom", "moonflower", "queen_night", "devil_ivy", "widow_bloom"]
 CELLAR_PLANTS = NOCTURNAL_PLANTS + FUNGUS_PLANTS
@@ -311,7 +314,8 @@ def mutation_threshold(species):
 # treat base species and mutants uniformly while preserving cursed penalties.
 # Layout mechanics (spread / network / feed / consume / bloom / pays) are
 # inherited from the base plant and can be overridden by a mutant.
-_MECHANIC_KEYS = ("spread", "network", "feed", "consume", "bloom_chance", "bloom_mult", "pays", "no_mutations")
+_MECHANIC_KEYS = ("spread", "spread_cap", "network", "feed", "consume", "bloom_chance", "bloom_mult",
+                  "pays", "no_mutations")
 for _mid, _mutant in MUTANTS.items():
     _base = PLANTS[_mutant["base"]]
     _upkeep = int(round(_base.get("upkeep", 0) * _mutant.get("upkeep_mult", 1.0))) + _mutant.get("upkeep_add", 0)
@@ -362,7 +366,7 @@ PACKS = {
     "nocturnal": {"name": "Nocturnal Pack", "short": "NOCTURNAL", "cost": 120, "unlock": 2, "color": (110, 80, 60), "dark": (70, 50, 40),
                   "pool": {"brown_mushroom": 34, "red_mushroom": 30, "mycelium": 18, "moonflower": 15, "queen_night": 3}},
     "rare":      {"name": "Rare Pack",      "short": "RARE",      "cost": 400, "unlock": 4, "color": (150, 90, 200), "dark": (96, 56, 140),
-                  "luck": 2.5, "pool": {"sunflower": 28, "cactus": 24, "pumpkin": 20, "four_leaf_clover": 16, "orchid": 12}},
+                  "luck": 2.5, "pool": {"sunflower": 28, "cactus": 24, "pumpkin": 20, "four_leaf_clover": 16, "orchid": 12, "crystal_bloom": 5}},
     "cursed":    {"name": "Cursed Pack",    "short": "CURSED",    "cost": 600, "unlock": 6, "color": (120, 40, 60), "dark": (70, 24, 40),
                   "pool": {"devil_ivy": 35, "widow_bloom": 20, "moonflower": 25, "queen_night": 20}},
 }
@@ -383,6 +387,10 @@ def free_pack_weight(kind, rnd):
 
 
 RELICS = {
+    "clear_skies": {"name": "Clear Skies", "rarity": "exquisite", "cost": 1000,
+                    "desc": "25% chance at halfway to clear any weather or boss for the rest of the round.", "effects": {"clear_weather": True}},
+    "chosen_bloom": {"name": "Chosen Bloom", "rarity": "exquisite", "cost": 1000,
+                     "desc": "Click this relic, then choose one plant per round: grows 50% faster, harvests x2.", "effects": {"choose_plant": True}},
     "green_thumb":   {"name": "Green Thumb",    "rarity": "common",   "cost": 90,
                       "desc": "Flowers harvest +3.",
                       "effects": {"yield_add": [("flower", 3)]},
@@ -506,7 +514,9 @@ PERKS = {
     "yield": {"name": "Green Thumbs", "max": 10, "costs": [5, 6, 8, 10, 12, 14, 16, 18, 20, 24],
               "desc": "+10% TO EVERY HARVEST PER LEVEL", "now": "+{n}%"},
 }
-PERK_ORDER = ["cash", "plots", "packs", "yield"]
+PERKS["relics"] = {"name": "Relic Cabinet", "max": 3, "costs": [35, 60, 100],
+                   "desc": "RELIC DISCOUNT, THEN EXTRA SLOTS", "now": "{n}"}
+PERK_ORDER = ["cash", "plots", "packs", "yield", "relics"]
 PERK_STEP = {"cash": 2, "plots": 1, "packs": 1, "yield": 10}
 PERK_COST_GROWTH = 1.15
 
@@ -540,6 +550,8 @@ def perk_cost(key, level):
 
 def perk_text(key, level):
     """Format the cumulative bonus label for `key` at `level`."""
+    if key == "relics":
+        return ["NO BONUS", "RELICS 15% OFF", "15% OFF, 6 OWNED", "15% OFF, 6 OWNED, 4 OFFERS"][max(0, min(3, level))]
     n = deep_pockets_pct(level) if key == "cash" else PERK_STEP[key] * level
     return PERKS[key]["now"].format(n=n, s="" if n == 1 else "S")
 

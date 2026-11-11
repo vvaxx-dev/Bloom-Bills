@@ -6,7 +6,7 @@ from . import data, gfx
 from .formatting import fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
-from .settings import ACCENT, BAD, BG, CANVAS_H, CANVAS_W, DIM, GOOD, MAX_PLOTS, PANEL, PANEL_DARK, RELIC_SLOTS, TEXT
+from .settings import ACCENT, BAD, BG, CANVAS_H, CANVAS_W, DIM, GOOD, MAX_PLOTS, PANEL, PANEL_DARK, TEXT
 
 FORECAST_RECT = (152, 150, 98, 26)
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": TEXT}
@@ -17,12 +17,12 @@ class ShopScene(Scene):
         self.run.phase = "shop"
         self.msg = ""
         self.buy_buttons = [
-            Button(9 + i * 104, 98, 90, 16, "", lambda i=i: self.buy_relic(i), color=(70, 130, 70))
-            for i in range(3)
+            Button(9 + i * (104 if self.run.relic_offer_slots() == 3 else 78), 98, (90 if self.run.relic_offer_slots() == 3 else 68), 16, "", lambda i=i: self.buy_relic(i), color=(70, 130, 70))
+            for i in range(self.run.relic_offer_slots())
         ]
         self.sell_buttons = []
-        for i in range(RELIC_SLOTS):
-            b = Button(6 + i * 62, 141, 56, 8, "", lambda i=i: self.sell_relic_clicked(i), color=(150, 70, 60))
+        for i in range(self.run.relic_slots()):
+            b = Button(6 + i * (62 if self.run.relic_slots() == 5 else 52), 141, (56 if self.run.relic_slots() == 5 else 46), 8, "", lambda i=i: self.sell_relic_clicked(i), color=(150, 70, 60))
             b.enabled = False
             self.sell_buttons.append(b)
         self.plot_btn = Button(4, 150, 88, 26, "", self.buy_plot)
@@ -40,7 +40,7 @@ class ShopScene(Scene):
             else:
                 price = run.relic_price(rid)
                 b.label = "BUY $" + fmt(price)
-                b.enabled = run.money >= price and len(run.relics) < RELIC_SLOTS
+                b.enabled = run.money >= price and len(run.relics) < run.relic_slots()
         for i, b in enumerate(self.sell_buttons):
             if i < len(run.relics):
                 refund = max(1, int(run.relic_price(run.relics[i]) * 0.5))
@@ -134,48 +134,55 @@ class ShopScene(Scene):
         draw_topbar(surf, run, "SHOP", mouse=self.mouse)
 
         offer_hover = None
-        for i in range(3):
-            x, y = 4 + i * 104, 18
+        card_w = 100 if run.relic_offer_slots() == 3 else 74
+        card_step = 104 if run.relic_offer_slots() == 3 else 78
+        for i in range(run.relic_offer_slots()):
+            x, y = 4 + i * card_step, 18
             rid = run.shop_offers[i] if i < len(run.shop_offers) else None
             if rid is None:
-                gfx.panel(surf, x, y, 100, 98, fill=(36, 31, 56))
-                gfx.draw_text(surf, "SOLD OUT", x + 50, y + 44, DIM, align="center")
+                gfx.panel(surf, x, y, card_w, 98, fill=(36, 31, 56))
+                gfx.draw_text(surf, "SOLD OUT", x + card_w // 2, y + 44, DIM, align="center")
                 continue
             rel = data.RELICS[rid]
             col = data.RARITY_COLORS[rel["rarity"]]
-            gfx.rect(surf, col, x, y, 100, 98)
-            gfx.rect(surf, PANEL, x + 1, y + 1, 98, 96)
+            gfx.rect(surf, col, x, y, card_w, 98)
+            gfx.rect(surf, PANEL, x + 1, y + 1, card_w - 2, 96)
             gfx.rect(surf, col, x + 5, y + 5, 16, 16)
             gfx.rect(surf, PANEL_DARK, x + 6, y + 6, 14, 14)
             gfx.draw_sprite(surf, rid, x + 7, y + 7)
-            gfx.draw_text(surf, rel["name"], x + 25, y + 6, TEXT)
+            name = rel["name"]
+            while len(name) > 1 and gfx.text_width(name) > card_w - 27:
+                name = name[:-1]
+            gfx.draw_text(surf, name, x + 25, y + 6, TEXT)
             gfx.draw_text(surf, rel["rarity"], x + 25, y + 14, col)
-            gfx.draw_wrapped(surf, rel["desc"], x + 6, y + 26, 90, TEXT)
-            if rel.get("levels") and gfx.inside(self.mouse, (x, y, 100, 78)):
+            for line_no, line in enumerate(gfx.wrap(rel["desc"], card_w - 12)[:7]):
+                gfx.draw_text(surf, line, x + 6, y + 26 + line_no * 7, TEXT)
+            if gfx.inside(self.mouse, (x, y, card_w, 78)):
                 offer_hover = rid
         for b in self.buy_buttons:
             b.draw(surf, self.mouse)
 
-        gfx.draw_text(surf, "YOUR RELICS %d/%d" % (len(run.relics), RELIC_SLOTS), 6, 119, DIM)
+        gfx.draw_text(surf, "YOUR RELICS %d/%d" % (len(run.relics), run.relic_slots()), 6, 119, DIM)
         if self.msg:
             gfx.draw_text(surf, self.msg, 314, 119, ACCENT, align="right")
 
         owned_hover = None
-        for i in range(RELIC_SLOTS):
-            x = 4 + i * 62
-            slot_rect = (x, 125, 60, 24)
+        slot_w = 60 if run.relic_slots() == 5 else 50
+        for i in range(run.relic_slots()):
+            x = 4 + i * (slot_w + 2)
+            slot_rect = (x, 125, slot_w, 24)
             gfx.rect(surf, PANEL_DARK, *slot_rect)
             if i < len(run.relics):
                 rel = data.RELICS[run.relics[i]]
-                gfx.rect(surf, data.RARITY_COLORS[rel["rarity"]], x, 125, 60, 1)
-                lines = gfx.wrap(rel["name"], 54)
+                gfx.rect(surf, data.RARITY_COLORS[rel["rarity"]], x, 125, slot_w, 1)
+                lines = gfx.wrap(rel["name"], slot_w - 6)
                 for k, line in enumerate(lines[:2]):
-                    gfx.draw_text(surf, line, x + 30, 128 + k * 7, TEXT, align="center")
+                    gfx.draw_text(surf, line, x + slot_w // 2, 128 + k * 7, TEXT, align="center")
                 self.sell_buttons[i].draw(surf, self.mouse)
                 if gfx.inside(self.mouse, slot_rect):
                     owned_hover = i
             else:
-                gfx.draw_text(surf, "EMPTY", x + 30, 134, (70, 62, 96), align="center")
+                gfx.draw_text(surf, "EMPTY", x + slot_w // 2, 134, (70, 62, 96), align="center")
 
         fx, fy, fw, fh = FORECAST_RECT
         nxt = run.round + 1
