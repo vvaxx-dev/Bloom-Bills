@@ -6,17 +6,17 @@ Rounds are 45 seconds long. When the clock hits zero everything in the ground is
 
 Every ninth round a new **season** starts - Spring, Summer, Autumn, Winter, then round again. A season is a name and a colour on the topbar, nothing more; the weather table is still the only thing that moves your numbers.
 
-It runs in a 320x180 window that scales up cleanly, and it's about three thousand lines of Python with one dependency.
+It runs in a 320x180 window that scales up cleanly, and it's about ten thousand lines of Python with one dependency.
 
 ## A round, start to finish
 
 You open two free seed packs (three seeds each), click a seed, click a plot. Then the actual game starts, which is watering.
 
-A plant grows on its own, slowly. Clicking a growing plot waters it, and a watered plant grows **twice as fast** for three seconds. After that the soil needs three seconds to recover before it'll take water again, so a plot is only running double speed half the time, and only if you keep coming back to it. Four plots at the start, twelve later, all wanting attention, forty-five seconds on the clock.
+A plant grows on its own, slowly. Clicking a growing plot waters it, and a watered plant grows **twice as fast** for four seconds. After that the soil needs three seconds to recover before it'll take water again, so a plot is only running double speed half the time, and only if you keep coming back to it. Four plots at the start, twelve later, all wanting attention, forty-five seconds on the clock.
 
-Click a mature plant to collect its harvest and start its next growth cycle; you can optionally enable automatic harvesting in Settings. A Daisy pays out every five seconds; a Golden Orchid takes twenty-eight and pays 300 when it does. Whatever you've grown by the time the round ends gets sold at the fraction it managed to reach, then it's gone. That's the decision every round: how much seed to commit to something slow, and whether the money should have gone into a plot instead.
+Click a mature plant to collect its harvest and start its next growth cycle; you can optionally enable automatic harvesting in Settings. A Daisy pays out every five seconds; a Golden Orchid takes twenty-eight and pays 300 when it does. Whatever you've grown by the time the round ends gets sold at the fraction it managed to reach, then it's gone. That's the decision every round: how many seeds to commit to something slow, and whether the money should have gone into a plot instead.
 
-Seeds come from packs, and the good packs cost money, which is the loop closing on itself.
+Seeds come from packs, and the good packs cost money, however there's still a chance to get a rarer pack each time.
 
 ## The bill
 
@@ -34,11 +34,11 @@ Besides the bill, the things that make rounds go sideways:
 
 Nineteen relics, five slots by default. Relics are what turn a decent round into a silly one: Monoculture pays 2.5x if every plant is the same species, Biodiversity pays for the opposite, a Beehive turns a wall of flowers into a money printer, Scarecrow multiplies every harvest by 1.5, and the Greenhouse doubles all of it.
 
-They get dearer every round - 1.65x, which is deliberately under the 1.71x a round the bills climb, so the shop never prices itself out of the game - and seed packs climb 1.6x alongside them. The interesting question is whether to buy a cheap relic now or save for a scary one later. Some of them also level up mid-run if you hit their counter, which is worth playing around.
+They get multiply every round - 1.65x, which is deliberately under the 1.71x a round the bills climb, so the shop never prices itself out of the game - and seed packs climb 1.6x alongside them. The interesting question is whether to buy a cheap relic now or save for a scary one later. Some of them also level up mid-run if you hit their counter, which is worth playing around.
 
 ## Heirlooms
 
-The permanent stuff, so a failed run still means something. You earn one heirloom per round survived, three per bill paid, and ten for winning. Spend them at the Heirloom Shelf on five things: end-of-round cash interest (+2% per level up to +25% at max, stacking with Piggy Bank), an extra starting plot, a free pack every round, ten percent to every harvest, and the Relic Cabinet. Prices climb with each level, so the shelf is where a pile of mediocre runs eventually turns into a good one.
+The permanent stuff, so a failed run still means something. You earn one heirloom per round survived, three per bill paid, and ten for winning. Spend them at the Heirloom Shelf on a few things: end-of-round cash interest (+2% per level up to +25% at max, stacking with Piggy Bank), an extra starting plot, a free pack every round, ten percent to every harvest, and the Relic Cabinet. Prices climb with each level, so the shelf is where a pile of mediocre runs eventually turns into a good one.
 
 ## Seeds
 
@@ -54,8 +54,6 @@ The pack screen is three shelves, and every one of them fits on screen: the unop
 
 ## Controls
 
-| Key | Does |
-|---|---|
 | Left click | seed, plot, water, harvest, shovel, relic selection, buttons |
 | Space | start the round clock |
 | X / Backspace / Delete | toggle the shovel to dig up a planted crop |
@@ -82,7 +80,7 @@ Saves go to `%APPDATA%/BloomAndBills` on Windows, `~/Library/Application Support
 Small enough to read in an evening:
 
 - `state.py` the whole simulation. It imports nothing but `random`, so you can run rounds headless.
-- `data.py` every plant, relic, pack and weather table. Balance lives here.
+- `data.py` every plant, relic, pack and weather table.
 - `settings.py` the knobs worth turning: round length, prices, growth rates.
 - `round.py` the growing screen, and the only file with a game loop in it.
 - `shop.py`, `packs.py`, `summary.py`, `gameover.py`, `title.py` the other screens.
