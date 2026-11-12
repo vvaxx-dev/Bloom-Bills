@@ -201,3 +201,202 @@ class InterfaceTests(unittest.TestCase):
             app.scene.draw(app.canvas)
             app.goto("shelf")
             app.scene.draw(app.canvas)
+
+
+class CellarPlotBuyabilityTests(unittest.TestCase):
+    def test_cellar_plots_unlock_for_purchase_after_12_garden_plots_and_persist(self):
+        from .settings import CELLAR_PLOTS, MAX_PLOTS
+        run = Run(seed=7)
+        run.money = 10**12
+
+        while len(run.plots) < MAX_PLOTS:
+            self.assertFalse(run.next_plot_is_cellar())
+            self.assertTrue(run.buy_plot())
+        self.assertEqual(len(run.plots), MAX_PLOTS)
+        self.assertEqual(len(run.cellar_plots), CELLAR_PLOTS)
+        self.assertTrue(run.can_buy_plot())
+        self.assertTrue(run.next_plot_is_cellar())
+
+        while len(run.cellar_plots) < MAX_PLOTS:
+            self.assertTrue(run.buy_plot())
+        self.assertTrue(run.cellar_unlocked)
+        self.assertEqual(len(run.cellar_plots), MAX_PLOTS)
+        self.assertFalse(run.can_buy_plot())
+        self.assertFalse(run.buy_plot())
+
+        restored = Run.from_dict(run.to_dict())
+        self.assertEqual(len(restored.plots), MAX_PLOTS)
+        self.assertEqual(len(restored.cellar_plots), MAX_PLOTS)
+        self.assertTrue(restored.cellar_unlocked)
+
+    def test_shop_scene_offers_cellar_plots_after_garden_is_full(self):
+        from .app import App
+        from .settings import MAX_PLOTS
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"BLOOM_SAVE_DIR": tmp}):
+            app = App()
+            app.new_run()
+            run = app.run
+            run.money = 10**12
+            run.plots = [Plot() for _ in range(MAX_PLOTS - 1)]
+            run.enter_shop()
+            app.goto("shop")
+            self.assertIn("PLOT (11/12)", app.scene.plot_btn.label)
+
+            btn = app.scene.plot_btn
+            app.handle_click((btn.x + 4, btn.y + 4))
+            self.assertEqual(len(run.plots), MAX_PLOTS)
+            self.assertIn("CELLAR (4/12)", app.scene.plot_btn.label)
+            self.assertTrue(app.scene.plot_btn.enabled)
+
+            app.handle_click((btn.x + 4, btn.y + 4))
+            self.assertEqual(len(run.cellar_plots), 5)
+            self.assertEqual(app.scene.msg, "NEW CELLAR PLOT!")
+            self.assertIn("CELLAR (5/12)", app.scene.plot_btn.label)
+
+
+class HeirloomArtworkTests(unittest.TestCase):
+    def test_every_heirloom_has_distinct_12x12_artwork_and_renders_on_shelf_and_pause(self):
+        from . import gfx
+        from .app import App
+        from .sprites_data import GRIDS, PALETTE
+
+        seen_art = set()
+        for key in data.PERK_ORDER:
+            perk = data.PERKS[key]
+            art_id = perk["art"]
+            self.assertIn(art_id, GRIDS)
+            self.assertNotIn(art_id, seen_art)
+            seen_art.add(art_id)
+            rows = GRIDS[art_id]
+            self.assertEqual(len(rows), 12)
+            self.assertTrue(all(len(row) == 12 for row in rows))
+            self.assertTrue(set("".join(rows)) <= set(PALETTE) | {"."})
+            self.assertTrue(perk.get("lore"))
+            self.assertEqual(gfx.sprite(art_id, 1).get_size(), (12, 12))
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"BLOOM_SAVE_DIR": tmp}):
+            app = App()
+            app.profile["heirlooms"] = 50
+            app.profile["perks"] = {"cash": 2, "plots": 1, "relics": 1}
+            app.goto("shelf")
+            app.scene.update(0.5)
+            app.mouse = (40, app.scene.ROW_Y + 6)
+            app.scene.draw(app.canvas)
+
+            app.new_run()
+            app.goto("round")
+            app.open_pause()
+            app.pause_modal.draw(app.canvas, (180, 75))
+
+
+class ShovelSpriteAndCursorTests(unittest.TestCase):
+    def test_shovel_sprite_and_cursor_switch_in_shovel_mode(self):
+        import pygame
+        from . import gfx
+        from .app import App
+        from .sprites_data import GRIDS
+
+        shovel_rows = GRIDS["shovel"]
+        self.assertEqual((len(shovel_rows[0]), len(shovel_rows)), (12, 12))
+        chars = set("".join(shovel_rows))
+        self.assertTrue({"w", "d", "D", "b", "B"} <= chars)
+        self.assertNotEqual(shovel_rows[11][0], ".")
+
+        s_normal = pygame.Surface((40, 40), pygame.SRCALPHA)
+        s_shovel = pygame.Surface((40, 40), pygame.SRCALPHA)
+        gfx.draw_cursor(s_normal, (16, 20), "cursor")
+        gfx.draw_cursor(s_shovel, (16, 20), "shovel")
+        self.assertNotEqual(pygame.image.tobytes(s_normal, "RGBA"), pygame.image.tobytes(s_shovel, "RGBA"))
+        self.assertGreater(s_shovel.get_at((16, 20)).a, 0)
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"BLOOM_SAVE_DIR": tmp}):
+            app = App()
+            app.new_run()
+            app.goto("round")
+            self.assertEqual(app.cursor_kind(), "cursor")
+            app.scene.toggle_shovel()
+            self.assertTrue(app.scene.shovel_mode)
+            self.assertEqual(app.cursor_kind(), "shovel")
+            app.open_pause()
+            self.assertEqual(app.cursor_kind(), "cursor")
+
+
+class PlantSpriteAnimationTests(unittest.TestCase):
+    def test_family_styles_and_animated_frames_move_cleanly(self):
+        import pygame
+        from . import gfx
+
+        self.assertEqual(gfx.plant_anim_style("daisy", data.PLANTS["daisy"], "daisy"), "flower")
+        self.assertEqual(gfx.plant_anim_style("venus_flytrap", data.PLANTS["venus_flytrap"], "venus_flytrap"), "carnivore")
+        self.assertEqual(gfx.plant_anim_style("mycelium", data.PLANTS["mycelium"], "mycelium"), "mushroom")
+        self.assertEqual(gfx.plant_anim_style("wheat", data.PLANTS["wheat"], "wheat"), "reed")
+        self.assertEqual(gfx.plant_anim_style("cactus", data.PLANTS["cactus"], "cactus"), "cactus")
+        self.assertEqual(gfx.plant_anim_style("pumpkin", data.PLANTS["pumpkin"], "pumpkin"), "crop")
+        self.assertEqual(gfx.plant_anim_style("daisy", data.PLANTS["daisy"], "seed"), "seed")
+
+        for sid in ("daisy", "venus_flytrap", "mycelium", "wheat", "pumpkin"):
+            sp = data.PLANTS[sid]
+            style = gfx.plant_anim_style(sid, sp, sid)
+            frames = set()
+            for step in range(8):
+                surf = pygame.Surface((36, 36), pygame.SRCALPHA)
+                anim = gfx.plant_anim(0.15 + step * 0.22, index=0, style=style, started=True, ripe=True, speed=1.3)
+                gfx.draw_sprite(surf, sid, 6, 6, 2, sp.get("subs"), anim=anim)
+                frames.add(pygame.image.tobytes(surf, "RGBA"))
+            self.assertGreater(len(frames), 1, sid)
+
+
+class CrittersAndFoliageTests(unittest.TestCase):
+    def test_critter_progression_from_insects_to_woodland_to_aliens(self):
+        from . import ambient
+
+        r1 = ambient.choose_critter_roster(1, seed=3, cellar=False)
+        self.assertTrue(r1)
+        self.assertTrue(all(ambient.CRITTER_SPECIES[c]["tier"] == "insect" for c in r1))
+
+        r24 = ambient.choose_critter_roster(24, seed=3, cellar=False)
+        self.assertIn("mouse", r24)
+        self.assertIn("rabbit", r24)
+
+        r100 = ambient.choose_critter_roster(100, seed=3, cellar=False)
+        self.assertIn("alien", r100)
+        self.assertIn("ufo", r100)
+        self.assertIn("void", r100)
+
+    def test_seasonal_foliage_and_weather_stay_below_topbar(self):
+        import pygame
+        from . import ambient
+        from .round import plot_rect
+
+        rects = [plot_rect(i) for i in range(4)]
+        for rnd, twist_name, cellar in (
+            (1, "rain", False),
+            (10, "drought", False),
+            (18, "gale", False),
+            (26, "frost", False),
+            (100, "eclipse", False),
+            (24, "none", True),
+        ):
+            run = Run(seed=9)
+            run.round = rnd
+            run.twist_id = lambda _r=None, tw=twist_name: tw
+            amb = ambient.GardenAmbient(run)
+            for _ in range(10):
+                amb.update(0.12, run, cellar=cellar)
+            surf = pygame.Surface((320, 180))
+            surf.fill((0, 0, 0))
+            amb.draw_foliage(surf, run, cellar=cellar, plot_rects=rects)
+            amb.draw_foreground(surf, run, cellar=cellar)
+
+            # Topbar region y=0..13 must remain completely untouched.
+            top_lit = sum(
+                1 for y in range(14) for x in range(320)
+                if surf.get_at((x, y))[:3] != (0, 0, 0)
+            )
+            self.assertEqual(top_lit, 0)
+            board_lit = sum(
+                1 for y in range(32, 148) for x in range(244)
+                if surf.get_at((x, y))[:3] != (0, 0, 0)
+            )
+            self.assertGreater(board_lit, 20)
+

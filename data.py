@@ -16,7 +16,8 @@ RARITY_COLORS = {
 RARITY_WEIGHT = {"common": 60, "uncommon": 28, "rare": 10, "legendary": 3, "exquisite": 2}
 
 PLANTS = {
-    "crystal_bloom": {"name": "Crystal Bloom", "tags": ["flower"], "grow": 25, "yield": 200, "sell": 350, "rarity": "legendary", "color": (100, 210, 250), "mature_bonus": 20, "no_mutations": True,
+    "crystal_bloom": {"name": "Crystal Bloom", "tags": ["flower"], "grow": 25, "yield": 200, "sell": 350,
+                      "rarity": "legendary", "color": (100, 210, 250), "mature_bonus": 20, "no_mutations": True,
                       "note": "+$20 base harvest per full second spent mature. Auto-harvest collects immediately."},
     "daisy":          {"name": "Daisy",              "tags": ["flower"],                      "grow": 5,  "yield": 2,   "sell": 4,   "rarity": "common",    "color": (245, 240, 230)},
     "tomato":         {"name": "Tomato",             "tags": ["veg", "fruit"],                "grow": 8,  "yield": 6,   "sell": 10,  "rarity": "common",    "color": (214, 64, 56)},
@@ -36,16 +37,12 @@ PLANTS = {
     "carrot":         {"name": "Carrot",             "tags": ["veg", "root"],                 "grow": 10, "yield": 19,  "sell": 32,  "rarity": "uncommon",  "color": (236, 122, 48)},
     "cranberries":    {"name": "Cranberries",        "tags": ["fruit", "berry"],              "grow": 18, "yield": 72,  "sell": 125, "rarity": "rare",      "color": (198, 44, 74)},
     "saffron":        {"name": "Saffron",            "tags": ["flower", "spice"],             "grow": 26, "yield": 285, "sell": 490, "rarity": "legendary", "color": (226, 128, 68)},
-
-    # Desert shelf. Frost bans the whole tag; the Desert Pack draws only from it.
     "aloe_vera":      {"name": "Aloe Vera",          "tags": ["desert", "succulent"],         "grow": 13, "yield": 30,  "sell": 52,  "rarity": "uncommon",  "color": (120, 200, 130),
                        "note": "Thick leaves hold water: a steady desert earner."},
     "prickly_pear":   {"name": "Prickly Pear",       "tags": ["desert", "fruit"],             "grow": 17, "yield": 55,  "sell": 95,  "rarity": "rare",      "color": (202, 92, 148),
                        "note": "Slow and spiny, with fruit worth the wait."},
     "agave":          {"name": "Agave",              "tags": ["desert", "flower"],            "grow": 24, "yield": 180, "sell": 300, "rarity": "legendary", "color": (150, 195, 170),
                        "note": "The twin flower: one tall bloom and a huge payday."},
-
-    # Layout plants: they reward planning the board around them.
     "four_leaf_clover": {"name": "Four-Leaf Clover", "tags": ["flower", "lucky"],             "grow": 11, "yield": 3,   "sell": 12,  "rarity": "uncommon",  "color": (110, 200, 110),
                        "pays": False, "bloom_chance": 0.25, "bloom_mult": 1.5,
                        "note": "Pays nothing itself. Each harvest has a 25% chance to x1.5 a neighbour's base harvest for the round."},
@@ -58,7 +55,6 @@ PLANTS = {
 }
 FARMER_PLANTS = ["potato", "wheat", "corn", "carrot", "cranberries", "saffron"]
 DESERT_PLANTS = ["cactus", "aloe_vera", "prickly_pear", "agave"]
-# Fungi are the one family that grows both up top and down in the cellar.
 FUNGUS_PLANTS = ["mycelium"]
 SURFACE_PLANTS = [
     "daisy", "tomato", "sunflower", "cactus", "pumpkin", "orchid",
@@ -67,7 +63,7 @@ SURFACE_PLANTS = [
 NOCTURNAL_PLANTS = ["brown_mushroom", "red_mushroom", "moonflower", "queen_night", "devil_ivy", "widow_bloom"]
 CELLAR_PLANTS = NOCTURNAL_PLANTS + FUNGUS_PLANTS
 PLANT_ORDER = SURFACE_PLANTS + NOCTURNAL_PLANTS
-GARDEN_PLANTS = [s for s in SURFACE_PLANTS if s not in FARMER_PLANTS]
+GARDEN_PLANTS = [sid for sid in SURFACE_PLANTS if sid not in FARMER_PLANTS]
 
 MUTANTS = {
     "daisy_shiny": {
@@ -269,9 +265,6 @@ MUTANTS = {
         "grow_mult": 0.9, "yield_mult": 3.2, "sell_mult": 3.2, "yield_add": 10,
         "color": (170, 230, 200), "subs": {"g": (170, 230, 200), "G": (90, 175, 145), "l": (215, 250, 230), "y": (255, 235, 130), "Y": (225, 175, 70)},
     },
-    # The Four-Leaf Clover has exactly one mutation, and this is it: the same
-    # plant with a fifth leaf (its own art) and a luckier roll. It exists only
-    # as a mutation - it is in no pack and has no seed of its own.
     "five_leaf_clover": {
         "base": "four_leaf_clover", "name": "Five-Leaf Clover",
         "desc": "Still pays nothing. 50% chance to x2 a neighbour's base harvest.",
@@ -312,8 +305,7 @@ def mutation_threshold(species):
 
 # Materialize mutant entries directly into PLANTS so harvest/sell/tag queries
 # treat base species and mutants uniformly while preserving cursed penalties.
-# Layout mechanics (spread / network / feed / consume / bloom / pays) are
-# inherited from the base plant and can be overridden by a mutant.
+# Mechanics on a base plant are inherited by its mutants unless overridden.
 _MECHANIC_KEYS = ("spread", "spread_cap", "network", "feed", "consume", "bloom_chance", "bloom_mult",
                   "pays", "no_mutations")
 for _mid, _mutant in MUTANTS.items():
@@ -350,15 +342,11 @@ MILESTONES = [10, 25, 50, 100, 150, 200, 300, 400, 500, 750, 1000]
 
 PACKS = {
     "garden":    {"name": "Garden Pack",    "short": "GARDEN",    "cost": 30,  "unlock": 1, "color": (88, 170, 72),  "dark": (46, 120, 62),
-                  # The cactus moved out to the desert shelf; the Golden Orchid
-                  # is the garden's 1-in-100 jackpot now.
                   "pool": {"daisy": 50, "tomato": 32, "sunflower": 14, "venus_flytrap": 2, "mycelium": 2, "orchid": 1}},
     "farmer":    {"name": "Farmer Pack",    "short": "FARMER",    "cost": 120, "unlock": 2, "color": (190, 150, 70), "dark": (120, 88, 44),
                   "pool": {"potato": 40, "wheat": 30, "carrot": 16, "corn": 10, "cranberries": 3, "saffron": 1}},
-    # The autumn shelf: everything you would bring in before the frost.
     "harvest":   {"name": "Harvest Pack",   "short": "HARVEST",   "cost": 100, "unlock": 3, "color": (240, 140, 50), "dark": (190, 100, 40),
                   "pool": {"pumpkin": 30, "corn": 25, "cranberries": 20, "wheat": 15, "potato": 7, "carrot": 3}},
-    # Desert only: every seed here is frost-banned and loves a dry round.
     "desert":    {"name": "Desert Pack",    "short": "DESERT",    "cost": 250, "unlock": 6, "color": (214, 120, 70), "dark": (150, 80, 50),
                   "pool": {"cactus": 40, "aloe_vera": 28, "prickly_pear": 22, "agave": 10}},
     "golden":    {"name": "Golden Pack",    "short": "GOLDEN",    "cost": 750, "unlock": 9, "color": (250, 210, 70), "dark": (214, 150, 40),
@@ -388,9 +376,11 @@ def free_pack_weight(kind, rnd):
 
 RELICS = {
     "clear_skies": {"name": "Clear Skies", "rarity": "exquisite", "cost": 1000,
-                    "desc": "25% chance at halfway to clear any weather or boss for the rest of the round.", "effects": {"clear_weather": True}},
+                    "desc": "25% chance at halfway to clear any weather or boss for the rest of the round.",
+                    "effects": {"clear_weather": True}},
     "chosen_bloom": {"name": "Chosen Bloom", "rarity": "exquisite", "cost": 1000,
-                     "desc": "Click this relic, then choose one plant per round: grows 50% faster, harvests x2.", "effects": {"choose_plant": True}},
+                     "desc": "Click this relic, then choose one plant per round: grows 50% faster, harvests x2.",
+                     "effects": {"choose_plant": True}},
     "green_thumb":   {"name": "Green Thumb",    "rarity": "common",   "cost": 90,
                       "desc": "Flowers harvest +3.",
                       "effects": {"yield_add": [("flower", 3)]},
@@ -435,7 +425,7 @@ RELICS = {
     "clover":        {"name": "Lucky Clover",   "rarity": "rare",     "cost": 650,
                       "desc": "Rare seeds are twice as likely in packs.",
                       "effects": {"pack_luck": 2.0}},
-    "gardener":      {"name": "Hired Gardener", "rarity": "rare",     "cost": 650,
+    "gardener":      {"name": "Hired Gardener", "rarity": "rare",     "cost": 760,
                       "desc": "Plots water themselves, non-stop.",
                       "effects": {"auto_water": True}},
     "spore_lantern": {"name": "Spore Lantern",  "rarity": "uncommon", "cost": 600,
@@ -447,13 +437,13 @@ RELICS = {
                           {"stat": "mushroom", "goal": 300, "effects": {"yield_mult": [("mushroom", 1.0)]},
                            "desc": "Mushroom harvests x4 total."},
                       ]},
-    "catalog":       {"name": "Seed Catalog",   "rarity": "rare",     "cost": 625,
+    "catalog":       {"name": "Seed Catalog",   "rarity": "rare",     "cost": 700,
                       "desc": "One extra free pack each round.",
                       "effects": {"free_packs": 1}},
-    "greenhouse":    {"name": "Greenhouse",     "rarity": "rare",     "cost": 700,
+    "greenhouse":    {"name": "Greenhouse",     "rarity": "rare",     "cost": 850,
                       "desc": "All harvests x2. Plants grow 10% faster.",
                       "effects": {"yield_mult": [("all", 2.0)], "growth": 0.1}},
-    "mutagen":       {"name": "Mutagen",        "rarity": "rare",     "cost": 700,
+    "mutagen":       {"name": "Mutagen",        "rarity": "rare",     "cost": 800,
                       "desc": "25% chance a seed sprouts already mutated. Mutants are 1.2x better.",
                       "effects": {"mutate_on_plant": 0.25, "mutant_bonus": 0.2},
                       "levels": [{"stat": "harvest", "goal": 200, "effects": {"mutate_on_plant": 0.15},
@@ -506,16 +496,21 @@ SEASONS = [
 
 PERKS = {
     "cash":  {"name": "Deep Pockets", "max": 10, "costs": [3, 4, 5, 6, 7, 8, 10, 12, 14, 16],
-              "desc": "+2% CASH INTEREST A LEVEL (25% AT MAX)", "now": "+{n}% INTEREST"},
+              "desc": "+2% CASH INTEREST A LEVEL (25% AT MAX)", "now": "+{n}% INTEREST",
+              "art": "heirloom_cash", "lore": "A well-guarded purse makes every banked coin earn a little more."},
     "plots": {"name": "Spare Plot",   "max": 4,  "costs": [8, 12, 18, 26],
-              "desc": "ONE MORE STARTING PLOT PER LEVEL", "now": "+{n} PLOT{s}"},
+              "desc": "ONE MORE STARTING PLOT PER LEVEL", "now": "+{n} PLOT{s}",
+              "art": "heirloom_plots", "lore": "More ground means more chances to make the harvest count."},
     "packs": {"name": "Seed Stash",   "max": 2,  "costs": [10, 18],
-              "desc": "ONE MORE FREE PACK A ROUND PER LEVEL", "now": "+{n} PACK{s}"},
+              "desc": "ONE MORE FREE PACK A ROUND PER LEVEL", "now": "+{n} PACK{s}",
+              "art": "heirloom_packs", "lore": "A family seed box keeps the next season stocked."},
     "yield": {"name": "Green Thumbs", "max": 10, "costs": [5, 6, 8, 10, 12, 14, 16, 18, 20, 24],
-              "desc": "+10% TO EVERY HARVEST PER LEVEL", "now": "+{n}%"},
+              "desc": "+10% TO EVERY HARVEST PER LEVEL", "now": "+{n}%",
+              "art": "heirloom_yield", "lore": "A green thumb coaxes more value from every harvest."},
 }
 PERKS["relics"] = {"name": "Relic Cabinet", "max": 3, "costs": [35, 60, 100],
-                   "desc": "RELIC DISCOUNT, THEN EXTRA SLOTS", "now": "{n}"}
+                   "desc": "RELIC DISCOUNT, THEN EXTRA SLOTS", "now": "{n}",
+                   "art": "heirloom_relics", "lore": "A cabinet of old relics makes room for greater wonders."}
 PERK_ORDER = ["cash", "plots", "packs", "yield", "relics"]
 PERK_STEP = {"cash": 2, "plots": 1, "packs": 1, "yield": 10}
 PERK_COST_GROWTH = 1.15

@@ -1,5 +1,7 @@
 """End-of-run summary screen and the permanent Heirloom Shelf upgrade shop."""
 
+import math
+
 import pygame
 
 from . import data, gfx
@@ -43,7 +45,11 @@ class GameOverScene(Scene):
 
         gfx.rect(surf, PANEL_DARK, 50, 78, 220, 1)
         gfx.draw_text(surf, "HEIRLOOMS EARNED THIS RUN", 160, 82, DIM, align="center")
-        gfx.draw_text(surf, "+%d" % result.get("heirlooms", 0), 160, 91, ACCENT, scale=2, align="center")
+        gain_txt = "+%d" % result.get("heirlooms", 0)
+        gain_w = gfx.text_width(gain_txt, scale=2)
+        badge_x = 160 - (gain_w + 13) // 2
+        gfx.draw_sprite(surf, "heirloom_crest", badge_x, 91, 1)
+        gfx.draw_text(surf, gain_txt, badge_x + 13, 91, ACCENT, scale=2)
         gfx.draw_text(surf, "BANKED: %d" % self.app.profile["heirlooms"], 160, 105, GOOD, align="center")
         self.draw_buttons(surf)
 
@@ -56,6 +62,7 @@ class ShelfScene(Scene):
 
     def on_enter(self):
         self.msg = ""
+        self.t = 0.0
         self.buy_buttons = []
         for i, key in enumerate(data.PERK_ORDER):
             b = Button(
@@ -67,6 +74,9 @@ class ShelfScene(Scene):
         self.back_btn = Button(126, 156, 68, 18, "BACK", lambda: self.app.goto("title"), color=(70, 130, 70))
         self.buttons = self.buy_buttons + [self.back_btn]
         self.refresh()
+
+    def update(self, dt):
+        self.t = getattr(self, "t", 0.0) + dt
 
     def profile_level(self, key):
         return int(self.app.profile["perks"].get(key, 0))
@@ -121,39 +131,77 @@ class ShelfScene(Scene):
 
     def draw(self, surf):
         gfx.rect(surf, BG, 0, 0, CANVAS_W, CANVAS_H)
-        gfx.draw_text(surf, "HEIRLOOM SHELF", 6, 4, ACCENT, scale=2)
+        gfx.draw_sprite(surf, "heirloom_crest", 6, 3, 1)
+        gfx.draw_text(surf, "HEIRLOOM SHELF", 19, 4, ACCENT, scale=2)
         gfx.draw_text(surf, "BANKED: %d" % self.app.profile["heirlooms"], 314, 5, ACCENT, align="right")
         gfx.draw_text(surf, "PERMANENT. THEY COME WITH YOU INTO EVERY RUN.", 6, 19, DIM)
         if self.msg:
             gfx.draw_text(surf, self.msg, 314, 19, GOOD, align="right")
 
+        tip = None
         for i, key in enumerate(data.PERK_ORDER):
-            self.draw_row(surf, i, key, self.ROW_Y + i * self.ROW_H)
+            row_y = self.ROW_Y + i * self.ROW_H
+            self.draw_row(surf, i, key, row_y)
+            if gfx.inside(self.mouse, (4, row_y, 208, self.ROW_H)):
+                tip = self.heirloom_tooltip(key)
 
         gfx.draw_text(surf, "EARN MORE: +1 FOR EVERY ROUND SURVIVED, +3 FOR EVERY BILL PAID.", 6, 145, DIM)
         self.back_btn.draw(surf, self.mouse)
+        if tip:
+            gfx.tooltip(surf, tip, self.mouse, 186)
 
     def draw_row(self, surf, idx, key, y):
         perk = data.PERKS[key]
         level = self.level(key)
         owned = level > 0
-        gfx.panel(surf, 4, y, 312, 23, fill=(38, 33, 58))
-        gfx.rect(surf, GOOD if owned else (66, 58, 92), 4, y, 2, 23)
-        gfx.draw_text(surf, perk["name"], 12, y + 3, TEXT)
-        gfx.draw_text(surf, "%d/%d" % (level, perk["max"]), 206, y + 3, GOOD if owned else DIM, align="right")
+        hovered = gfx.inside(self.mouse, (4, y, 208, self.ROW_H))
+        col = perk.get("color", ACCENT)
+        fill = (46, 40, 70) if hovered else (38, 33, 58)
+        gfx.panel(surf, 4, y, 312, 23, fill=fill)
+        gfx.rect(surf, col if owned else (66, 58, 92), 4, y, 2, 23)
+
+        # Relic-style framed 12x12 heirloom artwork badge.
+        frame_col = col if (owned or hovered) else (82, 72, 112)
+        gfx.rect(surf, frame_col, 9, y + 3, 16, 16)
+        gfx.rect(surf, PANEL_DARK, 10, y + 4, 14, 14)
+        bob = 0
+        if hovered:
+            bob = -1
+        elif owned and getattr(self, "t", 0.0) > 0:
+            bob = int(round(math.sin(self.t * 2.6 + idx * 1.1) * 0.6))
+        gfx.draw_sprite(surf, perk["art"], 11, y + 5 + bob, 1)
+
+        tx = 29
+        gfx.draw_text(surf, perk["name"], tx, y + 3, col if owned else TEXT)
+        gfx.draw_text(surf, "%d/%d" % (level, perk["max"]), 208, y + 3, GOOD if owned else DIM, align="right")
         if key == "relics":
             gfx.draw_text(surf, "HAVE " + self.heirloom_now(key) if owned else perk["desc"],
-                          12, y + 9, GOOD if owned else DIM)
+                          tx, y + 9, GOOD if owned else DIM)
             if level < perk["max"]:
-                gfx.draw_text(surf, "> " + self.heirloom_now(key, level + 1), 12, y + 16, ACCENT)
+                gfx.draw_text(surf, "> " + self.heirloom_now(key, level + 1), tx, y + 16, ACCENT)
         else:
-            x = 12
+            x = tx
             if owned:
                 x += gfx.draw_text(surf, "HAVE " + self.heirloom_now(key), x, y + 9, GOOD) + 7
             if level < perk["max"]:
                 gfx.draw_text(surf, "> " + self.heirloom_now(key, level + 1), x, y + 9, ACCENT)
-            gfx.draw_text(surf, perk["desc"], 12, y + 16, DIM)
+            gfx.draw_text(surf, perk["desc"], tx, y + 16, DIM)
         self.buy_buttons[idx].draw(surf, self.mouse)
+
+    def heirloom_tooltip(self, key):
+        perk = data.PERKS[key]
+        level = self.level(key)
+        col = perk.get("color", ACCENT)
+        lines = [
+            ("%s (%d/%d)" % (perk["name"], level, perk["max"]), col),
+            (perk.get("lore", perk["desc"]), TEXT),
+            ("NOW: " + (self.heirloom_now(key) if level > 0 else "UNOWNED"), GOOD if level > 0 else DIM),
+        ]
+        if level < perk["max"]:
+            lines.append(("NEXT: %s (%d HEIRLOOMS)" % (self.heirloom_now(key, level + 1), self.cost(key)), ACCENT))
+        else:
+            lines.append(("MAXED OUT!", GOOD))
+        return lines
 
     def heirloom_now(self, key, level=None):
         return data.perk_text(key, self.level(key) if level is None else level)

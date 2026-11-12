@@ -707,7 +707,6 @@ class Run:
                     guard += 1
                 if guard >= 1000:
                     p.progress = 0.0
-                self._creep_patches(plot_list, cellar, dt)
             elif p.progress >= grow:
                 p.progress = grow
                 p.mature_time += dt
@@ -726,6 +725,7 @@ class Run:
             if not cellar:
                 p.water_left = max(0.0, p.water_left - dt * dry)
                 p.water_cd = max(0.0, p.water_cd - dt)
+        self._creep_patches(plot_list, cellar, dt)
 
     def update(self, dt):
         """Step the active round, splitting at weather and Compost Heap boundaries."""
@@ -1182,13 +1182,23 @@ class Run:
     def plot_price(self):
         return int(PLOT_BASE_PRICE * PLOT_PRICE_GROWTH ** self.plots_bought)
 
+    def can_buy_plot(self):
+        return len(self.plots) < MAX_PLOTS or len(self.cellar_plots) < MAX_PLOTS
+
+    def next_plot_is_cellar(self):
+        return len(self.plots) >= MAX_PLOTS and len(self.cellar_plots) < MAX_PLOTS
+
     def buy_plot(self):
         price = self.plot_price()
-        if len(self.plots) >= MAX_PLOTS or self.money < price:
+        if not self.can_buy_plot() or self.money < price:
             return False
         self.money -= price
         self.plots_bought += 1
-        self.plots.append(Plot())
+        if len(self.plots) < MAX_PLOTS:
+            self.plots.append(Plot())
+        else:
+            self.cellar_unlocked = True
+            self.cellar_plots.append(Plot())
         return True
 
     def start_next_round(self):
@@ -1231,7 +1241,7 @@ class Run:
         run.plots_bought = int(d.get("plots_bought", 0))
         cellar = [Plot.from_dict(p) for p in d.get("cellar_plots", [])]
         if cellar:
-            run.cellar_plots = cellar[:CELLAR_PLOTS]
+            run.cellar_plots = cellar[:MAX_PLOTS]
         run.cellar_unlocked = bool(d.get("cellar_unlocked", False))
         run.relics = [r for r in d.get("relics", []) if r in data.RELICS][:run.relic_slots()]
         run.mastery = {k: int(v) for k, v in d.get("mastery", {}).items() if k in data.PLANTS}

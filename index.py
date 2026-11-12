@@ -20,14 +20,15 @@ CATEGORIES = [
     ("mutant", "MUTANTS"),
 ]
 _CATEGORY_LABELS = dict(CATEGORIES)
-_GARDEN_PLANTS = list(data.GARDEN_PLANTS)
+_GARDEN_PLANTS = [sid for sid in data.SURFACE_PLANTS if sid not in data.FARMER_PLANTS]
+_DESERT_PLANTS = [sid for sid in data.SURFACE_PLANTS if "desert" in data.PLANTS[sid]["tags"]]
 
 
 def _category_ids(cat):
     if cat == "garden":
         return list(_GARDEN_PLANTS)
     if cat == "desert":
-        return list(data.DESERT_PLANTS)
+        return list(_DESERT_PLANTS)
     if cat == "farmer":
         return list(data.FARMER_PLANTS)
     if cat == "night":
@@ -55,8 +56,12 @@ class IndexScene(Scene):
         self.next_btn = Button(132, 154, 20, 13, ">", self.next_page)
         self.mutant_rects = []
         self.base_rect = None
+        self.t = 0.0
         self.buttons = self.tab_buttons + [self.back_btn, self.prev_btn, self.next_btn]
         self.sync()
+
+    def update(self, dt):
+        self.t = getattr(self, "t", 0.0) + dt
 
     def entries(self):
         return _category_ids(self.category)
@@ -174,7 +179,13 @@ class IndexScene(Scene):
             gfx.rect(surf, border, x, y, w, h)
             gfx.rect(surf, fill, x + 1, y + 1, w - 2, h - 2)
             gfx.rect(surf, rcol, x + 1, y + 1, w - 2, 2)
-            gfx.draw_sprite(surf, sp.get("art", sp.get("base", sid)), x + (w - 24) // 2, y + 3, 2, sp.get("subs"))
+            art_name = sp.get("art", sp.get("base", sid))
+            anim = gfx.plant_anim(
+                getattr(self, "t", 0.0), index=i,
+                style=gfx.plant_anim_style(sid, sp, art_name),
+                started=is_sel, hovered=hovered,
+            )
+            gfx.draw_sprite(surf, art_name, x + (w - 24) // 2, y + 3, 2, sp.get("subs"), anim=anim)
             short = sp["name"]
             while len(short) > 1 and gfx.text_width(short) > w - 4:
                 short = short[:-1]
@@ -194,7 +205,13 @@ class IndexScene(Scene):
         px, py = 168, 26
         gfx.rect(surf, rcol, px, py, 30, 30)
         gfx.rect(surf, (28, 24, 42), px + 1, py + 1, 28, 28)
-        gfx.draw_sprite(surf, sp.get("art", sp.get("base", self.selected)), px + 3, py + 3, 2, sp.get("subs"))
+        sel_art = sp.get("art", sp.get("base", self.selected))
+        sel_anim = gfx.plant_anim(
+            getattr(self, "t", 0.0), index=0,
+            style=gfx.plant_anim_style(self.selected, sp, sel_art),
+            started=True, glow=(sp.get("base", self.selected) == "mycelium"),
+        )
+        gfx.draw_sprite(surf, sel_art, px + 3, py + 3, 2, sp.get("subs"), anim=sel_anim)
 
         name_lines = gfx.wrap(sp["name"], 102)
         for k, line in enumerate(name_lines[:2]):

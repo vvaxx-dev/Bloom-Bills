@@ -1804,11 +1804,11 @@ class MyceliumTests(unittest.TestCase):
         run._harvest(0)
         self.assertEqual(sum(1 for p in run.plots if p.species == "mycelium"), 1)
 
-        def test_a_patch_keeps_creeping_from_its_edge_after_a_harvest_spread(self):
+    def test_a_patch_keeps_creeping_from_its_edge_after_a_harvest_spread(self):
         # Regression: the roll used to belong to the harvested plot alone, so
         # once that plot had all four neighbours filled the patch stopped
         # growing even though the rest of it had room.
-            run = self.run_with("mycelium")
+        run = self.run_with("mycelium")
         run.rng.random = lambda: 0.0
         run.started = True
         for _ in range(3):

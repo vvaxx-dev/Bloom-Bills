@@ -290,7 +290,12 @@ class PacksScene(Scene):
                 x, y = 114 + i * 66, 32 - hop
                 gfx.rect(surf, col, x, y, 62, 54)
                 gfx.rect(surf, PANEL_DARK, x + 1, y + 1, 60, 52)
-                gfx.draw_sprite(surf, sid, x + 19, y + 4, 2)
+                anim = gfx.plant_anim(
+                    self.reveal_t, index=i,
+                    style=gfx.plant_anim_style(sid, sp, sid),
+                    started=True,
+                )
+                gfx.draw_sprite(surf, sid, x + 19, y + 4, 2, anim=anim)
                 gfx.draw_text(surf, sp["name"], x + 31, y + 32, TEXT, align="center")
                 gfx.draw_text(surf, sp["rarity"], x + 31, y + 41, col, align="center")
         else:

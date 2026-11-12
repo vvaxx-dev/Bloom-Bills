@@ -274,17 +274,31 @@ class PauseModal:
         banked = int(self.app.profile.get("heirlooms", 0))
         gfx.draw_text(surf, "BANK: %d" % banked, hx + hw - 5, hy + 4, ACCENT, align="right")
 
+        perk_tip = None
         for i, key in enumerate(data.PERK_ORDER):
             perk = data.PERKS[key]
+            col = perk.get("color", GOOD)
             level = run.perk(key) if run else int(self.app.profile["perks"].get(key, 0))
             ry = hy + 15 + i * 16
             owned = level > 0
-            gfx.rect(surf, (44, 38, 66), hx + 4, ry, hw - 8, 15)
-            gfx.rect(surf, GOOD if owned else (66, 58, 92), hx + 4, ry, 2, 15)
-            gfx.draw_text(surf, perk["name"], hx + 9, ry + 2, TEXT if owned else DIM)
+            row_rect = (hx + 4, ry, hw - 8, 15)
+            hovered = gfx.inside(mouse, row_rect)
+            gfx.rect(surf, (50, 43, 74) if hovered else (44, 38, 66), *row_rect)
+            gfx.rect(surf, col if owned else (66, 58, 92), hx + 4, ry, 2, 15)
+            gfx.rect(surf, col if owned else (62, 54, 86), hx + 8, ry + 1, 14, 14)
+            gfx.rect(surf, PANEL_DARK, hx + 9, ry + 2, 12, 12)
+            gfx.draw_sprite(surf, perk["art"], hx + 9, ry + 2, 1)
+            tx = hx + 25
+            gfx.draw_text(surf, perk["name"], tx, ry + 2, col if owned else DIM)
             gfx.draw_text(surf, "%d/%d" % (level, perk["max"]), hx + hw - 7, ry + 2, GOOD if owned else DIM, align="right")
             bonus = data.perk_text(key, level) if owned else "NONE OWNED"
-            gfx.draw_text(surf, bonus, hx + 9, ry + 9, ACCENT if owned else DIM)
+            gfx.draw_text(surf, bonus, tx, ry + 9, ACCENT if owned else DIM)
+            if hovered:
+                perk_tip = [
+                    ("%s (%d/%d)" % (perk["name"], level, perk["max"]), col),
+                    (perk.get("lore", perk["desc"]), TEXT),
+                    (bonus, GOOD if owned else DIM),
+                ]
 
         if run:
             gfx.draw_text(surf, "EARNED SO FAR: +%d" % run.heirloom_reward(), hx + hw // 2, hy + hh - 10, ACCENT, align="center")
@@ -293,3 +307,5 @@ class PauseModal:
             b.draw(surf, mouse)
         if self.cog_btn.hover(mouse):
             gfx.tooltip(surf, [("SETTINGS", ACCENT)], (self.cog_btn.x - 46, self.cog_btn.y + 13), 44)
+        elif perk_tip:
+            gfx.tooltip(surf, perk_tip, mouse, 168)

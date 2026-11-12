@@ -273,6 +273,11 @@ class App:
             return
         self.scene.on_click(pos)
 
+    def cursor_kind(self):
+        if not self.active_modal() and bool(getattr(self.scene, "shovel_mode", False)):
+            return "shovel"
+        return "cursor"
+
     def tick(self, dt):
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
@@ -311,7 +316,7 @@ class App:
             draw_topbar_tooltip(self.canvas, self.mouse)
 
         self.draw_toasts()
-        gfx.draw_cursor(self.canvas, self.mouse)
+        gfx.draw_cursor(self.canvas, self.mouse, self.cursor_kind())
         self.present()
 
     def main_loop(self):

@@ -6,7 +6,7 @@ from . import data, gfx
 from .formatting import fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
-from .settings import ACCENT, BAD, BG, CANVAS_H, CANVAS_W, DIM, GOOD, MAX_PLOTS, PANEL, PANEL_DARK, TEXT
+from .settings import ACCENT, BAD, BG, CANVAS_H, CANVAS_W, DIM, GOOD, MAX_PLOTS, PANEL, PANEL_DARK, PANEL_LIGHT, TEXT
 
 FORECAST_RECT = (152, 150, 98, 26)
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": TEXT}
@@ -47,11 +47,18 @@ class ShopScene(Scene):
                 b.label, b.enabled = "SELL $" + fmt(refund), True
             else:
                 b.label, b.enabled = "", False
-        if len(run.plots) >= MAX_PLOTS:
+        if not run.can_buy_plot():
             self.plot_btn.label, self.plot_btn.enabled = "PLOTS\nMAXED", False
+            self.plot_btn.color = PANEL_LIGHT
+        elif run.next_plot_is_cellar():
+            plot_price = run.plot_price()
+            self.plot_btn.label = "CELLAR (%d/%d)\n$%s" % (len(run.cellar_plots), MAX_PLOTS, fmt(plot_price))
+            self.plot_btn.color = (96, 70, 140)
+            self.plot_btn.enabled = run.money >= plot_price
         else:
             plot_price = run.plot_price()
             self.plot_btn.label = "PLOT (%d/%d)\n$%s" % (len(run.plots), MAX_PLOTS, fmt(plot_price))
+            self.plot_btn.color = PANEL_LIGHT
             self.plot_btn.enabled = run.money >= plot_price
         reroll_price = run.reroll_price()
         self.reroll_btn.label = "REROLL\n$" + fmt(reroll_price)
@@ -89,8 +96,9 @@ class ShopScene(Scene):
         self.refresh()
 
     def buy_plot(self):
+        buying_cellar = self.run.next_plot_is_cellar()
         if self.run.buy_plot():
-            self.msg = "NEW PLOT!"
+            self.msg = "NEW CELLAR PLOT!" if buying_cellar else "NEW PLOT!"
             self.app.save_run()
         self.refresh()
 
@@ -230,3 +238,20 @@ class ShopScene(Scene):
             )
         elif offer_hover is not None:
             gfx.tooltip(surf, self._relic_tooltip_lines(offer_hover), self.mouse, 110)
+        elif self.plot_btn.hover(self.mouse):
+            if not run.can_buy_plot():
+                gfx.tooltip(surf, [
+                    ("ALL PLOTS UNLOCKED", GOOD),
+                    ("GARDEN %d/%d, CELLAR %d/%d." % (len(run.plots), MAX_PLOTS, len(run.cellar_plots), MAX_PLOTS), TEXT),
+                ], self.mouse, 120)
+            elif run.next_plot_is_cellar():
+                gfx.tooltip(surf, [
+                    ("CELLAR PLOT (%d/%d)" % (len(run.cellar_plots), MAX_PLOTS), ACCENT),
+                    ("GARDEN IS FULL (%d/%d)." % (len(run.plots), MAX_PLOTS), GOOD),
+                    ("EXPANDS THE SHADED CELLAR BED.", TEXT),
+                ], self.mouse, 124)
+            else:
+                gfx.tooltip(surf, [
+                    ("GARDEN PLOT (%d/%d)" % (len(run.plots), MAX_PLOTS), ACCENT),
+                    ("UNLOCK CELLAR PLOTS AFTER %d/12." % MAX_PLOTS, DIM),
+                ], self.mouse, 124)

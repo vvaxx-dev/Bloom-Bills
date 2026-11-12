@@ -3,7 +3,7 @@
 import math
 import pygame
 
-from . import data, gfx
+from . import ambient, data, gfx
 from .formatting import clock, fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
@@ -45,10 +45,18 @@ class RoundScene(Scene):
         self.tray_right = Button(202, TRAY_Y + 3, 8, 22, ">", self.scroll_tray_right)
         self.shovel_btn = Button(
             214, TRAY_Y, 26, 28, "DIG", self.toggle_shovel,
-            color=PANEL_LIGHT, icon="shovel", icon_scale=1,
+            color=(86, 72, 102), icon="shovel", icon_scale=1, hover_subs=gfx.SHOVEL_HOVER_SUBS,
         )
+        self.ambient = ambient.GardenAmbient(self.run)
         self.buttons = [self.cellar_btn, self.start_btn, self.tray_left, self.tray_right, self.shovel_btn]
         self._sync_tray_buttons()
+
+    def _ambient(self):
+        amb = getattr(self, "ambient", None)
+        if amb is None:
+            amb = ambient.GardenAmbient(self.run)
+            self.ambient = amb
+        return amb
 
     def _sync_tray_buttons(self):
         self.tray_left.enabled = self.tray_scroll > 0
@@ -292,6 +300,7 @@ class RoundScene(Scene):
         run = self.run
         run.auto_harvest = bool(getattr(self.app, "settings_cfg", {}).get("auto_harvest", False))
         run.update(dt * self.fast)
+        self._ambient().update(dt * self.fast, run, self.in_cellar())
         show_floaters = self._floaters_enabled()
 
         for ev in run.events:
@@ -397,6 +406,10 @@ class RoundScene(Scene):
 
         hover = None
         plots = self.plant_list()
+        unlocked_rects = [plot_rect(i) for i in range(min(MAX_PLOTS, len(plots)))]
+        amb = self._ambient()
+        amb.draw_foliage(surf, run, cellar=self.in_cellar(), plot_rects=())
+
         for i in range(MAX_PLOTS):
             r = plot_rect(i)
             x, y, w, h = r
@@ -407,6 +420,25 @@ class RoundScene(Scene):
             self.draw_plot(plots, surf, i, x, y, w, h)
             if gfx.inside(mouse, r):
                 hover = i
+
+        # Seasonal plot-rim accents (snow caps, blossoms, fallen leaves), crawling critters, and weather motes.
+        if unlocked_rects and not self.in_cellar():
+            s_idx = data.season_index(run.round)
+            for idx, (px, py, pw, ph) in enumerate(unlocked_rects):
+                if s_idx == 0 and idx % 2 == 0:
+                    surf.fill((88, 170, 72), (px + 2, py + ph - 2, 2, 2))
+                    surf.fill((240, 130, 170), (px + 3, py + ph - 3, 1, 1))
+                elif s_idx == 1 and idx % 2 == 1:
+                    surf.fill((88, 170, 72), (px + pw - 4, py + ph - 3, 2, 3))
+                    surf.fill((150, 210, 100), (px + pw - 3, py + ph - 4, 1, 2))
+                elif s_idx == 2 and idx % 2 == 0:
+                    surf.fill((240, 140, 50), (px + 2, py + ph - 2, 3, 1))
+                    surf.fill((214, 64, 56), (px + pw - 5, py + ph - 2, 2, 1))
+                elif s_idx == 3:
+                    surf.fill((225, 236, 248), (px + 2, py, 9, 1))
+                    surf.fill((225, 236, 248), (px + pw - 11, py, 8, 1))
+        amb.draw_foreground(surf, run, cellar=self.in_cellar())
+
         if hover is not None:
             x, y, w, h = plot_rect(hover)
             hcol = BAD if (self.shovel_mode and plots[hover].species) else ACCENT
@@ -457,7 +489,7 @@ class RoundScene(Scene):
 
         self.shovel_btn.active = self.shovel_mode
         self.shovel_btn.border_color = BAD
-        self.shovel_btn.color = (140, 62, 58) if self.shovel_mode else PANEL_LIGHT
+        self.shovel_btn.color = (148, 62, 58) if self.shovel_mode else (86, 72, 102)
         self.shovel_btn.draw(surf, mouse)
 
         self.cellar_btn.label = "CELLAR (TAB)" if run.cellar_unlocked else "DIG $%d" % CELLAR_PRICE
@@ -488,9 +520,9 @@ class RoundScene(Scene):
             gfx.tooltip(surf, lines, mouse, 102)
         elif self.shovel_btn.hover(mouse):
             gfx.tooltip(surf, [
-                ("SHOVEL (X)", ACCENT),
-                ("REMOVE A PLANTED CROP FROM A PLOT.", TEXT),
-            ], mouse, 104)
+                ("SHOVEL ACTIVE (X)" if self.shovel_mode else "SHOVEL (X)", BAD if self.shovel_mode else ACCENT),
+                ("CLICK A PLANTED CROP TO DIG IT UP.", TEXT),
+            ], mouse, 108)
         elif hover is not None and plots[hover].species:
             self.plot_tooltip(surf, hover)
         elif seed_hover is not None:
@@ -532,13 +564,23 @@ class RoundScene(Scene):
         if run.is_chosen(i, cellar):
             gfx.rect(surf, ACCENT, x, y, w, 2)
         frac = min(1.0, p.progress / sp["grow"])
-        sway = 1 if (run.started and math.sin(self.t * 3 + i) > 0.6) else 0
         # Some mutants (Five-Leaf Clover) have entirely different mature art.
         if frac >= 0.75 and sp.get("art"):
             sprite_name, subs = sp["art"], sp.get("subs")
         else:
             sprite_name, subs = gfx.plant_sprite_name(sp.get("base", p.species), frac), sp.get("subs")
-        gfx.draw_sprite(surf, sprite_name, x + 16 + sway, y + 1, 2, subs)
+
+        twist_id = "none" if (cellar or getattr(run, "weather_cleared", False)) else run.twist_id()
+        wind = 1.4 if twist_id == "gale" else (0.25 if not cellar else 0.0)
+        hovered = gfx.inside(self.mouse, (x, y, w, h))
+        ripe = p.progress >= sp["grow"]
+        style = gfx.plant_anim_style(p.species, sp, sprite_name)
+        glow = sp.get("base", p.species) == "mycelium"
+        anim = gfx.plant_anim(
+            self.t, index=i, style=style, started=run.started, ripe=ripe,
+            speed=run.plot_growth_speed(i, cellar), hovered=hovered, wind=wind, glow=glow,
+        )
+        gfx.draw_sprite(surf, sprite_name, x + 16, y + 1, 2, subs, anim=anim)
         gfx.bar(surf, x + 4, y + 28, w - 8, 3, frac, sp["color"])
         if sp.get("spread") and run.creep_grown.get(cellar, 0) < run.creep_cap(plots, i):
             if run._can_creep(plots, i, cellar) or p.creep_cd > 0:
