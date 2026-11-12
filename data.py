@@ -464,8 +464,9 @@ TWISTS = {
     "short":         {"name": "Short Days",    "desc": "The round is 20 seconds shorter.",   "growth": 1.0,  "yield": 1.0,  "time": -20, "ban": None,     "blight": False, "tone": "bad"},
     "frost":         {"name": "Frost",         "desc": "Desert plants cannot be planted.",   "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": "desert", "blight": False, "tone": "bad"},
     "blight":        {"name": "Blight",        "desc": "A random plant withers halfway.",    "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": True,  "tone": "bad"},
-    "crow_swarm":    {"name": "Crazy Crows!",  "desc": "Every 6s the flock eats a random plant - one at a time, all round.",
-                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "crow": 6, "crow_count": 1, "tone": "bad",
+    "crow_swarm":    {"name": "Crazy Crows!",  "desc": "Every 6s the flock eats a random plant - one at a time, all round. Mutants are 20% less likely to be picked.",
+                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "crow": 6, "crow_count": 1,
+                      "crow_mutant_weight": 0.8, "tone": "bad",
                       "short": "THE FLOCK EATS A PLANT EVERY 6S."},
     "hailstorm":     {"name": "Hailstorm",     "desc": "Every 7s hail batters the farm, knocking half of every plant's growth off.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "hail": 7, "tone": "bad",
@@ -496,11 +497,18 @@ BOSS_TWISTS = [
     "root_rot", "heatwave", "eternal_night", "gale",
 ]
 
+# `bar` and `trim` tint the run topbar for the season: a dark, legible
+# background plus the one-pixel rule under it. They deliberately stay close in
+# brightness so the cash / timer / bill text keeps its contrast all year.
 SEASONS = [
-    {"name": "Spring", "short": "SPR", "art": "season_spring", "color": (130, 210, 120), "desc": "THE GARDEN WAKES UP."},
-    {"name": "Summer", "short": "SUM", "art": "season_summer", "color": (250, 210, 70),  "desc": "LONG DAYS, THIRSTY SOIL."},
-    {"name": "Autumn", "short": "AUT", "art": "season_autumn", "color": (240, 140, 50),  "desc": "THE LAST BIG HARVEST."},
-    {"name": "Winter", "short": "WIN", "art": "season_winter", "color": (150, 190, 250), "desc": "SHORT DAYS, COLD GROUND."},
+    {"name": "Spring", "short": "SPR", "art": "season_spring", "color": (130, 210, 120), "desc": "THE GARDEN WAKES UP.",
+     "bar": (34, 52, 40), "trim": (96, 170, 96)},
+    {"name": "Summer", "short": "SUM", "art": "season_summer", "color": (250, 210, 70),  "desc": "LONG DAYS, THIRSTY SOIL.",
+     "bar": (56, 46, 26), "trim": (232, 176, 56)},
+    {"name": "Autumn", "short": "AUT", "art": "season_autumn", "color": (240, 140, 50),  "desc": "THE LAST BIG HARVEST.",
+     "bar": (56, 38, 28), "trim": (222, 116, 54)},
+    {"name": "Winter", "short": "WIN", "art": "season_winter", "color": (150, 190, 250), "desc": "SHORT DAYS, COLD GROUND.",
+     "bar": (30, 40, 56), "trim": (140, 180, 240)},
 ]
 
 PERKS = {

@@ -35,6 +35,11 @@ RARE_RELIC_PRICE_GROWTH = 1.35
 COMPOST_WINDOW = 15.0
 MUTATION_CHANCE = 0.1
 
+# Selling unplanted seeds: a seed sells for a fraction of the value the grown
+# plant would fetch at the end of a round, so dumping a whole shelf is pocket
+# money, not a strategy that beats planting.
+SEED_SELL_SHARE = 0.25
+
 # Mycelium: every harvest rolls `spread` for the patch to push into an empty
 # orthogonal neighbour, and each mycelium also fills a creep meter that books
 # one guaranteed expansion every MYCELIUM_CREEP_TIME seconds of round. The

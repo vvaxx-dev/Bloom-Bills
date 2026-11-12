@@ -535,3 +535,238 @@ class GardenIndexTests(unittest.TestCase):
         scene.set_subsection("heirlooms")
         self.assertEqual(scene.entry_type, "heirlooms")
         self.assertEqual(scene.entries(), data.PERK_ORDER)
+
+
+class SeasonTopbarTests(unittest.TestCase):
+    """The run topbar is tinted by the season the round falls in."""
+
+    def test_topbar_is_tinted_per_season(self):
+        import pygame
+        from .scene import draw_topbar
+
+        surf = pygame.Surface((320, 180))
+        fills, trims = [], []
+        for rnd in (1, 10, 19, 28):
+            run = Run(seed=1)
+            run.round = rnd
+            draw_topbar(surf, run)
+            fills.append(tuple(surf.get_at((2, 2)))[:3])
+            trims.append(tuple(surf.get_at((160, 13)))[:3])
+        self.assertEqual(len(set(fills)), 4)
+        self.assertEqual(len(set(trims)), 4)
+        for rnd, fill, trim in zip((1, 10, 19, 28), fills, trims):
+            season = data.season(rnd)
+            self.assertEqual(fill, season["bar"])
+            self.assertEqual(trim, season["trim"])
+
+    def test_every_season_declares_a_dark_bar_for_light_text(self):
+        for season in data.SEASONS:
+            with self.subTest(season=season["name"]):
+                bar, trim = season["bar"], season["trim"]
+                self.assertLess(max(bar), 90)          # dark enough behind TEXT ink
+                self.assertLess(sum(bar), 180)
+                self.assertGreater(max(trim), 80)      # the rule still reads as a colour
+                self.assertNotEqual(bar, trim)
+
+    def test_topbar_fill_changes_when_the_season_turns_over(self):
+        import pygame
+        from .scene import draw_topbar
+
+        surf = pygame.Surface((320, 180))
+        run = Run(seed=1)
+        run.round = 9
+        draw_topbar(surf, run)
+        last_spring = tuple(surf.get_at((2, 2)))[:3]
+        run.round = 10
+        draw_topbar(surf, run)
+        self.assertNotEqual(tuple(surf.get_at((2, 2)))[:3], last_spring)
+
+
+class CrowWeightingTests(unittest.TestCase):
+    """Crazy Crows roll a weighted victim: mutants are a less appealing meal."""
+
+    def test_twist_carries_the_mutant_weight(self):
+        twist = data.TWISTS["crow_swarm"]
+        self.assertAlmostEqual(twist["crow_mutant_weight"], 0.8)
+        self.assertIn("mutant", twist["desc"].lower())
+
+    def test_mutants_are_picked_less_often_than_plain_crops(self):
+        from collections import Counter
+
+        run = Run(seed=7)
+        run.round = 9
+        run.begin_round()
+        run.plots = [Plot("sunflower_gold"), Plot("daisy"), Plot("daisy")]
+        picks = Counter(run.crow_pick([0, 1, 2]) for _ in range(4000))
+        mutant_share = picks[0] / 4000
+        self.assertLess(mutant_share, 1 / 3)
+        self.assertAlmostEqual(mutant_share, 0.8 / 2.8, delta=0.03)
+        self.assertGreater(picks[1] + picks[2], picks[0])
+
+    def test_a_zero_weight_spares_mutants_entirely(self):
+        run = Run(seed=7)
+        run.round = 9
+        run.begin_round()
+        run.plots = [Plot("sunflower_gold"), Plot("daisy")]
+        twist = dict(data.TWISTS["crow_swarm"], crow_mutant_weight=0.0)
+        self.assertEqual({run.crow_pick([0, 1], twist) for _ in range(200)}, {1})
+
+    def test_crow_still_eats_a_mixed_garden_all_round(self):
+        run = Run(seed=3)
+        run.round = 9
+        run.begin_round()
+        run.started = True
+        run.time_total = run.time_left = 24.0
+        run.plots = [Plot("sunflower_gold")] + [Plot("daisy") for _ in range(7)]
+        eaten = []
+        for _ in range(24):
+            run.update(1.0)
+            eaten.extend(ev["name"] for ev in run.events if ev["kind"] == "eaten")
+            run.events.clear()
+            run.plots = [Plot("sunflower_gold")] + [Plot("daisy") for _ in range(7)]
+        self.assertEqual(len(eaten), 4)          # one every 6s
+        self.assertIn("Daisy", eaten)
+
+
+class SeedSellingTests(unittest.TestCase):
+    """Unplanted seeds can be sold back for a slice of the plant's sale value."""
+
+    def make_run(self):
+        run = Run(seed=1)
+        run.seeds = {"daisy": 3, "orchid": 2}
+        return run
+
+    def test_price_tracks_the_plants_end_of_round_sale_value(self):
+        run = self.make_run()
+        self.assertEqual(run.seed_price("daisy"), max(1, int(data.PLANTS["daisy"]["sell"] * 0.25)))
+        self.assertEqual(run.seed_price("orchid"), int(data.PLANTS["orchid"]["sell"] * 0.25))
+        self.assertGreater(run.seed_price("orchid"), run.seed_price("daisy"))
+        self.assertGreaterEqual(run.seed_price("daisy"), 1)
+        self.assertEqual(run.seed_price("not_a_plant"), 0)
+
+    def test_sell_one_then_sell_the_rest(self):
+        run = self.make_run()
+        unit = run.seed_price("daisy")
+        money = run.money
+        ok, msg, refund = run.sell_seed("daisy")
+        self.assertTrue(ok)
+        self.assertEqual(refund, unit)
+        self.assertEqual(run.seeds["daisy"], 2)
+        self.assertEqual(run.money, money + unit)
+        self.assertIn("Daisy", msg)
+
+        ok, _msg, refund = run.sell_seed("daisy", 99)      # clamped to what you own
+        self.assertTrue(ok)
+        self.assertEqual(refund, unit * 2)
+        self.assertNotIn("daisy", run.seeds)
+        self.assertEqual(run.money, money + unit * 3)
+
+    def test_cannot_sell_seeds_you_do_not_own(self):
+        run = self.make_run()
+        money = run.money
+        ok, _, refund = run.sell_seed("tomato")
+        self.assertFalse(ok)
+        self.assertEqual(refund, 0)
+        ok, _, refund = run.sell_seed("not_a_plant")
+        self.assertFalse(ok)
+        self.assertEqual(run.money, money)
+
+    def test_a_seed_is_never_worth_more_than_growing_it(self):
+        run = self.make_run()
+        for sid, sp in data.PLANTS.items():
+            with self.subTest(plant=sid):
+                self.assertLessEqual(run.seed_price(sid), sp["sell"])
+                self.assertGreaterEqual(run.seed_price(sid), 1)
+
+    def test_selling_does_not_touch_planted_crops(self):
+        run = self.make_run()
+        run.begin_round()
+        run.plots[0] = Plot("daisy")
+        run.sell_seed("daisy", 3)
+        self.assertEqual(run.plots[0].species, "daisy")
+
+
+class SeedSellSceneTests(unittest.TestCase):
+    """The round screen's SELL SEED button opens a one/all dropdown."""
+
+    def make_scene(self):
+        from types import SimpleNamespace
+        from importlib import import_module
+
+        toasts = []
+        app = SimpleNamespace(
+            run=Run(seed=1), mouse=(-1, -1),
+            toast=lambda text, *a: toasts.append(text),
+            save_run=lambda: None,
+            toasts=toasts,
+        )
+        RoundScene = import_module(".round", __package__).RoundScene
+        scene = RoundScene(app)
+        scene.on_enter()
+        return scene, app
+
+    def test_button_follows_the_highlighted_seed(self):
+        scene, _app = self.make_scene()
+        run = scene.run
+        run.seeds["daisy"] = 3
+        scene.selected = "daisy"
+        scene._sync_seed_sell()
+        self.assertTrue(scene.seed_sell_btn.enabled)
+        self.assertIn("$" + str(run.seed_price("daisy")), scene.seed_sell_btn.label)
+
+        scene.selected = "tomato"          # none owned
+        scene._sync_seed_sell()
+        self.assertFalse(scene.seed_sell_btn.enabled)
+        self.assertEqual(scene.seed_sell_btn.label, "SELL SEED")
+
+    def test_dropdown_sells_one_or_all(self):
+        scene, app = self.make_scene()
+        run = scene.run
+        run.seeds = {"daisy": 3}
+        money = run.money
+        unit = run.seed_price("daisy")
+
+        scene.selected = "daisy"
+        scene._sync_seed_sell()
+        scene.toggle_seed_sell()
+        self.assertTrue(scene.seed_sell_open)
+        x, y, w, h = scene.seed_sell_row_rect(0)
+        scene.on_click((x + 1, y + 1))
+        self.assertFalse(scene.seed_sell_open)
+        self.assertEqual(run.seeds["daisy"], 2)
+        self.assertEqual(run.money, money + unit)
+
+        scene._sync_seed_sell()
+        scene.toggle_seed_sell()
+        x, y, w, h = scene.seed_sell_row_rect(1)
+        scene.on_click((x + 1, y + 1))
+        self.assertNotIn("daisy", run.seeds)
+        self.assertEqual(run.money, money + unit * 3)
+        self.assertTrue(app.toasts)
+
+    def test_menu_closes_on_escape_and_board_switch(self):
+        scene, _app = self.make_scene()
+        scene.run.seeds["daisy"] = 2
+        scene.selected = "daisy"
+        scene.toggle_seed_sell()
+        self.assertTrue(scene.seed_sell_open)
+        scene.on_key(0x0000001b)          # ESC
+        self.assertFalse(scene.seed_sell_open)
+        scene.toggle_seed_sell()
+        scene.cellar_click()
+        self.assertFalse(scene.seed_sell_open)
+
+    def test_sell_button_paints_the_dropdown(self):
+        import pygame
+        from .round import SEED_SELL_MENU
+
+        scene, _app = self.make_scene()
+        scene.run.seeds["daisy"] = 2
+        scene.selected = "daisy"
+        surf = pygame.Surface((320, 180))
+        scene.toggle_seed_sell()
+        scene.draw(surf)
+        x, y, w, h = SEED_SELL_MENU
+        inside = {tuple(surf.get_at((px, py)))[:3]
+                  for py in range(y + 3, y + h - 3) for px in range(x + 2, x + w - 2, 7)}
+        self.assertGreater(len(inside), 1)

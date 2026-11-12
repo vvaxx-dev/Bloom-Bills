@@ -4,7 +4,7 @@ You have eight bills to pay and a garden to pay them with.
 
 Rounds are 45 seconds long. When the clock hits zero everything in the ground is sold off and the garden is emptied, so each round is planted from scratch with whatever seeds you still have. Every third round the bill collector turns up. The bills go 300, 1,500, 7,500, 37,500 ... and the eighth one is **$23,437,500**. Pay all eight and the farm is yours. Miss one and the run is over, though you keep whatever heirlooms you earned, which make the next run start a little less hopeless.
 
-Every ninth round a new **season** starts - Spring, Summer, Autumn, Winter, then round again. Each season has its own pixel-art emblem in the topbar. The plot lanes stay clean instead of filling with decorative grass; occasional leaves cross the garden in Autumn and sparse snow falls in Winter. Seasons are still cosmetic, while the weather table is what moves your numbers.
+Every ninth round a new **season** starts - Spring, Summer, Autumn, Winter, then round again. Each season has its own pixel-art emblem in the topbar, and the bar itself is painted to match: mossy green through Spring, sun-baked gold through Summer, rust orange through Autumn and cold blue through Winter, with the same light ink on top all year. The plot lanes stay clean instead of filling with decorative grass; occasional leaves cross the garden in Autumn and sparse snow falls in Winter. Seasons are still cosmetic, while the weather table is what moves your numbers.
 
 It runs in a 320x180 window that scales up cleanly, and it's about ten thousand lines of Python with one dependency.
 
@@ -18,6 +18,10 @@ Click a mature plant to collect its harvest and start its next growth cycle; you
 
 Seeds come from packs, and the good packs cost money, however there's still a chance to get a rarer pack each time.
 
+Unplanted seeds can be sold back. **SELL SEED** under the seed count sells whatever is highlighted in the tray, and its two-row dropdown asks whether to dump one or the whole stack. The price is deliberately low - a quarter of what the grown plant would fetch at the end of a round, so a Daisy seed is $1 and a Golden Orchid seed is $125 - which makes it a way to turn a dead shelf into part of a plot, not a way to farm the shop.
+
+You can highlight any seed you own, including one this board or this weather can't grow, so a frost-banned desert seed can still be turned into cash.
+
 ## The bill
 
 Every third round, the collector arrives. The bill is five times the last one. You can refuse to pay; that just ends the run on the spot.
@@ -25,7 +29,7 @@ Every third round, the collector arrives. The bill is five times the last one. Y
 Besides the bill, the things that make rounds go sideways:
 
 - **Weather twists.** Drought slows everything 35%. Locusts cut harvest value 40%. Frost bans desert plants. Rain waters the whole farm for free. Eclipse lets nocturnal plants grow on the surface and makes sun-lovers sulk. Rounds between bills are mostly fair weather, with the odd lucky breeze.
-- **Boss rounds**, every ninth. The eight-boss roster rotates through Crazy Crows, Hailstorm, the Autumn-only Garden Ghost, Queen Bee, Root Rot, Heatwave, Eternal Night and Gale. The Ghost swaps two plants and restarts their growth every five seconds; Queen Bee makes every non-flowering surface plant dormant.
+- **Boss rounds**, every ninth. The eight-boss roster rotates through Crazy Crows, Hailstorm, the Autumn-only Garden Ghost, Queen Bee, Root Rot, Heatwave, Eternal Night and Gale. The Ghost swaps two plants and restarts their growth every five seconds; Queen Bee makes every non-flowering surface plant dormant. The crows pick their victim at random, except that a mutated plant is a 20% less appealing meal than a plain one.
 - **Mutations.** A plant that keeps surviving harvests starts rolling for a mutation. Ten percent chance, and what comes out is worth two to three times the original. A Golden Sunflower sells for 3x and grows half as fast.
 - **Cursed plants.** Devil's Ivy pays well and charges $60 upkeep a round. Widow's Bloom is jealous of its neighbours.
 - **The cellar.** $250 to dig out. Four plots, nocturnal plants only, grows without any watering at all, but at three quarters speed. It's the one part of the farm that doesn't need you.
@@ -96,7 +100,7 @@ To look at sprites without starting the game, run `python3 preview_sprites.py da
 PYTHONPATH=.. python3 -m unittest Bloom-Bills.test_balance
 ```
 
-Over a hundred tests on the economy, sprites, UI, and mechanics: relic and pack prices climbing (and staying buyable), plot prices tripling, heirloom costs and payouts, the bill ladder, the win condition, seasons, the Farmer Pack, the Mutagen relic, sprite coverage across all plants/mutants/relics, and one test per weather twist proving it actually moves a number.
+Over a hundred tests on the economy, sprites, UI, and mechanics: relic and pack prices climbing (and staying buyable), plot prices tripling, heirloom costs and payouts, the bill ladder, the win condition, seasons and their topbar tints, the Farmer Pack, the Mutagen relic, crow victim weighting, seed resale, sprite coverage across all plants/mutants/relics, and one test per weather twist proving it actually moves a number.
 
 ## Where it's at
 

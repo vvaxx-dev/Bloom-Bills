@@ -7,6 +7,11 @@ from .settings import ACCENT, BAD, CANVAS_W, DIM, PANEL, PANEL_DARK, PANEL_LIGHT
 TOPBAR_PAUSE_RECT = (296, 0, 24, 14)
 
 
+def _lift(color, amount):
+    """Brighten a colour by `amount` per channel, for chips drawn over a tinted bar."""
+    return tuple(min(255, c + amount) for c in color)
+
+
 def draw_topbar_tooltip(surf, mouse):
     if gfx.inside(mouse, TOPBAR_PAUSE_RECT):
         gfx.tooltip(surf, [("PAUSE", ACCENT)], mouse, 72)
@@ -54,14 +59,19 @@ class Scene:
 
 
 def draw_topbar(surf, run, label=None, timer=None, mouse=None):
-    """Draw the 14px status bar, compacting the centered bill readout if cash or timer grows wide."""
-    gfx.rect(surf, PANEL_DARK, 0, 0, CANVAS_W, 14)
-    gfx.rect(surf, PANEL, 0, 13, CANVAS_W, 1)
+    """Draw the 14px status bar, compacting the centered bill readout if cash or timer grows wide.
+
+    The bar's fill and bottom rule are tinted by the run's season, so spring is
+    a mossy green, summer a sun-baked gold, autumn a rust orange and winter a
+    cold blue, while the text keeps the same light ink in every season.
+    """
+    season = run.season()
+    gfx.rect(surf, season.get("bar", PANEL_DARK), 0, 0, CANVAS_W, 14)
+    gfx.rect(surf, season.get("trim", PANEL), 0, 13, CANVAS_W, 1)
     top = 2
     left = label or ("ROUND %d" % run.round)
     money = "$" + fmt(run.money)
     left_w = gfx.draw_text(surf, left, 5, top, TEXT)
-    season = run.season()
     season_x = 5 + left_w + 3
     season_art = season.get("art")
     art_w = 0
@@ -95,8 +105,8 @@ def draw_topbar(surf, run, label=None, timer=None, mouse=None):
     gfx.draw_text(surf, text, center_x, top, color, align="center")
 
     hover = mouse is not None and gfx.inside(mouse, TOPBAR_PAUSE_RECT)
-    border = ACCENT if hover else PANEL_LIGHT
-    fill = PANEL_LIGHT if hover else PANEL
+    border = ACCENT if hover else season.get("trim", PANEL_LIGHT)
+    fill = PANEL_LIGHT if hover else _lift(season.get("bar", PANEL), 16)
     bar_col = ACCENT if hover else TEXT
     gfx.rect(surf, border, 300, 2, 16, 10)
     gfx.rect(surf, fill, 301, 3, 14, 8)

@@ -16,7 +16,7 @@ try:
         MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
         QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
-        REROLL_BASE_PRICE, ROUND_TIME, SEEDS_PER_PACK, START_MONEY,
+        REROLL_BASE_PRICE, ROUND_TIME, SEED_SELL_SHARE, SEEDS_PER_PACK, START_MONEY,
         START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WIN_QUOTAS,
     )
 except ImportError:
@@ -27,7 +27,7 @@ except ImportError:
         MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
         QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
-        REROLL_BASE_PRICE, ROUND_TIME, SEEDS_PER_PACK, START_MONEY,
+        REROLL_BASE_PRICE, ROUND_TIME, SEED_SELL_SHARE, SEEDS_PER_PACK, START_MONEY,
         START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WIN_QUOTAS,
     )
 
@@ -824,6 +824,22 @@ class Run:
             self.compost_announced = True
             self._emit("compost", window=int(window))
 
+    def crow_pick(self, alive, twist=None):
+        """Pick the plot the flock eats next, weighted by how tasty it looks.
+
+        Every plant in `alive` has an equal chance except mutants, which the
+        twist's `crow_mutant_weight` (0.8) marks as a less appealing meal, so a
+        hard-won Golden Sunflower survives slightly more often than a Daisy in
+        the same garden.
+        """
+        tw = self.twist() if twist is None else twist
+        mutant_weight = float(tw.get("crow_mutant_weight", 1.0))
+        weights = [
+            mutant_weight if data.PLANTS[self.plots[i].species].get("mutant") else 1.0
+            for i in alive
+        ]
+        return self.rng.choices(alive, weights=weights)[0]
+
     def _step_round(self, dt):
         if dt <= 0 or self.finished:
             return
@@ -860,7 +876,7 @@ class Run:
                     alive = [i for i, p in enumerate(self.plots) if p.species]
                     if not alive:
                         break
-                    victim = self.rng.choice(alive)
+                    victim = self.crow_pick(alive, tw)
                     eaten = data.PLANTS[self.plots[victim].species]["name"]
                     self.plots[victim].clear()
                     self._emit("eaten", plot=victim, cellar=False, name=eaten)
@@ -1247,6 +1263,35 @@ class Run:
         refund = max(1, int(self.relic_price(rid) * 0.5))
         self.money += refund
         return True, "Sold %s for $%d!" % (data.RELICS[rid]["name"], refund), refund
+
+    def seed_price(self, species):
+        """Cash one unplanted seed fetches: a slice of the grown plant's sale value.
+
+        End-of-round sales pay `sell` for a fully grown plant, so a seed is worth
+        SEED_SELL_SHARE of that - never less than $1, so even a Daisy seed has a
+        price on its head.
+        """
+        sp = data.PLANTS.get(species)
+        if not sp:
+            return 0
+        return max(1, int(sp["sell"] * SEED_SELL_SHARE))
+
+    def sell_seed(self, species, count=1):
+        """Sell `count` seeds of one species; returns `(ok, message, refund)`."""
+        owned = self.seeds.get(species, 0)
+        if species not in data.PLANTS or owned <= 0:
+            return False, "No seeds to sell.", 0
+        count = max(1, min(int(count), owned))
+        unit = self.seed_price(species)
+        refund = unit * count
+        left = owned - count
+        if left > 0:
+            self.seeds[species] = left
+        else:
+            self.seeds.pop(species, None)
+        self.money += refund
+        name = data.PLANTS[species]["name"]
+        return True, "Sold %d %s seed%s for $%d!" % (count, name, "" if count == 1 else "s", refund), refund
 
     def plot_price(self):
         return int(PLOT_BASE_PRICE * PLOT_PRICE_GROWTH ** self.plots_bought)
