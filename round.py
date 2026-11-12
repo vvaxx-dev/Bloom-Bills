@@ -335,6 +335,18 @@ class RoundScene(Scene):
                 if show_floaters:
                     self.floaters.append([fx, fy, "ROT!", BAD, 0.0])
                 self.app.toast("%s ROTTED!" % ev.get("name", "A PLANT").upper(), 2.0)
+            elif kind == "ghost_swap":
+                other = ev.get("other_plot", -1)
+                if show_floaters:
+                    self.floaters.append([fx, fy, "SWAPPED!", (186, 134, 244), 0.0])
+                    if 0 <= other < MAX_PLOTS:
+                        ox, oy, ow, _oh = plot_rect(other)
+                        self.floaters.append([ox + ow // 2, oy + 8, "SWAPPED!", (186, 134, 244), 0.0])
+                self.app.toast(
+                    "THE GHOST SWAPPED %s AND %s!"
+                    % (ev.get("first_name", "TWO PLANTS").upper(), ev.get("second_name", "").upper()),
+                    2.0,
+                )
             elif kind == "eaten":
                 if show_floaters:
                     self.floaters.append([fx, fy, "EATEN!", BAD, 0.0])
@@ -406,7 +418,6 @@ class RoundScene(Scene):
 
         hover = None
         plots = self.plant_list()
-        unlocked_rects = [plot_rect(i) for i in range(min(MAX_PLOTS, len(plots)))]
         amb = self._ambient()
         amb.draw_foliage(surf, run, cellar=self.in_cellar(), plot_rects=())
 
@@ -421,22 +432,8 @@ class RoundScene(Scene):
             if gfx.inside(mouse, r):
                 hover = i
 
-        # Seasonal plot-rim accents (snow caps, blossoms, fallen leaves), crawling critters, and weather motes.
-        if unlocked_rects and not self.in_cellar():
-            s_idx = data.season_index(run.round)
-            for idx, (px, py, pw, ph) in enumerate(unlocked_rects):
-                if s_idx == 0 and idx % 2 == 0:
-                    surf.fill((88, 170, 72), (px + 2, py + ph - 2, 2, 2))
-                    surf.fill((240, 130, 170), (px + 3, py + ph - 3, 1, 1))
-                elif s_idx == 1 and idx % 2 == 1:
-                    surf.fill((88, 170, 72), (px + pw - 4, py + ph - 3, 2, 3))
-                    surf.fill((150, 210, 100), (px + pw - 3, py + ph - 4, 1, 2))
-                elif s_idx == 2 and idx % 2 == 0:
-                    surf.fill((240, 140, 50), (px + 2, py + ph - 2, 3, 1))
-                    surf.fill((214, 64, 56), (px + pw - 5, py + ph - 2, 2, 1))
-                elif s_idx == 3:
-                    surf.fill((225, 236, 248), (px + 2, py, 9, 1))
-                    surf.fill((225, 236, 248), (px + pw - 11, py, 8, 1))
+        # Keep the soil lanes clean; seasonal art lives in the topbar while
+        # sparse autumn leaves and winter snow pass over the garden itself.
         amb.draw_foreground(surf, run, cellar=self.in_cellar())
 
         if hover is not None:
@@ -574,10 +571,11 @@ class RoundScene(Scene):
         wind = 1.4 if twist_id == "gale" else (0.25 if not cellar else 0.0)
         hovered = gfx.inside(self.mouse, (x, y, w, h))
         ripe = p.progress >= sp["grow"]
+        disabled = run.plant_disabled(i, cellar)
         style = gfx.plant_anim_style(p.species, sp, sprite_name)
-        glow = sp.get("base", p.species) == "mycelium"
+        glow = sp.get("base", p.species) == "mycelium" and not disabled
         anim = gfx.plant_anim(
-            self.t, index=i, style=style, started=run.started, ripe=ripe,
+            self.t, index=i, style=style, started=run.started and not disabled, ripe=ripe,
             speed=run.plot_growth_speed(i, cellar), hovered=hovered, wind=wind, glow=glow,
         )
         gfx.draw_sprite(surf, sprite_name, x + 16, y + 1, 2, subs, anim=anim)
@@ -589,7 +587,10 @@ class RoundScene(Scene):
                 creep_frac = min(1.0, p.creep_cd / MYCELIUM_CREEP_TIME)
                 creep_col = (255, 230, 120) if creep_frac >= 1.0 else (176, 138, 62)
                 gfx.bar(surf, x + 4, y + 25, w - 8, 2, creep_frac, creep_col, back=(40, 34, 28))
-        if p.progress >= sp["grow"]:
+        if disabled:
+            gfx.rect(surf, (64, 52, 78), x + 1, y + h - 5, w - 2, 4)
+            gfx.draw_text(surf, "DORMANT", x + 2, y + 2, (186, 134, 244))
+        elif p.progress >= sp["grow"]:
             gfx.draw_text(surf, "READY", x + 2, y + 2, GOOD)
         if self.shovel_mode and gfx.inside(self.mouse, (x, y, w, h)):
             gfx.rect(surf, (120, 36, 36), x + 8, y + 11, w - 16, 11)
@@ -611,7 +612,9 @@ class RoundScene(Scene):
         color = mutant_col if sp.get("mutant") else data.RARITY_COLORS[sp["rarity"]]
 
         lines = [(sp["name"], color)]
-        if p.progress >= sp["grow"]:
+        if run.plant_disabled(i, cellar):
+            lines.append(("QUEEN BEE: DORMANT (NO HONEY)", (186, 134, 244)))
+        elif p.progress >= sp["grow"]:
             lines.append(("READY: CLICK TO HARVEST", GOOD))
         if sp.get("mature_bonus"):
             lines.append(("MATURE %dS: +$%d BASE" % (int(p.mature_time), int(p.mature_time) * sp["mature_bonus"]), WATER))

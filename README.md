@@ -4,7 +4,7 @@ You have eight bills to pay and a garden to pay them with.
 
 Rounds are 45 seconds long. When the clock hits zero everything in the ground is sold off and the garden is emptied, so each round is planted from scratch with whatever seeds you still have. Every third round the bill collector turns up. The bills go 300, 1,500, 7,500, 37,500 ... and the eighth one is **$23,437,500**. Pay all eight and the farm is yours. Miss one and the run is over, though you keep whatever heirlooms you earned, which make the next run start a little less hopeless.
 
-Every ninth round a new **season** starts - Spring, Summer, Autumn, Winter, then round again. A season is a name and a colour on the topbar, nothing more; the weather table is still the only thing that moves your numbers.
+Every ninth round a new **season** starts - Spring, Summer, Autumn, Winter, then round again. Each season has its own pixel-art emblem in the topbar. The plot lanes stay clean instead of filling with decorative grass; occasional leaves cross the garden in Autumn and sparse snow falls in Winter. Seasons are still cosmetic, while the weather table is what moves your numbers.
 
 It runs in a 320x180 window that scales up cleanly, and it's about ten thousand lines of Python with one dependency.
 
@@ -25,7 +25,7 @@ Every third round, the collector arrives. The bill is five times the last one. Y
 Besides the bill, the things that make rounds go sideways:
 
 - **Weather twists.** Drought slows everything 35%. Locusts cut harvest value 40%. Frost bans desert plants. Rain waters the whole farm for free. Eclipse lets nocturnal plants grow on the surface and makes sun-lovers sulk. Rounds between bills are mostly fair weather, with the odd lucky breeze.
-- **Boss rounds**, every ninth. The roster rotates through Crazy Crows (one plant every six seconds, all round), Hailstorm, Root Rot, Heatwave, Eternal Night and Gale.
+- **Boss rounds**, every ninth. The eight-boss roster rotates through Crazy Crows, Hailstorm, the Autumn-only Garden Ghost, Queen Bee, Root Rot, Heatwave, Eternal Night and Gale. The Ghost swaps two plants and restarts their growth every five seconds; Queen Bee makes every non-flowering surface plant dormant.
 - **Mutations.** A plant that keeps surviving harvests starts rolling for a mutation. Ten percent chance, and what comes out is worth two to three times the original. A Golden Sunflower sells for 3x and grows half as fast.
 - **Cursed plants.** Devil's Ivy pays well and charges $60 upkeep a round. Widow's Bloom is jealous of its neighbours.
 - **The cellar.** $250 to dig out. Four plots, nocturnal plants only, grows without any watering at all, but at three quarters speed. It's the one part of the farm that doesn't need you.
@@ -59,8 +59,8 @@ The pack screen is three shelves, and every one of them fits on screen: the unop
 | X / Backspace / Delete | toggle the shovel to dig up a planted crop |
 | Tab | switch between the garden and the cellar |
 | 1 - 6 | pick a seed (from the visible tray page) |
-| Left / right | page the seed tray / seed shelf / flower index|
-| Up / down | page the pack shelves |
+| Left / right | page the seed tray / seed shelf / garden index |
+| Up / down | change the garden-index subsection / page the pack shelves |
 | Mouse wheel | page whichever shelf the cursor is over |
 | F11 | fullscreen |
 | F12 | borderless window on/off (borderless by default) |
@@ -105,6 +105,10 @@ Version 0.1.0. Playable start to finish, wins at round 24.
 ## Harvesting and new treasures
 
 Harvesting is manual by default: click a ready plant on either board to collect it; clicking a growing surface plant waters it. Ready plants stay mature until harvested (or sold when the round ends). Enable **Auto Harvest** in Settings to collect immediately, as in the old game. This preference is saved across runs.
+
+The title-screen **Garden Index** is organized under two top sections: **Plants** and **Upgrades**. Plants has category subsections for the garden, desert, farmer crops, night plants, and mutations; Upgrades has **Relics** and **Heirlooms** subsections. Relic pages show price, effects, ownership, and evolution goals, while heirloom pages show permanent levels, current and next bonuses, costs, artwork, and lore.
+
+Ambient critters visit in groups of no more than three. They can walk, hop, or fly completely off screen, stay away briefly, and enter again from another garden edge instead of bouncing against an invisible wall.
 
 **Crystal Bloom** is a slow legendary seed in Rare Packs. Once mature, its next harvest gains $20 base value for every full second left unharvested, before multipliers. The counter resets after harvest; auto-harvesting collects immediately, so it doesn't build this bonus. End-of-round plant sales are separate and don't collect that harvest.
 

@@ -1,4 +1,4 @@
-"""Ambient garden life: round-scaling critters, seasonal border foliage, and simple weather effects."""
+"""Sparse garden visitors plus seasonal and weather particle effects."""
 
 import math
 import random
@@ -102,11 +102,16 @@ def critter_pool_for_round(rnd, cellar=False):
     return pool or ["ant"]
 
 
+MAX_ONSCREEN_CRITTERS = 3
+
+
 def target_critter_count(rnd, cellar=False):
+    """Keep the garden readable: at most three visitors are active at once."""
     rnd = max(1, int(rnd))
-    base = 5 if cellar else 6
-    extra = min(5, rnd // 18)
-    return base + extra
+    base = 1 if cellar else 2
+    if rnd >= 18:
+        base += 1
+    return min(MAX_ONSCREEN_CRITTERS, base)
 
 
 def choose_critter_roster(rnd, seed=1, cellar=False):
@@ -122,7 +127,7 @@ def choose_critter_roster(rnd, seed=1, cellar=False):
         aliens = [c for c in ("alien", "ufo", "void") if c in pool]
         for a in aliens:
             roster.append(a)
-        while aliens and len(roster) < max(4, count // 2):
+        while aliens and len(roster) < min(count, max(4, count // 2)):
             roster.append(rng.choice(aliens))
     if rnd >= 45:
         cryptids = [c for c in ("mandrake", "wisp") if c in pool]
@@ -163,7 +168,9 @@ def _critter_surface(sprite_name, flip_x=False, shadow=False):
 
 
 class Critter:
-    """Single ambient garden visitor moving along lanes, hopping, or fluttering."""
+    """Single ambient visitor that enters, wanders, leaves, and later returns."""
+
+    OFFSCREEN_PAD = 14
 
     def __init__(self, species, rng):
         self.species = species
@@ -173,8 +180,14 @@ class Critter:
         self.pause = 0.0
         self.hop_phase = 0.0
         self.hop_z = 0.0
+        self.away = 0.0
+        self.leaving = False
+        self.visit_left = rng.uniform(6.0, 13.0)
         self.facing_left = rng.random() < 0.5
+        self._spawn_inside(rng)
 
+    def _spawn_inside(self, rng):
+        """Place a new round's visitor on a lane or in the open air."""
         if self.motion == "crawl":
             if rng.random() < 0.6:
                 self.axis = "x"
@@ -201,26 +214,122 @@ class Critter:
             self.vy = math.sin(ang) * self.meta["speed"] * 0.55
             self.facing_left = self.vx < 0
 
-    def update(self, dt, rng):
-        self.anim_t += dt
+    @property
+    def offscreen(self):
+        """True while fully away or still crossing an edge into the garden."""
+        return not (
+            self.away <= 0
+            and self.x < BOARD_RIGHT and self.x + 12 > BOARD_LEFT
+            and self.y + 8 > BOARD_TOP and self.y - 8 < BOARD_BOTTOM
+        )
+
+    def _begin_departure(self):
+        """Aim for a nearby edge instead of bouncing around forever."""
+        self.leaving = True
+        self.pause = 0.0
+        if self.motion in ("crawl", "hop"):
+            if self.motion == "hop" or self.axis == "x":
+                self.axis = "x"
+                self.dir = -1.0 if self.x < (BOARD_LEFT + BOARD_RIGHT) / 2 else 1.0
+                self.facing_left = self.dir < 0
+            else:
+                self.dir = -1.0 if self.y < (BOARD_TOP + BOARD_BOTTOM) / 2 else 1.0
+        else:
+            spd = self.meta["speed"]
+            distances = (
+                (self.x - BOARD_LEFT, -spd, 0.0),
+                (BOARD_RIGHT - self.x, spd, 0.0),
+                (self.y - BOARD_TOP, 0.0, -spd * 0.65),
+                (BOARD_BOTTOM - self.y, 0.0, spd * 0.65),
+            )
+            _distance, self.vx, self.vy = min(distances, key=lambda item: item[0])
+            self.facing_left = self.vx < 0
+
+    def _fully_outside(self):
+        pad = self.OFFSCREEN_PAD
+        return (self.x < BOARD_LEFT - pad or self.x > BOARD_RIGHT + pad
+                or self.y < BOARD_TOP - pad or self.y > BOARD_BOTTOM + pad)
+
+    def _leave_for_a_while(self, rng):
+        self.away = rng.uniform(1.8, 4.8)
+        self.leaving = False
+        self.pause = 0.0
+        self.hop_phase = self.hop_z = 0.0
+
+    def _reenter(self, rng):
+        """Start just beyond a random edge with a velocity pointing inward."""
+        pad = self.OFFSCREEN_PAD - 1
+        self.away = 0.0
+        self.leaving = False
+        self.visit_left = rng.uniform(6.0, 13.0)
         spd = self.meta["speed"]
 
+        if self.motion == "hop":
+            side = rng.choice((-1.0, 1.0))
+            self.axis = "x"
+            self.x = float(BOARD_LEFT - pad if side < 0 else BOARD_RIGHT + pad)
+            self.y = float(rng.choice(LANE_YS))
+            self.dir = 1.0 if side < 0 else -1.0
+            self.facing_left = self.dir < 0
+            self.pause = 0.0
+            return
+
         if self.motion == "crawl":
-            if self.pause > 0:
+            if rng.random() < 0.7:
+                side = rng.choice((-1.0, 1.0))
+                self.axis = "x"
+                self.x = float(BOARD_LEFT - pad if side < 0 else BOARD_RIGHT + pad)
+                self.y = float(rng.choice(LANE_YS))
+                self.dir = 1.0 if side < 0 else -1.0
+                self.facing_left = self.dir < 0
+            else:
+                side = rng.choice((-1.0, 1.0))
+                self.axis = "y"
+                self.x = float(rng.choice(LANE_XS))
+                self.y = float(BOARD_TOP - pad if side < 0 else BOARD_BOTTOM + pad)
+                self.dir = 1.0 if side < 0 else -1.0
+            return
+
+        edge = rng.randrange(4)
+        if edge == 0:  # left
+            self.x, self.y = float(BOARD_LEFT - pad), rng.uniform(BOARD_TOP + 4, BOARD_BOTTOM - 10)
+            self.vx, self.vy = spd, rng.uniform(-8.0, 8.0)
+        elif edge == 1:  # right
+            self.x, self.y = float(BOARD_RIGHT + pad), rng.uniform(BOARD_TOP + 4, BOARD_BOTTOM - 10)
+            self.vx, self.vy = -spd, rng.uniform(-8.0, 8.0)
+        elif edge == 2:  # top
+            self.x, self.y = rng.uniform(BOARD_LEFT + 4, BOARD_RIGHT - 12), float(BOARD_TOP - pad)
+            self.vx, self.vy = rng.uniform(-spd, spd), spd * 0.65
+        else:  # bottom
+            self.x, self.y = rng.uniform(BOARD_LEFT + 4, BOARD_RIGHT - 12), float(BOARD_BOTTOM + pad)
+            self.vx, self.vy = rng.uniform(-spd, spd), -spd * 0.65
+        self.facing_left = self.vx < 0
+
+    def update(self, dt, rng):
+        self.anim_t += dt
+        if self.away > 0:
+            self.away -= dt
+            if self.away <= 0:
+                self._reenter(rng)
+            return
+
+        self.visit_left -= dt
+        if self.visit_left <= 0 and not self.leaving:
+            self._begin_departure()
+
+        spd = self.meta["speed"]
+        if self.motion == "crawl":
+            if self.pause > 0 and not self.leaving:
                 self.pause -= dt
                 return
-            if rng.random() < dt * 0.35:
+            if not self.leaving and rng.random() < dt * 0.35:
                 self.pause = rng.uniform(0.2, 0.65)
                 return
             if self.axis == "x":
                 prev_x = self.x
                 self.x += self.dir * spd * dt
                 self.facing_left = self.dir < 0
-                if self.x <= BOARD_LEFT:
-                    self.x, self.dir, self.facing_left = float(BOARD_LEFT), 1.0, False
-                elif self.x >= BOARD_RIGHT - 8:
-                    self.x, self.dir, self.facing_left = float(BOARD_RIGHT - 8), -1.0, True
-                else:
+                if not self.leaving:
                     for lx in LANE_XS:
                         if (prev_x - lx) * (self.x - lx) <= 0 and rng.random() < 0.28:
                             self.x = float(lx)
@@ -230,11 +339,7 @@ class Critter:
             else:
                 prev_y = self.y
                 self.y += self.dir * spd * dt
-                if self.y <= BOARD_TOP:
-                    self.y, self.dir = float(BOARD_TOP), 1.0
-                elif self.y >= BOARD_BOTTOM - 6:
-                    self.y, self.dir = float(BOARD_BOTTOM - 6), -1.0
-                else:
+                if not self.leaving:
                     for ly in LANE_YS:
                         if (prev_y - ly) * (self.y - ly) <= 0 and rng.random() < 0.35:
                             self.y = float(ly)
@@ -244,7 +349,7 @@ class Critter:
                             break
 
         elif self.motion == "hop":
-            if self.pause > 0:
+            if self.pause > 0 and not self.leaving:
                 self.pause -= dt
                 self.hop_z = 0.0
                 if self.pause <= 0:
@@ -257,34 +362,25 @@ class Critter:
             if self.hop_phase >= 1.0:
                 self.hop_phase = 0.0
                 self.hop_z = 0.0
-                self.pause = rng.uniform(0.35, 1.1)
-                return
-            self.hop_z = math.sin(self.hop_phase * math.pi) * 4.5
+                self.pause = 0.0 if self.leaving else rng.uniform(0.35, 1.1)
+            else:
+                self.hop_z = math.sin(self.hop_phase * math.pi) * 4.5
             self.x += self.dir * spd * dt
-            if self.x <= BOARD_LEFT + 2:
-                self.x, self.dir, self.facing_left = float(BOARD_LEFT + 2), 1.0, False
-            elif self.x >= BOARD_RIGHT - 10:
-                self.x, self.dir, self.facing_left = float(BOARD_RIGHT - 10), -1.0, True
 
         else:
             wobble = math.sin(self.anim_t * 3.1) * 8.0
             self.x += self.vx * dt
             self.y += (self.vy + wobble * 0.35) * dt
-            if self.x <= BOARD_LEFT + 2:
-                self.x, self.vx = float(BOARD_LEFT + 2), abs(self.vx)
-            elif self.x >= BOARD_RIGHT - 11:
-                self.x, self.vx = float(BOARD_RIGHT - 11), -abs(self.vx)
-            if self.y <= BOARD_TOP + 2:
-                self.y, self.vy = float(BOARD_TOP + 2), abs(self.vy)
-            elif self.y >= BOARD_BOTTOM - 10:
-                self.y, self.vy = float(BOARD_BOTTOM - 10), -abs(self.vy)
-            if rng.random() < dt * 0.45:
+            if not self.leaving and rng.random() < dt * 0.45:
                 ang = rng.uniform(-0.7, 0.7)
                 c, s = math.cos(ang), math.sin(ang)
                 nvx = self.vx * c - self.vy * s
                 nvy = self.vx * s + self.vy * c
                 self.vx, self.vy = nvx, max(-14.0, min(14.0, nvy))
             self.facing_left = self.vx < -0.5
+
+        if self._fully_outside():
+            self._leave_for_a_while(rng)
 
     def frame_index(self):
         if self.motion == "hop":
@@ -294,18 +390,19 @@ class Critter:
         return int(self.anim_t * self.meta["fps"]) % 2
 
     def draw(self, surf):
+        if self.away > 0:
+            return
         frame = self.frame_index()
         sname = "critter_%s_%d" % (self.species, frame)
         sp = _critter_surface(sname, flip_x=self.facing_left, shadow=False)
         h = sp.get_height()
         px = int(round(self.x))
         py = int(round(self.y - h // 2 - self.hop_z))
-        py = max(BOARD_TOP, min(BOARD_BOTTOM - h, py))
         if self.motion == "fly":
-            shadow_y = min(BOARD_BOTTOM - 1, py + h + 2)
+            shadow_y = int(round(self.y + h // 2 + 2))
             surf.fill((20, 16, 28), (px + 2, shadow_y, max(2, sp.get_width() - 4), 1))
         elif self.hop_z > 0.5:
-            gy = min(BOARD_BOTTOM - 1, int(round(self.y + h // 2 - 1)))
+            gy = int(round(self.y + h // 2 - 1))
             surf.fill((20, 16, 28), (px + 2, gy, max(2, sp.get_width() - 4), 1))
         else:
             sh = _critter_surface(sname, flip_x=self.facing_left, shadow=True)
@@ -314,7 +411,7 @@ class Critter:
 
 
 class GardenAmbient:
-    """Manages round-scaled critters, seasonal border foliage, and simple weather effects."""
+    """Manages a sparse stream of critters plus seasonal and weather effects."""
 
     def __init__(self, run):
         self.t = 0.0
@@ -341,72 +438,15 @@ class GardenAmbient:
             c.update(dt, self.rng)
 
     def draw_foliage(self, surf, run, cellar=False, plot_rects=()):
-        """Draw simple seasonal foliage tufts around the garden border and plot corners."""
+        """Keep surface lanes clean; the season is illustrated in the topbar.
+
+        The old implementation scattered grass, flowers, leaves, and snow
+        between every plot. That made a busy board harder to read. Cellar rock
+        details remain because they frame the underground board rather than
+        pretending to be seasonal surface foliage.
+        """
         if cellar:
             self._draw_cellar_foliage(surf)
-            return
-
-        s_idx = data.season_index(getattr(run, "round", 1))
-        sway = int(round(math.sin(self.t * 1.8) * 0.7)) if self.t > 0 else 0
-
-        # Anchor positions along the top verge, side paths, and lane intersections (all y >= 33).
-        tufts = (
-            (10, 34), (36, 34), (60, 34), (88, 34), (120, 34), (150, 34), (180, 34), (210, 34), (234, 34),
-            (1, 50), (1, 88), (1, 126),
-            (60, 72), (120, 72), (180, 72),
-            (60, 110), (120, 110), (180, 110),
-        )
-
-        for idx, (tx, ty) in enumerate(tufts):
-            dx = sway if idx % 2 == 0 else 0
-            if s_idx == 0:
-                # Spring: fresh green sprouts and pink/cream blossoms.
-                surf.fill((46, 120, 62), (tx, ty + 1, 3, 2))
-                surf.fill((88, 170, 72), (tx + dx, ty, 1, 2))
-                surf.fill((150, 210, 100), (tx + 2 + dx, ty, 1, 2))
-                if idx % 3 == 0:
-                    pet = (240, 130, 170) if idx % 2 == 0 else (245, 240, 230)
-                    surf.fill(pet, (tx + 1 + dx, ty - 1, 2, 2))
-                    surf.fill((250, 210, 70), (tx + 1 + dx, ty, 1, 1))
-            elif s_idx == 1:
-                # Summer: lush tall emerald blades and golden wildflowers.
-                surf.fill((46, 120, 62), (tx, ty + 1, 4, 2))
-                surf.fill((88, 170, 72), (tx + dx, ty - 1, 1, 3))
-                surf.fill((150, 210, 100), (tx + 2 + dx, ty - 1, 1, 3))
-                surf.fill((88, 170, 72), (tx + 3, ty, 1, 2))
-                if idx % 3 == 1:
-                    surf.fill((250, 210, 70), (tx + 1 + dx, ty - 1, 2, 1))
-            elif s_idx == 2:
-                # Autumn: warm russet/amber leaf piles, dry gold grass, and tiny toadstools.
-                col_a = (214, 150, 40) if idx % 2 == 0 else (240, 140, 50)
-                col_b = (150, 40, 52) if idx % 3 == 0 else (130, 84, 52)
-                surf.fill(col_b, (tx, ty + 1, 4, 1))
-                surf.fill(col_a, (tx + 1 + dx, ty, 3, 1))
-                if idx % 5 == 0:
-                    surf.fill((245, 240, 230), (tx + 1, ty, 1, 2))
-                    surf.fill((214, 64, 56), (tx, ty - 1, 3, 1))
-            else:
-                # Winter: snow puffs, frost sprigs, and icy needles.
-                surf.fill((68, 136, 166), (tx, ty + 1, 4, 1))
-                surf.fill((245, 240, 230), (tx, ty, 4, 1))
-                if idx % 3 == 0:
-                    surf.fill((46, 120, 62), (tx + 1, ty - 1, 2, 1))
-                    surf.fill((245, 240, 230), (tx + 2, ty - 1, 1, 1))
-
-        # Subtle seasonal rim accents on unlocked soil plots.
-        for idx, (px, py, pw, ph) in enumerate(plot_rects):
-            if s_idx == 0 and idx % 2 == 0:
-                surf.fill((88, 170, 72), (px + 2, py + ph - 2, 2, 2))
-                surf.fill((240, 130, 170), (px + 3, py + ph - 3, 1, 1))
-            elif s_idx == 1 and idx % 2 == 1:
-                surf.fill((88, 170, 72), (px + pw - 4, py + ph - 3, 2, 3))
-                surf.fill((150, 210, 100), (px + pw - 3, py + ph - 4, 1, 2))
-            elif s_idx == 2 and idx % 2 == 0:
-                surf.fill((240, 140, 50), (px + 2, py + ph - 2, 3, 1))
-                surf.fill((214, 64, 56), (px + pw - 5, py + ph - 2, 2, 1))
-            elif s_idx == 3:
-                surf.fill((225, 236, 248), (px + 2, py, 9, 1))
-                surf.fill((225, 236, 248), (px + pw - 11, py, 8, 1))
 
     def _draw_cellar_foliage(self, surf):
         spikes = (14, 42, 76, 108, 144, 178, 212, 238)
@@ -441,31 +481,32 @@ class GardenAmbient:
         twist_id = "none" if getattr(run, "weather_cleared", False) else run.twist_id()
         wind_x = 46.0 if twist_id == "gale" else 10.0
 
-        # Seasonal ambient particles (petals, pollen motes, autumn leaves, snowflakes).
-        for i in range(9):
-            seed_x = i * 29 + (i % 3) * 11
-            seed_y = i * 19 + (i % 4) * 7
-            if s_idx == 0:
-                px = BOARD_LEFT + 2 + int((seed_x + t * (wind_x + 4) + math.sin(t * 2.0 + i) * 5) % w_span)
-                py = BOARD_TOP + 2 + int((seed_y + t * 11.0) % h_span)
-                col = (240, 130, 170) if i % 2 == 0 else (245, 240, 230)
-                surf.fill(col, (px, py, 2, 1))
-            elif s_idx == 1:
-                px = BOARD_LEFT + 2 + int((seed_x + t * (wind_x * 0.4) + math.sin(t * 1.6 + i) * 6) % w_span)
-                py = BOARD_TOP + 2 + int((seed_y - t * 6.5) % h_span)
-                col = (250, 210, 70) if i % 2 == 0 else (150, 210, 100)
-                surf.fill(col, (px, py, 1, 1))
-            elif s_idx == 2:
-                px = BOARD_LEFT + 2 + int((seed_x + t * (wind_x + 7) + math.sin(t * 2.6 + i) * 6) % w_span)
-                py = BOARD_TOP + 2 + int((seed_y + t * 14.0) % h_span)
-                col = ((240, 140, 50), (214, 150, 40), (214, 64, 56))[i % 3]
+        # The clear spring/summer boards need no confetti. Autumn gets a few
+        # tumbling leaves and winter a sparse snowfall, each with gaps between
+        # waves so the effects feel occasional rather than like visual noise.
+        if s_idx == 2:
+            leaf_cols = ((240, 140, 50), (214, 150, 40), (214, 64, 56))
+            for i in range(4):
+                phase = (t + i * 1.7) % 7.2
+                if phase > 4.0:
+                    continue
+                px = BOARD_LEFT + 3 + int((i * 57 + phase * (wind_x + 5)
+                                           + math.sin(phase * 3.0 + i) * 7) % w_span)
+                py = BOARD_TOP + 1 + int((phase / 4.0) * (h_span - 3))
+                col = leaf_cols[i % len(leaf_cols)]
                 surf.fill(col, (px, py, 2, 1))
                 surf.fill(col, (px + (i % 2), py + 1, 1, 1))
-            else:
-                px = BOARD_LEFT + 2 + int((seed_x + t * (wind_x * 0.6) + math.sin(t * 1.7 + i) * 4) % w_span)
-                py = BOARD_TOP + 2 + int((seed_y + t * 10.5) % h_span)
+        elif s_idx == 3:
+            for i in range(5):
+                phase = (t + i * 1.35) % 6.4
+                if phase > 4.5:
+                    continue
+                px = BOARD_LEFT + 3 + int((i * 43 + phase * wind_x * 0.55
+                                           + math.sin(phase * 2.1 + i) * 5) % w_span)
+                py = BOARD_TOP + 1 + int((phase / 4.5) * (h_span - 3))
                 col = (245, 240, 230) if i % 2 == 0 else (160, 205, 250)
-                surf.fill(col, (px, py, 1 + (i % 2), 1 + (i % 2)))
+                size = 2 if i == 0 else 1
+                surf.fill(col, (px, py, size, size))
 
         # Simple weather-twist overlay particles.
         if twist_id == "rain":

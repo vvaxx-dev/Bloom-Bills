@@ -482,16 +482,25 @@ TWISTS = {
     "gale":          {"name": "Gale",          "desc": "The wind strips 10s off the round and slows every plant 20%.",
                       "growth": 0.8, "yield": 1.0, "time": -10, "ban": None, "blight": False, "boss": True, "tone": "bad",
                       "short": "ROUND -10S, GROWTH -20%."},
+    "ghost":         {"name": "The Garden Ghost", "desc": "Every 5s the ghost swaps two plants and restarts both from seed.",
+                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "ghost": 5, "autumn_only": True, "tone": "bad",
+                      "short": "EVERY 5S TWO PLANTS SWAP AND RESTART."},
+    "queen_bee":     {"name": "Queen Bee",     "desc": "Only flowering plants make honey for the Queen; every other surface plant is dormant.",
+                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "honey_only": True, "tone": "bad",
+                      "short": "ONLY FLOWERING PLANTS CAN GROW OR HARVEST."},
 }
 RANDOM_TWISTS = ["drought", "locusts", "short", "frost", "blight", "sunny", "rain", "market", "eclipse"]
 MINOR_TWISTS = ["sunny", "rain", "market", "eclipse", "still"]
-BOSS_TWISTS = ["crow_swarm", "hailstorm", "root_rot", "heatwave", "eternal_night", "gale"]
+BOSS_TWISTS = [
+    "crow_swarm", "hailstorm", "ghost", "queen_bee",
+    "root_rot", "heatwave", "eternal_night", "gale",
+]
 
 SEASONS = [
-    {"name": "Spring", "short": "SPR", "color": (130, 210, 120), "desc": "THE GARDEN WAKES UP."},
-    {"name": "Summer", "short": "SUM", "color": (250, 210, 70),  "desc": "LONG DAYS, THIRSTY SOIL."},
-    {"name": "Autumn", "short": "AUT", "color": (240, 140, 50),  "desc": "THE LAST BIG HARVEST."},
-    {"name": "Winter", "short": "WIN", "color": (150, 190, 250), "desc": "SHORT DAYS, COLD GROUND."},
+    {"name": "Spring", "short": "SPR", "art": "season_spring", "color": (130, 210, 120), "desc": "THE GARDEN WAKES UP."},
+    {"name": "Summer", "short": "SUM", "art": "season_summer", "color": (250, 210, 70),  "desc": "LONG DAYS, THIRSTY SOIL."},
+    {"name": "Autumn", "short": "AUT", "art": "season_autumn", "color": (240, 140, 50),  "desc": "THE LAST BIG HARVEST."},
+    {"name": "Winter", "short": "WIN", "art": "season_winter", "color": (150, 190, 250), "desc": "SHORT DAYS, COLD GROUND."},
 ]
 
 PERKS = {
@@ -533,6 +542,15 @@ def deep_pockets_rate(level):
 def packs_for_plant(species):
     """Return pack ids whose seed pool contains `species`."""
     return [kind for kind in PACK_ORDER if species in PACKS[kind]["pool"]]
+
+
+def produces_honey(species):
+    """Whether a plant can keep working during the Queen Bee boss round.
+
+    Honey production is deliberately tag based, so flower mutations and future
+    flower species inherit the behaviour without needing another lookup table.
+    """
+    return species in PLANTS and "flower" in PLANTS[species].get("tags", ())
 
 
 def perk_cost(key, level):

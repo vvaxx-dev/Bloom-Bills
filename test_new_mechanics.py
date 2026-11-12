@@ -400,3 +400,138 @@ class CrittersAndFoliageTests(unittest.TestCase):
             )
             self.assertGreater(board_lit, 20)
 
+
+class RoadmapBossTests(unittest.TestCase):
+    def pinned(self, twist, round_number=9):
+        run = Run(seed=17)
+        run.round = round_number
+        run.twist_id = lambda _rnd=None, value=twist: value
+        run.begin_round()
+        run.start_timer()
+        run.time_total = run.time_left = 60.0
+        return run
+
+    def test_queen_bee_only_allows_honey_plants_to_work(self):
+        run = self.pinned("queen_bee", round_number=36)
+        run.plots = [Plot("daisy"), Plot("tomato")]
+        run.update(2.0)
+        self.assertGreater(run.plots[0].progress, 0.0)
+        self.assertEqual(run.plots[1].progress, 0.0)
+        self.assertFalse(run.plant_disabled(0))
+        self.assertTrue(run.plant_disabled(1))
+        self.assertFalse(run.can_water(1))
+
+    def test_autumn_ghost_swaps_and_restarts_two_plants(self):
+        run = self.pinned("ghost", round_number=27)
+        run.plots = [Plot("daisy", progress=2.0), Plot("tomato", progress=3.0)]
+        run.update(5.0)
+        self.assertEqual([p.species for p in run.plots], ["tomato", "daisy"])
+        self.assertEqual([p.progress for p in run.plots], [0.0, 0.0])
+        swaps = [event for event in run.events if event["kind"] == "ghost_swap"]
+        self.assertEqual(len(swaps), 1)
+        self.assertEqual({swaps[0]["plot"], swaps[0]["other_plot"]}, {0, 1})
+
+    def test_ghosts_in_the_rotating_roster_are_autumn_only(self):
+        run = Run(seed=1)
+        ghost_rounds = [rnd for rnd in range(9, 9 * 41, 9) if run.twist_id(rnd) == "ghost"]
+        self.assertTrue(ghost_rounds)
+        self.assertTrue(all(data.season(rnd)["name"] == "Autumn" for rnd in ghost_rounds))
+        self.assertIn("queen_bee", data.BOSS_TWISTS)
+
+        # The restriction is metadata-driven rather than an accidental result
+        # of the current roster order.
+        with patch.object(data, "BOSS_TWISTS", ["ghost", "crow_swarm"]):
+            self.assertEqual(run.twist_id(9), "crow_swarm")
+            self.assertEqual(run.twist_id(27), "ghost")
+
+    def test_first_round_is_always_fair_weather(self):
+        self.assertTrue(all(Run(seed=seed).twist_id(1) == "none" for seed in range(50)))
+
+
+class RoadmapAmbientTests(unittest.TestCase):
+    def test_critter_cap_and_offscreen_visits(self):
+        import random
+        from . import ambient
+
+        for rnd in (1, 18, 24, 45, 100, 999):
+            self.assertLessEqual(ambient.target_critter_count(rnd), ambient.MAX_ONSCREEN_CRITTERS)
+            self.assertLessEqual(len(ambient.choose_critter_roster(rnd, seed=4)), 3)
+
+        critter = ambient.Critter("ant", random.Random(2))
+        critter.axis = "x"
+        critter.x = float(ambient.BOARD_LEFT)
+        critter.y = float(ambient.LANE_YS[1])
+        critter.dir = -1.0
+        critter.leaving = True
+        critter.pause = 0.0
+        critter.update(2.0, random.Random(3))
+        self.assertLess(critter.x, ambient.BOARD_LEFT)
+        self.assertTrue(critter.offscreen)
+        self.assertGreater(critter.away, 0.0)
+
+    def test_surface_lanes_have_no_scattered_foliage(self):
+        import pygame
+        from . import ambient
+
+        run = Run(seed=3)
+        manager = ambient.GardenAmbient(run)
+        surf = pygame.Surface((320, 180))
+        surf.fill((0, 0, 0))
+        manager.draw_foliage(surf, run, cellar=False, plot_rects=[(4, 36, 56, 34)])
+        self.assertEqual(
+            sum(surf.get_at((x, y))[:3] != (0, 0, 0) for y in range(180) for x in range(320)),
+            0,
+        )
+
+    def test_each_season_has_dedicated_topbar_art(self):
+        from .sprites_data import GRIDS
+
+        arts = [season["art"] for season in data.SEASONS]
+        self.assertEqual(len(set(arts)), 4)
+        self.assertTrue(all(art in GRIDS for art in arts))
+
+
+class GardenIndexTests(unittest.TestCase):
+    def make_scene(self):
+        from .index import IndexScene
+
+        class AppStub:
+            profile = {"perks": {}, "harvested": {}, "heirlooms": 0}
+            run = None
+            mouse = (-1, -1)
+
+            def goto(self, _name):
+                pass
+
+        scene = IndexScene(AppStub())
+        scene.on_enter()
+        return scene
+
+    def test_garden_index_has_two_top_sections_and_nested_subsections(self):
+        from .index import CATEGORIES, SECTIONS, UPGRADE_SUBSECTIONS
+
+        scene = self.make_scene()
+        self.assertEqual(SECTIONS, [("plants", "PLANTS"), ("upgrades", "UPGRADES")])
+        self.assertEqual(scene.section, "plants")
+        self.assertEqual(scene.subsections(), CATEGORIES)
+        self.assertEqual(len(scene.section_buttons), 2)
+        self.assertEqual(len(scene.subsection_buttons), len(CATEGORIES))
+
+        scene.set_section("upgrades")
+        self.assertEqual(scene.section, "upgrades")
+        self.assertEqual(scene.subsections(), UPGRADE_SUBSECTIONS)
+        self.assertEqual(
+            [sid for sid, _label in scene.subsections()],
+            ["relics", "heirlooms"],
+        )
+        self.assertEqual(len(scene.subsection_buttons), 2)
+
+    def test_upgrade_subsections_contain_every_relic_and_heirloom(self):
+        scene = self.make_scene()
+        scene.set_section("upgrades")
+        scene.set_subsection("relics")
+        self.assertEqual(scene.entry_type, "relics")
+        self.assertEqual(scene.entries(), data.RELIC_ORDER)
+        scene.set_subsection("heirlooms")
+        self.assertEqual(scene.entry_type, "heirlooms")
+        self.assertEqual(scene.entries(), data.PERK_ORDER)

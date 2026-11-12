@@ -152,6 +152,7 @@ class Run:
         self.crow_timer = 0.0
         self.hail_timer = 0.0
         self.rot_timer = 0.0
+        self.ghost_timer = 0.0
         self.creep_grown = {False: 0, True: 0}
         self.events = []
         self.last_summary = None
@@ -309,8 +310,24 @@ class Run:
     def twist_id(self, rnd=None):
         """Deterministically derive a round's weather twist from `(seed, round)` so forecasts never drift."""
         rnd = self.round if rnd is None else rnd
+        # The first round is onboarding: keep it deterministic and fair. This
+        # also prevents a seeded Eclipse from making the very first harvest
+        # unexpectedly miss its normal five-second timing.
+        if int(rnd) == 1:
+            return "none"
         if self.is_boss_round(rnd):
-            return data.BOSS_TWISTS[((rnd // BOSS_EVERY) - 1) % len(data.BOSS_TWISTS)]
+            start = ((int(rnd) // BOSS_EVERY) - 1) % len(data.BOSS_TWISTS)
+            # Keep the roster deterministic, but never schedule a seasonal boss
+            # outside its allowed season. The current ordering naturally lands
+            # the Ghost in Autumn; this guard keeps that rule true if the roster
+            # or season length changes later.
+            for offset in range(len(data.BOSS_TWISTS)):
+                twist_id = data.BOSS_TWISTS[(start + offset) % len(data.BOSS_TWISTS)]
+                twist = data.TWISTS[twist_id]
+                if twist.get("autumn_only") and data.season(rnd)["name"] != "Autumn":
+                    continue
+                return twist_id
+            return "none"
         if self.is_quota_round(rnd):
             k = self.quota_number(rnd)
             if k == 1:
@@ -338,6 +355,13 @@ class Run:
     def growth_speed(self):
         return (1.0 + self._sum("growth")) * self.twist()["growth"]
 
+    def plant_disabled(self, i, cellar=False):
+        """Return whether the active boss has made a planted plot dormant."""
+        plots = self.cellar_plots if cellar else self.plots
+        if cellar or not 0 <= i < len(plots) or not plots[i].species:
+            return False
+        return bool(self.twist().get("honey_only") and not data.produces_honey(plots[i].species))
+
     def plot_growth_speed(self, i, cellar=False):
         """Effective growth rate of plot `i`, including cellar, eclipse, and watering modifiers."""
         plot_list = self.cellar_plots if cellar else self.plots
@@ -346,6 +370,8 @@ class Run:
         p = plot_list[i]
         if cellar:
             return (1.0 + self._sum("growth")) * CELLAR_SPEED * (1.5 if self.is_chosen(i, cellar) else 1.0)
+        if self.plant_disabled(i):
+            return 0.0
         speed = self.growth_speed() * (1.5 if self.is_chosen(i, cellar) else 1.0)
         if p.species and self.twist().get("eclipse"):
             speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
@@ -598,7 +624,8 @@ class Run:
         if self.phase != "round" or not self.started or self.finished or not 0 <= i < len(plots):
             return False
         p = plots[i]
-        if not p.species or p.progress < data.PLANTS[p.species]["grow"]:
+        if (not p.species or self.plant_disabled(i, cellar)
+                or p.progress < data.PLANTS[p.species]["grow"]):
             return False
         self._harvest(i, cellar)
         p.progress = 0.0
@@ -627,7 +654,8 @@ class Run:
         if cellar or not 0 <= i < len(self.plots):
             return False
         p = self.plots[i]
-        return self.started and not self.finished and p.species is not None and p.water_cd <= 0
+        return (self.started and not self.finished and p.species is not None
+                and not self.plant_disabled(i) and p.water_cd <= 0)
 
     def water(self, i):
         if not self.can_water(i):
@@ -663,6 +691,7 @@ class Run:
         self.crow_timer = 0.0
         self.hail_timer = 0.0
         self.rot_timer = 0.0
+        self.ghost_timer = 0.0
         self.creep_grown = {False: 0, True: 0}
         self.round_income = 0
         self.events = []
@@ -684,6 +713,13 @@ class Run:
         dry = tw.get("dry", 1.0)
         for i, p in enumerate(plot_list):
             if p.species is None:
+                continue
+            disabled = bool(not cellar and tw.get("honey_only") and not data.produces_honey(p.species))
+            if disabled:
+                # Queen Bee leaves non-honey plants completely dormant. Existing
+                # water still expires, but growth, harvesting, and creep all stop.
+                p.water_left = max(0.0, p.water_left - dt * dry)
+                p.water_cd = max(0.0, p.water_cd - dt)
                 continue
             if auto and not cellar and p.water_cd <= 0:
                 self.water(i)
@@ -725,7 +761,33 @@ class Run:
             if not cellar:
                 p.water_left = max(0.0, p.water_left - dt * dry)
                 p.water_cd = max(0.0, p.water_cd - dt)
-        self._creep_patches(plot_list, cellar, dt)
+        if cellar or not tw.get("honey_only"):
+            self._creep_patches(plot_list, cellar, dt)
+
+    def _ghost_swap(self):
+        """Swap two surface plants, reset both growth cycles, and report the haunting."""
+        alive = [i for i, p in enumerate(self.plots) if p.species]
+        if len(alive) < 2:
+            return False
+        first, second = self.rng.sample(alive, 2)
+        first_name = data.PLANTS[self.plots[first].species]["name"]
+        second_name = data.PLANTS[self.plots[second].species]["name"]
+        self.plots[first], self.plots[second] = self.plots[second], self.plots[first]
+        for i in (first, second):
+            self.plots[i].progress = 0.0
+            self.plots[i].mature_time = 0.0
+
+        # Chosen Bloom follows the plant rather than being stranded on its old soil.
+        if self.chosen_plant == (False, first):
+            self.chosen_plant = (False, second)
+        elif self.chosen_plant == (False, second):
+            self.chosen_plant = (False, first)
+
+        self._emit(
+            "ghost_swap", plot=first, other_plot=second, cellar=False,
+            first_name=first_name, second_name=second_name,
+        )
+        return True
 
     def update(self, dt):
         """Step the active round, splitting at weather and Compost Heap boundaries."""
@@ -825,6 +887,13 @@ class Run:
                     name = data.PLANTS[self.plots[victim].species]["name"]
                     self.plots[victim].clear()
                     self._emit("rot", plot=victim, cellar=False, name=name)
+
+        ghost = tw.get("ghost")
+        if ghost:
+            self.ghost_timer += dt
+            while self.ghost_timer >= ghost:
+                self.ghost_timer -= ghost
+                self._ghost_swap()
 
         if self.time_left <= 1e-9:
             self.time_left = 0.0

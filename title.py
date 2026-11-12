@@ -1,4 +1,4 @@
-"""Title screen with run entry points, lifetime stats, Flower Index, and Settings gear."""
+"""Title screen with run entry points, lifetime stats, garden index, and settings."""
 
 import pygame
 
@@ -44,9 +44,10 @@ class TitleScene(Scene):
         self.draw_buttons(surf)
         if self.book_btn.hover(self.mouse):
             gfx.tooltip(surf, [
-                ("FLOWER INDEX", ACCENT),
-                ("BROWSE ALL PLANTS & MUTANTS", TEXT),
-            ], self.mouse, 112)
+                ("GARDEN INDEX", ACCENT),
+                ("PLANTS & UPGRADES", TEXT),
+                ("RELICS + HEIRLOOMS", DIM),
+            ], self.mouse, 120)
         elif self.cog_btn.hover(self.mouse):
             gfx.tooltip(surf, [("SETTINGS", ACCENT)], (self.cog_btn.x - 46, self.cog_btn.y + 13), 44)
 

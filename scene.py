@@ -62,7 +62,14 @@ def draw_topbar(surf, run, label=None, timer=None, mouse=None):
     money = "$" + fmt(run.money)
     left_w = gfx.draw_text(surf, left, 5, top, TEXT)
     season = run.season()
-    season_w = gfx.draw_text(surf, season["short"], 5 + left_w + 4, top, season["color"])
+    season_x = 5 + left_w + 3
+    season_art = season.get("art")
+    art_w = 0
+    if season_art:
+        icon = gfx.sprite(season_art)
+        art_w = icon.get_width() + 2
+        surf.blit(icon, (season_x, max(1, (14 - icon.get_height()) // 2)))
+    season_w = gfx.draw_text(surf, season["short"], season_x + art_w, top, season["color"])
 
     right_x = TOPBAR_PAUSE_RECT[0] - 2
     timer_slot_w = max(
@@ -74,7 +81,7 @@ def draw_topbar(surf, run, label=None, timer=None, mouse=None):
     money_x = right_x - timer_slot_w
     money_w = gfx.draw_text(surf, money, money_x, top, ACCENT, align="right")
 
-    left_end = 5 + left_w + 4 + season_w
+    left_end = season_x + art_w + season_w
     right_start = money_x - money_w
     center_x = CANVAS_W // 2
     room = 2 * min(center_x - left_end - 4, right_start - center_x - 4)
