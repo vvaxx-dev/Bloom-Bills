@@ -47,9 +47,10 @@ class Plot:
     base harvest a Man-Eater has eaten for good, and `bloom` is the multiplier
     a lucky clover has stacked onto this plant.
 
-    Mycelium adds `creep_cd`: seconds its creep meter has banked. A mycelium
-    with a full meter grows into an empty orthogonal neighbour on its own, so a
-    patch keeps advancing round after round instead of sitting still.
+    Mycelium adds `creep_cd`: seconds the patch's shared creep meter has banked.
+    When it fills, one mycelium grows into an empty orthogonal neighbour and
+    the whole patch starts filling again, so a patch keeps advancing round
+    after round instead of sitting still.
     """
 
     __slots__ = ("species", "progress", "water_left", "water_cd", "harvests", "fed", "gorged", "bloom",
@@ -1017,7 +1018,10 @@ class Run:
 
         The new plot starts a fresh mycelium of the same species, and the patch
         may only grow `spread_cap` plots this round, so one lucky seed cannot
-        take over the garden for free.
+        take over the garden for free. The creep meter belongs to the patch, not
+        to the plot that happened to grow: every member is reset to zero, so a
+        wide patch books one guaranteed expansion every MYCELIUM_CREEP_TIME
+        instead of one per member.
         """
         p = plot_list[i]
         if chance <= 0 or self.creep_grown.get(cellar, 0) >= self._spread_cap(plot_list, i):
@@ -1029,8 +1033,10 @@ class Run:
             return False
         target = self.rng.choice(empties)
         plot_list[target] = Plot(p.species)
-        # The parent's creep meter pays for the new plot and starts filling again.
-        p.creep_cd = 0.0
+        # The patch's shared creep meter pays for the new plot, so every member
+        # starts filling the next expansion from zero together.
+        for member in self.mycelium_network(target, cellar) or [target]:
+            plot_list[member].creep_cd = 0.0
         self.creep_grown[cellar] = self.creep_grown.get(cellar, 0) + 1
         self._emit(
             "spread", plot=target, cellar=cellar,
@@ -1079,12 +1085,15 @@ class Run:
         return max(ready, key=key)
 
     def _creep_patches(self, plot_list, cellar, dt):
-        """Fill every mycelium's creep meter and book the guaranteed spreads.
+        """Fill the patch creep meter and book the guaranteed spreads.
 
-        MYCELIUM_CREEP_TIME seconds of round per new plot, so a lone seed always
-        becomes a patch you can watch grow; harvest rolls in `_spread_mycelium`
-        make the good rounds much faster. A meter only fills while its plot has
-        an empty neighbour, so a walled-in mycelium never banks free expansions.
+        Every member banks the same shared meter, which is reset for the whole
+        patch every time it grows, so a patch of any width books exactly one
+        guaranteed new plot per MYCELIUM_CREEP_TIME seconds of round. A lone
+        seed therefore always becomes a patch you can watch grow, while harvest
+        rolls in `_spread_mycelium` make the good rounds faster. The meter only
+        fills while the patch has an empty neighbour, so a walled-in mycelium
+        never banks free expansions.
         """
         for i, p in enumerate(plot_list):
             if not self._can_creep(plot_list, i, cellar):

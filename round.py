@@ -17,11 +17,6 @@ GRID_X, GRID_Y = 4, 36
 TRAY_Y = 148
 TRAY_SLOTS = 6
 
-# Seed resale: one button under the relic sidebar that opens a two-row
-# dropdown, the same way the shop puts a small SELL strip under each relic.
-SEED_SELL_BTN = (246, 136, 68, 9)
-SEED_SELL_MENU = (246, 117, 68, 18)
-
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": DIM}
 
 
@@ -52,11 +47,9 @@ class RoundScene(Scene):
             214, TRAY_Y, 26, 28, "DIG", self.toggle_shovel,
             color=(86, 72, 102), icon="shovel", icon_scale=1, hover_subs=gfx.SHOVEL_HOVER_SUBS,
         )
-        self.seed_sell_btn = Button(*SEED_SELL_BTN, "SELL SEED", self.toggle_seed_sell, color=(150, 70, 60))
-        self.seed_sell_open = False
         self.ambient = ambient.GardenAmbient(self.run)
         self.buttons = [self.cellar_btn, self.start_btn, self.tray_left, self.tray_right,
-                        self.shovel_btn, self.seed_sell_btn]
+                        self.shovel_btn]
         self._sync_tray_buttons()
 
     def _ambient(self):
@@ -86,7 +79,6 @@ class RoundScene(Scene):
         return seeds
 
     def toggle_shovel(self):
-        self.seed_sell_open = False
         self.shovel_mode = not self.shovel_mode
         if self.shovel_mode:
             self.choose_mode = False
@@ -142,7 +134,6 @@ class RoundScene(Scene):
 
     def cellar_click(self):
         run = self.run
-        self.seed_sell_open = False
         if not run.cellar_unlocked:
             if run.buy_cellar():
                 self.app.toast("THE CELLAR IS OPEN! NO WATER, NO WEATHER.", 3.0)
@@ -177,66 +168,7 @@ class RoundScene(Scene):
     def tray_rect(self, i):
         return (15 + i * 31, TRAY_Y + 3, 31, 22)
 
-    def seed_sell_target(self):
-        """The seed the sell button acts on: whatever is highlighted in the tray."""
-        sid = self.selected
-        if not sid or self.run.seeds.get(sid, 0) <= 0:
-            return None, 0, 0
-        return sid, self.run.seeds.get(sid, 0), self.run.seed_price(sid)
-
-    def _sync_seed_sell(self):
-        """Refresh the sell button from the highlighted seed; returns (seed, owned, unit price)."""
-        target, owned, price = self.seed_sell_target()
-        self.seed_sell_btn.enabled = owned > 0
-        self.seed_sell_btn.label = "SELL SEED $" + fmt(price) if owned else "SELL SEED"
-        self.seed_sell_btn.active = self.seed_sell_open
-        return target, owned, price
-
-    def seed_sell_row_rect(self, i):
-        x, y, w, _h = SEED_SELL_MENU
-        return (x + 2, y + 2 + i * 8, w - 4, 8)
-
-    def sell_options(self):
-        """Dropdown rows: (label, sell_everything) for the highlighted seed."""
-        _sid, owned, price = self.seed_sell_target()
-        return [
-            ("SELL ONE  $" + fmt(price), False),
-            ("SELL ALL  $" + fmt(price * owned), True),
-        ]
-
-    def toggle_seed_sell(self):
-        if self.seed_sell_target()[0] is None:
-            self.seed_sell_open = False
-            self.app.toast("PICK A SEED IN THE TRAY TO SELL")
-            return
-        self.seed_sell_open = not self.seed_sell_open
-        if self.seed_sell_open:
-            self.shovel_mode = False
-            self.choose_mode = False
-
-    def sell_seed(self, all_of=False):
-        sid, owned, _price = self.seed_sell_target()
-        self.seed_sell_open = False
-        if sid is None:
-            self.app.toast("PICK A SEED IN THE TRAY TO SELL")
-            return
-        ok, msg, _refund = self.run.sell_seed(sid, owned if all_of else 1)
-        if ok:
-            self.app.toast(msg, 2.5)
-            if hasattr(self.app, "save_run"):
-                self.app.save_run()
-            if self.run.seeds.get(sid, 0) <= 0:
-                self.pick_default()
-
     def on_click(self, pos):
-        if self.seed_sell_open and not self.seed_sell_btn.hover(pos):
-            if gfx.inside(pos, self.seed_sell_row_rect(0)):
-                self.sell_seed(all_of=False)
-            elif gfx.inside(pos, self.seed_sell_row_rect(1)):
-                self.sell_seed(all_of=True)
-            else:
-                self.seed_sell_open = False
-            return True
         if super().on_click(pos):
             return True
         run = self.run
@@ -252,10 +184,9 @@ class RoundScene(Scene):
                 return True
         for i, sid in enumerate(self.visible_seeds()):
             if gfx.inside(pos, self.tray_rect(i)):
-                self.seed_sell_open = False
                 if run.seeds.get(sid, 0) > 0:
                     # Highlight any owned seed, even one this board cannot grow
-                    # right now, so it can still be sold from the SELL button.
+                    # right now, so its numbers are always readable.
                     self.shovel_mode = False
                     self.choose_mode = False
                     self.selected = sid
@@ -334,9 +265,6 @@ class RoundScene(Scene):
             run.water(i)
 
     def on_key(self, key):
-        if key == pygame.K_ESCAPE and self.seed_sell_open:
-            self.seed_sell_open = False
-            return
         if key == pygame.K_SPACE and not self.run.started:
             self.toggle_clock()
         elif key == pygame.K_TAB:
@@ -362,7 +290,6 @@ class RoundScene(Scene):
                 sid = seeds[idx]
                 if self.run.seeds.get(sid, 0) > 0:
                     self.shovel_mode = False
-                    self.seed_sell_open = False
                     self.selected = sid
 
     def _floaters_enabled(self):
@@ -537,18 +464,9 @@ class RoundScene(Scene):
         gfx.draw_text(surf, "SPEED x%.2f" % run.growth_speed(), 248, 110, TEXT)
         gfx.draw_text(surf, "WATER %ds" % run.water_time(), 248, 120, WATER)
         gfx.draw_text(surf, "SEEDS: %d" % sum(run.seeds.values()), 248, 130, TEXT)
-
-        target, owned, price = self._sync_seed_sell()
-        self.seed_sell_btn.draw(surf, mouse)
-        if self.seed_sell_open and owned:
-            mx, my, mw, mh = SEED_SELL_MENU
-            gfx.rect(surf, (150, 70, 60), mx, my, mw, mh)
-            gfx.rect(surf, (44, 30, 40), mx + 1, my + 1, mw - 2, mh - 2)
-            for i, (label, _all_of) in enumerate(self.sell_options()):
-                rx, ry, rw, rh = self.seed_sell_row_rect(i)
-                hot = gfx.inside(mouse, (rx, ry, rw, rh))
-                gfx.rect(surf, (176, 84, 70) if hot else (60, 40, 48), rx, ry, rw, rh)
-                gfx.draw_text(surf, label, rx + 3, ry + 2, TEXT if hot else (232, 214, 206))
+        # Resale lives on the packs screen now; a nudge here keeps players from
+        # hunting for a sell button in the middle of a round.
+        gfx.draw_text(surf, "SELL IN PACKS", 248, 138, DIM)
 
         gfx.panel(surf, 4, TRAY_Y, 208, 28)
         seeds = self.view_seeds()
@@ -607,17 +525,6 @@ class RoundScene(Scene):
                 ("SHOVEL ACTIVE (X)" if self.shovel_mode else "SHOVEL (X)", BAD if self.shovel_mode else ACCENT),
                 ("CLICK A PLANTED CROP TO DIG IT UP.", TEXT),
             ], mouse, 108)
-        elif self.seed_sell_btn.hover(mouse) and not self.seed_sell_open:
-            lines = [
-                ("SELL SEEDS", ACCENT),
-                ("SELLS THE SEED HIGHLIGHTED IN THE TRAY.", TEXT),
-            ]
-            if owned:
-                lines.append((data.PLANTS[target]["name"] + ": $" + fmt(price) + " EACH, " + str(owned) + " OWNED", GOOD))
-                lines.append(("SELL ALL: $" + fmt(price * owned), ACCENT))
-            else:
-                lines.append(("PICK A SEED IN THE TRAY FIRST.", DIM))
-            gfx.tooltip(surf, lines, mouse, 118)
         elif hover is not None and plots[hover].species:
             self.plot_tooltip(surf, hover)
         elif seed_hover is not None:
@@ -628,7 +535,7 @@ class RoundScene(Scene):
                 ("GROW: %gS   HARVEST: %s" % (
                     sp["grow"], "$" + fmt(sp["yield"]) if pays else "$0"), TEXT),
                 ("SELL AT END: $%s" % fmt(sp["sell"]), ACCENT),
-                ("SELL SEED: $%s" % fmt(run.seed_price(seed_hover)), DIM),
+                ("SELLS IN PACKS FOR $%s" % fmt(run.seed_price(seed_hover)), DIM),
             ]
             if not pays:
                 lines.append(("PAYS NOTHING ITSELF", ACCENT))

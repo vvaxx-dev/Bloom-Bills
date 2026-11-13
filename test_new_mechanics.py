@@ -686,8 +686,8 @@ class SeedSellingTests(unittest.TestCase):
         self.assertEqual(run.plots[0].species, "daisy")
 
 
-class SeedSellSceneTests(unittest.TestCase):
-    """The round screen's SELL SEED button opens a one/all dropdown."""
+class PackSeedSellSceneTests(unittest.TestCase):
+    """Seed resale lives on the packs screen: pick a shelf tile, sell one or all."""
 
     def make_scene(self):
         from types import SimpleNamespace
@@ -700,73 +700,77 @@ class SeedSellSceneTests(unittest.TestCase):
             save_run=lambda: None,
             toasts=toasts,
         )
-        RoundScene = import_module(".round", __package__).RoundScene
-        scene = RoundScene(app)
+        PacksScene = import_module(".packs", __package__).PacksScene
+        scene = PacksScene(app)
         scene.on_enter()
         return scene, app
 
-    def test_button_follows_the_highlighted_seed(self):
+    def test_sell_strip_follows_the_highlighted_seed(self):
         scene, _app = self.make_scene()
         run = scene.run
         run.seeds["daisy"] = 3
-        scene.selected = "daisy"
-        scene._sync_seed_sell()
-        self.assertTrue(scene.seed_sell_btn.enabled)
-        self.assertIn("$" + str(run.seed_price("daisy")), scene.seed_sell_btn.label)
+        scene.pick_seed("daisy")
+        scene._sync_sell_buttons()
+        self.assertTrue(scene.sell_one_btn.enabled)
+        self.assertTrue(scene.sell_all_btn.enabled)
+        self.assertIn("$" + str(run.seed_price("daisy")), scene.sell_one_btn.label)
 
-        scene.selected = "tomato"          # none owned
-        scene._sync_seed_sell()
-        self.assertFalse(scene.seed_sell_btn.enabled)
-        self.assertEqual(scene.seed_sell_btn.label, "SELL SEED")
+        scene.seed_selected = None          # nothing picked
+        scene._sync_sell_buttons()
+        self.assertFalse(scene.sell_one_btn.enabled)
+        self.assertFalse(scene.sell_all_btn.enabled)
+        self.assertEqual(scene.sell_one_btn.label, "SELL 1")
 
-    def test_dropdown_sells_one_or_all(self):
+    def test_sell_strip_sells_one_then_the_whole_stack(self):
         scene, app = self.make_scene()
         run = scene.run
         run.seeds = {"daisy": 3}
         money = run.money
         unit = run.seed_price("daisy")
 
-        scene.selected = "daisy"
-        scene._sync_seed_sell()
-        scene.toggle_seed_sell()
-        self.assertTrue(scene.seed_sell_open)
-        x, y, w, h = scene.seed_sell_row_rect(0)
-        scene.on_click((x + 1, y + 1))
-        self.assertFalse(scene.seed_sell_open)
+        scene.pick_seed("daisy")
+        scene._sync_sell_buttons()
+        scene.sell_one()
         self.assertEqual(run.seeds["daisy"], 2)
         self.assertEqual(run.money, money + unit)
 
-        scene._sync_seed_sell()
-        scene.toggle_seed_sell()
-        x, y, w, h = scene.seed_sell_row_rect(1)
-        scene.on_click((x + 1, y + 1))
+        scene._sync_sell_buttons()
+        scene.sell_all()
         self.assertNotIn("daisy", run.seeds)
         self.assertEqual(run.money, money + unit * 3)
+        self.assertIsNone(scene.seed_selected)
         self.assertTrue(app.toasts)
 
-    def test_menu_closes_on_escape_and_board_switch(self):
+    def test_clicking_a_shelf_tile_picks_that_seed(self):
         scene, _app = self.make_scene()
-        scene.run.seeds["daisy"] = 2
-        scene.selected = "daisy"
-        scene.toggle_seed_sell()
-        self.assertTrue(scene.seed_sell_open)
-        scene.on_key(0x0000001b)          # ESC
-        self.assertFalse(scene.seed_sell_open)
-        scene.toggle_seed_sell()
-        scene.cellar_click()
-        self.assertFalse(scene.seed_sell_open)
+        sid = data.PLANT_ORDER[0]
+        scene.run.seeds[sid] = 2
+        x, y, w, h = scene.seed_rect(0)
+        self.assertTrue(scene.on_click((x + w // 2, y + h // 2)))
+        self.assertEqual(scene.seed_selected, sid)
 
-    def test_sell_button_paints_the_dropdown(self):
+    def test_selling_without_a_pick_says_so(self):
+        scene, app = self.make_scene()
+        scene.sell_one()
+        self.assertTrue(any("PICK A SEED" in text for text in app.toasts))
+        self.assertEqual(scene.run.money, Run(seed=1).money)
+
+    def test_sell_strip_buttons_sit_inside_the_seed_panel(self):
         import pygame
-        from .round import SEED_SELL_MENU
+        from .packs import SEED_BOX, SELL_ALL_BTN, SELL_ONE_BTN
 
         scene, _app = self.make_scene()
         scene.run.seeds["daisy"] = 2
-        scene.selected = "daisy"
-        surf = pygame.Surface((320, 180))
-        scene.toggle_seed_sell()
-        scene.draw(surf)
-        x, y, w, h = SEED_SELL_MENU
-        inside = {tuple(surf.get_at((px, py)))[:3]
-                  for py in range(y + 3, y + h - 3) for px in range(x + 2, x + w - 2, 7)}
-        self.assertGreater(len(inside), 1)
+        scene.pick_seed("daisy")
+        pygame.init()
+        surf1 = pygame.Surface((320, 180))
+        scene.draw(surf1)
+        for rect in (SELL_ONE_BTN, SELL_ALL_BTN):
+            x, y, w, h = rect
+            self.assertGreaterEqual(x, SEED_BOX[0])
+            self.assertLessEqual(x + w, SEED_BOX[0] + SEED_BOX[2])
+            self.assertLessEqual(y + h, SEED_BOX[1] + SEED_BOX[3],
+                                 "the sell strip must not run off the seed panel")
+            inside = {tuple(surf1.get_at((px, py)))[:3]
+                      for py in range(y + 2, y + h - 2) for px in range(x + 2, x + w - 2, 7)}
+            self.assertGreater(len(inside), 1)

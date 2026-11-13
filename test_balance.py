@@ -1888,6 +1888,67 @@ class MyceliumTests(unittest.TestCase):
             run._maybe_mutate(0)
         self.assertEqual(run.plots[0].species, "mycelium")
 
+    def test_the_creep_meter_belongs_to_the_patch_not_to_each_plot(self):
+        """A wide patch must not grow one plot per member every creep cycle."""
+        from .settings import MYCELIUM_CREEP_TIME
+
+        run = self.run_with()
+        run.begin_round()
+        run.plots = [Plot("mycelium") for _ in range(4)] + [Plot() for _ in range(8)]
+        run.rng.random = lambda: 0.99             # no harvest luck at all
+        run.start_timer()
+        run.update(MYCELIUM_CREEP_TIME + 0.5)
+        self.assertEqual(len([p for p in run.plots if p.species == "mycelium"]), 5,
+                         "four connected plots bank one shared expansion, not four")
+        self.assertEqual(run.creep_grown[False], 1)
+        self.assertTrue(all(p.creep_cd < MYCELIUM_CREEP_TIME
+                            for p in run.plots if p.species == "mycelium"),
+                        "spreading resets the whole patch's meter")
+
+    def test_one_seed_grows_at_most_its_spread_cap_in_a_round(self):
+        from .settings import MYCELIUM_CREEP_TIME
+        from .settings import ROUND_TIME
+
+        cap = data.PLANTS["mycelium"]["spread_cap"]
+        run = self.run_with()
+        run.begin_round()
+        run.plots = [Plot("mycelium")] + [Plot() for _ in range(11)]
+        run.rng.random = lambda: 0.0             # every harvest roll spreads
+        run.auto_harvest = True
+        run.start_timer()
+        run.update(ROUND_TIME)
+        self.assertLessEqual(run.creep_grown[False], cap)
+        self.assertLessEqual(len([p for p in run.plots if p.species == "mycelium"]), cap + 1)
+        self.assertGreaterEqual(MYCELIUM_CREEP_TIME, 15.0,
+                                "a guaranteed spread should be a slow, watchable clock")
+
+    def test_a_full_mycelium_board_stays_below_the_paying_crops(self):
+        """Regression for the round-4 millions: a board of mycelium was the best
+        money in the game by a wide margin, thanks to a +35% patch bonus on top
+        of a fast crop. It should now be a modest, comfortable earner."""
+        from .settings import ROUND_TIME
+
+        def round_income(species):
+            run = Run(seed=1)
+            run.round = 4
+            run.twist_id = lambda _rnd=None: "none"
+            run.begin_round()
+            run.plots = [Plot(species) for _ in range(12)]
+            run.auto_harvest = True
+            run.start_timer()
+            for _ in range(int(ROUND_TIME * 10)):    # step like the game loop
+                run.update(0.1)
+            return run.round_income
+
+        mycelium = round_income("mycelium")
+        pumpkin = round_income("pumpkin")
+        self.assertLess(mycelium, pumpkin,
+                        "a full mycelium board must not out-earn a full pumpkin board")
+        self.assertGreater(mycelium, round_income("daisy"),
+                           "mycelium should still beat the cheapest crop")
+        self.assertLess(data.PLANTS["mycelium"]["network"], 0.25)
+        self.assertLessEqual(data.PLANTS["mycelium"]["spread_cap"], 3)
+
     def test_mycelium_grows_in_the_garden_and_the_cellar(self):
         run = Run(seed=2)
         run.twist_id = lambda _rnd=None: "none"

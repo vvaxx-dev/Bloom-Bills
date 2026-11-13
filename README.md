@@ -18,9 +18,9 @@ Click a mature plant to collect its harvest and start its next growth cycle; you
 
 Seeds come from packs, and the good packs cost money, however there's still a chance to get a rarer pack each time.
 
-Unplanted seeds can be sold back. **SELL SEED** under the seed count sells whatever is highlighted in the tray, and its two-row dropdown asks whether to dump one or the whole stack. The price is deliberately low - a quarter of what the grown plant would fetch at the end of a round, so a Daisy seed is $1 and a Golden Orchid seed is $125 - which makes it a way to turn a dead shelf into part of a plot, not a way to farm the shop.
+Unplanted seeds can be sold back, and the selling happens where the buying does: on the packs screen. The seed shelf is clickable - pick a tile and the strip under it (**SELL 1** / **SELL ALL**) shows what one seed and the whole stack are worth. The price is deliberately low - a quarter of what the grown plant would fetch at the end of a round, so a Daisy seed is $1 and a Golden Orchid seed is $125 - which makes it a way to turn a dead shelf into part of a plot, not a way to farm the shop.
 
-You can highlight any seed you own, including one this board or this weather can't grow, so a frost-banned desert seed can still be turned into cash.
+Selling on the preparation screen rather than mid-round means you can dump a frost-banned desert seed, or a stack for a plant this weather won't allow, before the clock starts, and the round tray stays a pure planting tool. The round screen still prints a seed's resale price in its tooltip and points you back to the packs screen.
 
 ## The bill
 
@@ -50,11 +50,11 @@ Twenty-five base plants across eight packs, plus mutant offshoots that start app
 
 The **Desert Pack** is desert-only: Cactus, Aloe Vera, Prickly Pear and Agave. The **Harvest Pack** is autumn-themed: Pumpkin, Corn, Cranberries, Wheat, Potato and Carrot. The **Garden Pack** still stocks Daisy, Tomato and Sunflower, plus Venus Flytrap and Mycelium, and the Golden Orchid is now its one-in-a-hundred jackpot — Cactus swapped out to the Rare Pack. The **Rare Pack** carries Sunflower, Cactus, Pumpkin, Four Leaf Clover and a slim chance at Golden Orchid. Mycelium turns up in both the Garden Pack and the Nocturnal (cellar) pack.
 
-New plants bring new decisions: **Mycelium** creeps into the empty plot to its left, right, up or down, and every connected Mycelium boosts the whole patch's value. Every harvest of the patch has better than a one-in-six chance to push it out one more plot, and on top of that each mycelium fills a creep meter that books a guaranteed spread every 14 seconds of round — you can watch the pale bar under the mushroom fill. A patch only creeps while it has somewhere to go, and one seed stops at six new plots, so a lucky mycelium is a floor under your income, not a free garden; the spread front always grows from the patch's outer edge, so harvesting the original plot never stalls it; **Venus Flytrap** pays little itself but gets fed by every other harvest you take, and its Man-Eater mutation devours an adjacent plant for half its base payout; **Four Leaf Clover** pays nothing but rolls a 25% chance to 1.5x a neighbour's harvest each grow, and it has exactly one mutation, the **Five Leaf Clover**: drawn with five separate leaves, it rolls a 50% chance to 2x instead.
+New plants bring new decisions: **Mycelium** creeps into the empty plot to its left, right, up or down, and every connected Mycelium boosts the whole patch's value by 12%. Every harvest of the patch has a one-in-twenty chance to push it out one more plot, and on top of that the patch shares one creep meter that books a guaranteed spread every 20 seconds of round — you can watch the pale bar under the mushroom fill. The meter belongs to the patch, not to each mushroom, so a wide patch keeps its edge growing at the same pace instead of snowballing. A patch only creeps while it has somewhere to go, and one seed stops at three new plots a round, so a lucky mycelium is a floor under your income, not a free garden; the spread front always grows from the patch's outer edge, so harvesting the original plot never stalls it; **Venus Flytrap** pays little itself but gets fed by every other harvest you take, and its Man-Eater mutation devours an adjacent plant for half its base payout; **Four Leaf Clover** pays nothing but rolls a 25% chance to 1.5x a neighbour's harvest each grow, and it has exactly one mutation, the **Five Leaf Clover**: drawn with five separate leaves, it rolls a 50% chance to 2x instead.
 
 An Eclipse puts the whole nocturnal shelf in the round's tray alongside everything else, which is more than one screenful, so the tray pages with the arrows, left/right or the mouse wheel.
 
-The pack screen is three shelves, and every one of them fits on screen: the unopened packs on the top left (twelve to a page), the seeds and the packs for sale along the bottom. Four packs are for sale at a time and the rest are a page away, so all eight stay reachable through the whole run as each one unlocks - wheel or arrows over a shelf page that shelf. Hovering any pack shows its contents and odds. Farmer, nocturnal and cursed crops can mutate too; cursed mutations retain their upkeep and auras.
+The pack screen is three shelves, and every one of them fits on screen: the unopened packs on the top left (twelve to a page), the seeds (with their resale strip) and the packs for sale along the bottom. Four packs are for sale at a time and the rest are a page away, so all eight stay reachable through the whole run as each one unlocks - wheel or arrows over a shelf page that shelf. Hovering any pack shows its contents and odds. Farmer, nocturnal and cursed crops can mutate too; cursed mutations retain their upkeep and auras.
 
 ## Controls
 
@@ -63,6 +63,7 @@ The pack screen is three shelves, and every one of them fits on screen: the unop
 | X / Backspace / Delete | toggle the shovel to dig up a planted crop |
 | Tab | switch between the garden and the cellar |
 | 1 - 6 | pick a seed (from the visible tray page) |
+| 1 - 8 | pick a seed to sell on the packs screen |
 | Left / right | page the seed tray / seed shelf / garden index |
 | Up / down | change the garden-index subsection / page the pack shelves |
 | Mouse wheel | page whichever shelf the cursor is over |

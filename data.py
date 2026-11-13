@@ -49,9 +49,9 @@ PLANTS = {
     "venus_flytrap":  {"name": "Venus Flytrap",      "tags": ["carnivore"],                   "grow": 12, "yield": 4,   "sell": 16,  "rarity": "rare",      "color": (200, 70, 100),
                        "feed": 2,
                        "note": "A poor payer alone, but every harvest anywhere feeds it $2 toward its next bite."},
-    "mycelium":       {"name": "Mycelium",           "tags": ["mushroom", "fungus"],          "grow": 8,  "yield": 12,  "sell": 24,  "rarity": "uncommon",  "color": (222, 204, 168),
-                       "network": 0.35, "spread": 0.35, "spread_cap": 6, "no_mutations": True,
-                       "note": "Creeps into empty plots to its left, right, up or down: roughly one harvest in six spreads the patch, and a full creep meter always grows it one plot. Each connected mycelium adds +35% to the whole patch."},
+    "mycelium":       {"name": "Mycelium",           "tags": ["mushroom", "fungus"],          "grow": 8,  "yield": 6,   "sell": 12,  "rarity": "uncommon",  "color": (222, 204, 168),
+                       "network": 0.12, "spread": 0.10, "spread_cap": 3, "no_mutations": True,
+                       "note": "Creeps into empty plots to its left, right, up or down: roughly one harvest in twenty spreads the patch, and the patch grows one free plot every 20s. Each connected mycelium adds +12% to the whole patch, and one seed grows at most 3 extra plots a round."},
 }
 FARMER_PLANTS = ["potato", "wheat", "corn", "carrot", "cranberries", "saffron"]
 DESERT_PLANTS = ["cactus", "aloe_vera", "prickly_pear", "agave"]

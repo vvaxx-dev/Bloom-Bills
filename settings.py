@@ -41,13 +41,15 @@ MUTATION_CHANCE = 0.1
 SEED_SELL_SHARE = 0.25
 
 # Mycelium: every harvest rolls `spread` for the patch to push into an empty
-# orthogonal neighbour, and each mycelium also fills a creep meter that books
-# one guaranteed expansion every MYCELIUM_CREEP_TIME seconds of round. The
+# orthogonal neighbour, and the patch also books ONE guaranteed expansion every
+# MYCELIUM_CREEP_TIME seconds of round. The creep meter is shared by the whole
+# patch rather than per plot, so a wide patch does not grow several times
+# faster than a small one - it just has a bigger edge to grow from. The
 # guaranteed creep is what makes a patch visibly grow across a round instead of
 # depending on a coin flip you might never win. MYCELIUM_MAX_SPREAD caps how
 # many plots ONE seed can take over, so mycelium cannot fill the garden free.
-MYCELIUM_CREEP_TIME = 14.0
-MYCELIUM_MAX_SPREAD = 6
+MYCELIUM_CREEP_TIME = 20.0
+MYCELIUM_MAX_SPREAD = 3
 MYCELIUM_CREEP_SHARE = 0.5    # of a plant's `spread`, rolled per harvest
 
 # Underground cellar: grows nocturnal plants automatically at reduced speed,

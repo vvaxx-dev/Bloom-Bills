@@ -20,11 +20,23 @@ BUYS_PER_PAGE = BUY_COLS * BUY_ROWS
 PACKS_BOX = (4, 18, 100, 106)
 REVEAL_BOX = (108, 18, 208, 74)
 FORECAST_BOX = (108, 95, 208, 29)
-SEED_BOX = (4, 128, 138, 48)
-BUY_BOX = (146, 128, 126, 48)
-GO_BTN = (276, 128, 40, 48)
+# The bottom row is four pixels taller than it used to be so the seed shelf can
+# carry a resale strip under its two rows of tiles. All three panels keep the
+# same bottom edge, which is what makes them line up.
+SEED_BOX = (4, 124, 138, 52)
+BUY_BOX = (146, 124, 126, 52)
+GO_BTN = (276, 124, 40, 52)
 PAGER_Y = 131
 PAGER_H = 9
+
+# Seed resale: highlight a seed on the shelf, then the strip under it sells one
+# or the whole stack for a quarter of what the grown plant would fetch. Buying
+# happens here anyway, so unwanted seeds turn into cash before the round starts
+# instead of cluttering the tray mid-round.
+SEED_TILE_H = 14
+SELL_Y = SEED_BOX[1] + 43
+SELL_ONE_BTN = (SEED_BOX[0] + 2, SELL_Y, 66, 8)
+SELL_ALL_BTN = (SEED_BOX[0] + 70, SELL_Y, 66, 8)
 
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": TEXT}
 
@@ -37,6 +49,7 @@ class PacksScene(Scene):
         self.seed_page = 0
         self.pack_page = 0
         self.buy_page = 0
+        self.seed_selected = None
         self.pack_rects = []
         self.buy_rects = []
         self._buy_buttons = []
@@ -46,8 +59,10 @@ class PacksScene(Scene):
         self.go_btn = Button(*GO_BTN, "START ROUND >", self.go, color=(70, 130, 70))
 
         sx, _sy, sw, _sh = SEED_BOX
-        self.seed_left = Button(sx + sw - 24, PAGER_Y, 8, PAGER_H, "<", self.page_left)
-        self.seed_right = Button(sx + sw - 12, PAGER_Y, 8, PAGER_H, ">", self.page_right)
+        self.sell_one_btn = Button(*SELL_ONE_BTN, "SELL 1", self.sell_one, color=(150, 70, 60))
+        self.sell_all_btn = Button(*SELL_ALL_BTN, "SELL ALL", self.sell_all, color=(150, 70, 60))
+        self.seed_left = Button(sx + sw - 24, PAGER_Y - 4, 8, 8, "<", self.page_left)
+        self.seed_right = Button(sx + sw - 12, PAGER_Y - 4, 8, 8, ">", self.page_right)
 
         ux, _uy, uw, _uh = BUY_BOX
         self.buy_up = Button(ux + uw - 24, PAGER_Y, 8, PAGER_H, "^", self.buy_page_up)
@@ -57,7 +72,8 @@ class PacksScene(Scene):
         self.pack_down = Button(bx + bw - 12, by + 4, 8, PAGER_H, "V", self.pack_page_down)
 
         self.buttons = [
-            self.open_btn, self.go_btn, self.seed_left, self.seed_right,
+            self.open_btn, self.go_btn, self.sell_one_btn, self.sell_all_btn,
+            self.seed_left, self.seed_right,
             self.pack_up, self.pack_down, self.buy_up, self.buy_down,
         ]
         self.refresh()
@@ -126,7 +142,7 @@ class PacksScene(Scene):
         self.buy_page = min(self.buy_pages - 1, self.buy_page + 1)
 
     def buy_slot_rect(self, i):
-        x, y = BUY_BOX[0] + 5, BUY_BOX[1] + 14
+        x, y = BUY_BOX[0] + 5, BUY_BOX[1] + 18
         return (x + (i % BUY_COLS) * 60, y + (i // BUY_COLS) * 16, 56, 15)
 
     def visible_buys(self):
@@ -160,11 +176,69 @@ class PacksScene(Scene):
         return lines
 
     def seed_rect(self, i):
-        return (SEED_BOX[0] + 6 + (i % SEED_COLS) * 33, SEED_BOX[1] + 13 + (i // SEED_COLS) * 16, 32, 14)
+        return (
+            SEED_BOX[0] + 6 + (i % SEED_COLS) * 33,
+            SEED_BOX[1] + 13 + (i // SEED_COLS) * (SEED_TILE_H + 1),
+            32,
+            SEED_TILE_H,
+        )
 
     def visible_seed_order(self):
         start = self.seed_page * SEEDS_PER_PAGE
         return data.PLANT_ORDER[start:start + SEEDS_PER_PAGE]
+
+    def pick_seed(self, sid):
+        """Highlight one seed on the shelf so the resale strip knows its target."""
+        if self.run.seeds.get(sid, 0) <= 0:
+            self.seed_selected = None
+            self.app.toast("NO %s SEEDS - OPEN A PACK" % data.PLANTS[sid]["name"].upper())
+            return False
+        self.seed_selected = sid
+        self.ensure_seed_visible(sid)
+        return True
+
+    def ensure_seed_visible(self, sid):
+        """Turn the shelf to the page that holds `sid`, so a pick is never hidden."""
+        if sid in data.PLANT_ORDER:
+            self.seed_page = data.PLANT_ORDER.index(sid) // SEEDS_PER_PAGE
+
+    def sell_target(self):
+        """The seed the resale strip acts on: whatever is highlighted on the shelf."""
+        sid = self.seed_selected
+        if not sid:
+            return None, 0, 0
+        return sid, self.run.seeds.get(sid, 0), self.run.seed_price(sid)
+
+    def _sync_sell_buttons(self):
+        """Refresh the strip from the highlighted seed; returns (seed, owned, unit price)."""
+        sid, owned, price = self.sell_target()
+        self.sell_one_btn.enabled = owned > 0
+        self.sell_all_btn.enabled = owned > 0
+        self.sell_one_btn.label = ("SELL 1 $" + fmt(price)) if owned else "SELL 1"
+        self.sell_all_btn.label = ("SELL ALL $" + fmt(price * owned)) if owned else "SELL ALL"
+        return sid, owned, price
+
+    def sell_seed(self, all_of=False):
+        """Sell one seed, or the whole stack, from the highlighted shelf tile."""
+        sid, owned, _price = self.sell_target()
+        if not sid or owned <= 0:
+            self.app.toast("PICK A SEED IN YOUR SEEDS FIRST")
+            return
+        ok, msg, _refund = self.run.sell_seed(sid, owned if all_of else 1)
+        if not ok:
+            return
+        self.app.toast(msg, 2.5)
+        if hasattr(self.app, "save_run"):
+            self.app.save_run()
+        if self.run.seeds.get(sid, 0) <= 0:
+            self.seed_selected = None
+        self.refresh()
+
+    def sell_one(self):
+        self.sell_seed(all_of=False)
+
+    def sell_all(self):
+        self.sell_seed(all_of=True)
 
     def announce_season(self):
         run = self.run
@@ -181,6 +255,7 @@ class PacksScene(Scene):
             price = run.pack_price(b.kind)
             b.label = "%s\n$%s" % (data.PACKS[b.kind]["short"], fmt(price))
             b.enabled = run.money >= price
+        self._sync_sell_buttons()
         self.sync_pagers()
 
     def sync_pagers(self):
@@ -214,6 +289,10 @@ class PacksScene(Scene):
         for _kind, b in self.visible_buys():
             if b.click(pos):
                 return True
+        for i, sid in enumerate(self.visible_seed_order()):
+            if gfx.inside(pos, self.seed_rect(i)):
+                self.pick_seed(sid)
+                return True
         return False
 
     def place_buy_buttons(self):
@@ -245,6 +324,11 @@ class PacksScene(Scene):
         elif key == pygame.K_DOWN:
             self.pack_page_down()
             self.buy_page_down()
+        elif pygame.K_1 <= key <= pygame.K_8:
+            order = self.visible_seed_order()
+            idx = key - pygame.K_1
+            if idx < len(order):
+                self.pick_seed(order[idx])
 
     def update(self, dt):
         self.reveal_t += dt
@@ -315,14 +399,20 @@ class PacksScene(Scene):
             gfx.draw_text(surf, line, fx + 7, fy + 13 + k * 7, DIM if k else TEXT)
 
         gfx.panel(surf, *SEED_BOX, "YOUR SEEDS")
+        target, owned, price = self._sync_sell_buttons()
         seed_hover = None
         for i, sid in enumerate(self.visible_seed_order()):
             r = self.seed_rect(i)
             count = run.seeds.get(sid, 0)
-            gfx.draw_sprite(surf, sid, r[0], r[1], 1)
-            gfx.draw_text(surf, "x%d" % count, r[0] + 13, r[1] + 4, TEXT if count else DIM)
+            picked = sid == target
+            gfx.rect(surf, ACCENT if picked else PANEL_DARK, *r)
+            gfx.rect(surf, (54, 47, 80) if count else (36, 31, 56), r[0] + 1, r[1] + 1, r[2] - 2, r[3] - 2)
+            gfx.draw_sprite(surf, sid, r[0] + 1, r[1] + 1, 1)
+            gfx.draw_text(surf, "x%d" % count, r[0] + 15, r[1] + 4, TEXT if count else DIM)
             if gfx.inside(self.mouse, r):
                 seed_hover = sid
+        self.sell_one_btn.draw(surf, self.mouse)
+        self.sell_all_btn.draw(surf, self.mouse)
         if self.seed_pages > 1:
             self.seed_left.draw(surf, self.mouse)
             self.seed_right.draw(surf, self.mouse)
@@ -363,6 +453,16 @@ class PacksScene(Scene):
                 ("ROUND TIME: %dS" % run.round_time(), DIM),
             ], self.mouse, 120)
             return
+        if self.sell_one_btn.hover(self.mouse) or self.sell_all_btn.hover(self.mouse):
+            lines = [("SELL SEEDS", ACCENT)]
+            if owned:
+                lines.append(("%s: $%s EACH, %d OWNED" % (data.PLANTS[target]["name"], fmt(price), owned), GOOD))
+                lines.append(("SELL ALL: $" + fmt(price * owned), ACCENT))
+                lines.append(("A QUARTER OF THE GROWN PLANT'S VALUE.", DIM))
+            else:
+                lines.append(("PICK A SEED ON THE SHELF FIRST.", DIM))
+            gfx.tooltip(surf, lines, self.mouse, 112)
+            return
         if seed_hover:
             sp = data.PLANTS[seed_hover]
             rcol = data.RARITY_COLORS[sp["rarity"]]
@@ -370,7 +470,10 @@ class PacksScene(Scene):
                 (sp["name"], rcol),
                 ("%s - %gS GROW" % (sp["rarity"].upper(), sp["grow"]), DIM),
                 ("HARVEST $%s / SELL $%s" % (fmt(sp["yield"]), fmt(sp["sell"])), GOOD),
+                ("SEED RESALE: $%s EACH" % fmt(run.seed_price(seed_hover)), ACCENT),
             ]
+            if run.seeds.get(seed_hover, 0) > 0:
+                lines.append(("CLICK IT TO PICK IT, THEN SELL", DIM))
             if "nocturnal" in sp["tags"]:
                 lines.append(("NOCTURNAL: CELLAR OR ECLIPSE", WATER))
             if sp.get("upkeep"):
