@@ -62,6 +62,8 @@ class SummaryScene(Scene):
         self.run.enter_shop()
         self.app.save_run()
         self.app.goto("shop")
+        if hasattr(self.app, "start_tutorial"):
+            self.app.start_tutorial("shop")
 
     def on_key(self, key):
         if key in (pygame.K_SPACE, pygame.K_RETURN) and not self.run.pending_bill:

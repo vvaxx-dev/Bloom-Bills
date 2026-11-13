@@ -7,7 +7,7 @@ from .paths import save_dir
 SETTINGS_DEFAULT = {"confirmations": True, "floaters": True, "auto_harvest": False, "scale": 6}
 PROFILE_DEFAULT = {
     "v": 1, "heirlooms": 0, "perks": {}, "best_round": 0, "runs": 0, "wins": 0,
-    "settings": SETTINGS_DEFAULT.copy(), "harvested": {},
+    "settings": SETTINGS_DEFAULT.copy(), "harvested": {}, "tutorial_done": [],
 }
 
 
@@ -56,6 +56,11 @@ class SaveManager:
         profile["harvested"] = (
             {str(k): int(v) for k, v in raw_harvested.items() if isinstance(v, (int, float))}
             if isinstance(raw_harvested, dict) else {}
+        )
+        raw_tutorial = profile.get("tutorial_done")
+        profile["tutorial_done"] = (
+            [str(x) for x in raw_tutorial if isinstance(x, str)]
+            if isinstance(raw_tutorial, list) else []
         )
         return profile
 

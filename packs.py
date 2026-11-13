@@ -281,6 +281,8 @@ class PacksScene(Scene):
 
     def go(self):
         self.app.goto("round")
+        if hasattr(self.app, "start_tutorial"):
+            self.app.start_tutorial("round")
 
     def on_click(self, pos):
         self.place_buy_buttons()

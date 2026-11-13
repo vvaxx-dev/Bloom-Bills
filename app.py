@@ -20,6 +20,7 @@ from .settings import (
     BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, PANEL_DARK, START_SCALE, TEXT, TITLE,
 )
 from .state import Run
+from .tutorial import DialogueOverlay, TUTORIAL_STAGES, tutorial_steps
 
 RUN_SCENE_NAMES = ("packs", "round", "summary", "shop")
 
@@ -48,6 +49,7 @@ class App:
         self.pause_modal = None
         self.settings_modal = None
         self.confirm_modal = None
+        self.dialogue_modal = None
         self.mouse = (0, 0)
         self.running = True
         self.toasts = []
@@ -60,6 +62,7 @@ class App:
         self.pause_modal = None
         self.settings_modal = None
         self.confirm_modal = None
+        self.dialogue_modal = None
         self.scene = SCENES[name](self, **kwargs)
         self.scene.on_enter()
 
@@ -98,8 +101,37 @@ class App:
             self.pause_modal = PauseModal(self)
 
     def active_modal(self):
-        """Return the highest-priority open modal (confirm > settings > pause)."""
-        return self.confirm_modal or self.settings_modal or self.pause_modal
+        """Return the highest-priority open modal (confirm > settings > dialogue > pause)."""
+        return self.confirm_modal or self.settings_modal or self.dialogue_modal or self.pause_modal
+
+    def _tutorial_done(self):
+        return self.profile.setdefault("tutorial_done", [])
+
+    def _complete_tutorial(self, stage, skipped=False):
+        done = self._tutorial_done()
+        stages = TUTORIAL_STAGES if skipped else (stage,)
+        for name in stages:
+            if name not in done:
+                done.append(name)
+        self.saves.save_profile(self.profile)
+
+    def start_tutorial(self, stage):
+        """Open a first-run tutorial stage once, unless it was finished or skipped."""
+        if not self.run or stage in self._tutorial_done() or self.active_modal():
+            return
+        steps = tutorial_steps(stage, self.scene)
+        if not steps:
+            return
+        self.dialogue_modal = DialogueOverlay(
+            self, steps,
+            on_finish=lambda: self._complete_tutorial(stage),
+            on_skip=lambda: self._complete_tutorial(stage, skipped=True),
+        )
+
+    def open_guide(self):
+        """Replayable overview dialogue, usable from the title screen without a run."""
+        from .tutorial import guide_steps
+        self.dialogue_modal = DialogueOverlay(self, guide_steps())
 
     def _window_flags(self):
         return pygame.NOFRAME if self.borderless else pygame.RESIZABLE
@@ -148,6 +180,7 @@ class App:
         self.run.grant_round_packs()
         self.save_run()
         self.goto("packs")
+        self.start_tutorial("packs")
 
     def continue_run(self):
         saved = self.saves.load_run()
@@ -169,6 +202,8 @@ class App:
             self.goto("summary")
         else:
             self.goto("packs")
+        if self.scene_name in TUTORIAL_STAGES:
+            self.start_tutorial(self.scene_name)
 
     def save_run(self):
         if self.run and not self.run.dead:
@@ -297,6 +332,8 @@ class App:
         modal = self.active_modal()
         if not modal:
             self.scene.update(dt)
+        if self.dialogue_modal:
+            self.dialogue_modal.update(dt)
         for t in self.toasts:
             t[1] -= dt
         self.toasts = [t for t in self.toasts if t[1] > 0]

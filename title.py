@@ -27,9 +27,10 @@ class TitleScene(Scene):
             295, 7, 19, 19, "", self.app.open_settings,
             icon="cog", chromeless=True, hover_subs=gfx.COG_HOVER_SUBS,
         )
+        self.guide_btn = Button(12, 7, 48, 19, "GUIDE", self.app.open_guide, color=(70, 130, 70))
         self.buttons = [
             self.continue_btn, self.new_btn, self.shelf_btn, self.quit_btn,
-            self.book_btn, self.cog_btn,
+            self.book_btn, self.cog_btn, self.guide_btn,
         ]
 
     def draw(self, surf):

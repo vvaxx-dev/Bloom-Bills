@@ -69,7 +69,13 @@ The pack screen is three shelves, and every one of them fits on screen: the unop
 | Mouse wheel | page whichever shelf the cursor is over |
 | F11 | fullscreen |
 | F12 | borderless window on/off (borderless by default) |
-| Esc | open / close pause menu, settings, or confirmation prompts |
+| Esc | open / close pause menu, settings, or confirmation prompts; skip an open dialogue |
+
+## Tutorial
+
+New runs open a short walkthrough with **Moss**, an original gardener character. Moss is drawn as a large native 96x156 portrait (straw hat, goggles, mossy beard, overalls and trowel) anchored at the bottom of the screen, Crazy-Dave style, rather than a scaled-up version of his old tiny sprite. His white dialogue box sits beside him near the bottom, takes about a fifth of the canvas, and advances with a click or Space. Arrows point at the pack button, seed shelf, forecast, plots, watering/harvesting, shovel, and shop controls as each topic comes up; if Moss would stand over the highlighted control he steps to the other side and the box moves with him. Esc or the SKIP button dismisses the tutorial; completed or skipped stages are saved in `profile.json` under `tutorial_done` so they do not repeat. The title-screen **GUIDE** button replays a short overview at any time.
+
+The presentation lives in `tutorial.py` as a reusable `DialogueOverlay`: pass it a list of `DialogueStep`s with optional target rectangles (or callables that resolve against the active scene) to use the same click-through box for story beats and later tutorials.
 
 ## Running it
 
