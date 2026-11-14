@@ -136,6 +136,11 @@ class Run:
         self.total_earned = 0
         self.won = False
         self.dead = False
+        # Endless play: after paying the eighth bill the farm is won. The
+        # player then chooses to retire (run ends) or keep farming. Kept in
+        # the save so a reload cannot skip the choice.
+        self.endless = False
+        self.retired = False
 
         self.time_total = ROUND_TIME
         self.time_left = ROUND_TIME
@@ -1343,6 +1348,7 @@ class Run:
             "shop_offers": self.shop_offers, "rerolls": self.rerolls,
             "quotas_paid": self.quotas_paid, "total_earned": self.total_earned,
             "won": self.won, "dead": self.dead, "pending_bill": self.pending_bill,
+            "endless": self.endless, "retired": self.retired,
             "heirlooms_spent": self.heirlooms_spent, "last_summary": self.last_summary,
         }
 
@@ -1375,6 +1381,8 @@ class Run:
         run.total_earned = int(d.get("total_earned", 0))
         run.won = bool(d.get("won", False))
         run.dead = bool(d.get("dead", False))
+        run.endless = bool(d.get("endless", False))
+        run.retired = bool(d.get("retired", False))
         run.pending_bill = int(d.get("pending_bill", 0))
         run.heirlooms_spent = int(d.get("heirlooms_spent", 0))
         saved_summary = d.get("last_summary")

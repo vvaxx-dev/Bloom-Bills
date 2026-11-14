@@ -111,7 +111,7 @@ Over a hundred tests on the economy, sprites, UI, and mechanics: relic and pack 
 
 ## Where it's at
 
-Version 0.1.0. Playable start to finish, wins at round 24.
+Version 0.1.0. Playable start to finish, wins at round 24: paying the eighth bill earns the farm, and at that moment you choose — retire with the deed and end the run, or keep farming into endless rounds with ever-bigger bills (6x each, due every third round) until one goes unpaid.
 
 ## Harvesting and new treasures
 

@@ -123,7 +123,7 @@ def plant_anim_style(species_id, species_meta=None, stage_sprite=None):
     """Classify a plant into a movement archetype based on its growth stage and family."""
     if stage_sprite == "seed":
         return "seed"
-    if stage_sprite in ("sprout", "leafy"):
+    if stage_sprite in ("sprout", "leafy") or stage_sprite.endswith(("_sprout", "_leafy")):
         return "sprout"
     meta = species_meta or {}
     base = meta.get("base", species_id)
@@ -303,10 +303,27 @@ def draw_cursor(surf, pos, kind="cursor"):
     surf.blit(sprite("cursor", 1), (x, y))
 
 
+# Fungi grow as pins and button mushrooms, not green sprouts: give each a
+# juvenile pair in its own palette (brown caps, red caps, cream mycelium
+# threads) so young mushrooms read as fungi at every stage.
+_FUNGUS_STAGES = {
+    "brown_mushroom": ("brown_mushroom_sprout", "brown_mushroom_leafy"),
+    "red_mushroom": ("red_mushroom_sprout", "red_mushroom_leafy"),
+    "mycelium": ("mycelium_sprout", "mycelium_leafy"),
+}
+
+
 def plant_sprite_name(species, fraction):
-    """Map growth progress (0.0..1.0) through shared juvenile stages to mature species art."""
+    """Map growth progress (0.0..1.0) through juvenile stages to mature species art."""
     if fraction < 0.15:
         return "seed"
+    stages = _FUNGUS_STAGES.get(species)
+    if stages is not None:
+        if fraction < 0.45:
+            return stages[0]
+        if fraction < 0.75:
+            return stages[1]
+        return species
     if fraction < 0.45:
         return "sprout"
     if fraction < 0.75:

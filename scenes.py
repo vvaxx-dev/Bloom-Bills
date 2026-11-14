@@ -7,6 +7,7 @@ from .round import RoundScene
 from .shop import ShopScene
 from .summary import SummaryScene
 from .title import TitleScene
+from .victory import VictoryScene
 
 SCENES = {
     "title": TitleScene,
@@ -16,5 +17,6 @@ SCENES = {
     "summary": SummaryScene,
     "shop": ShopScene,
     "gameover": GameOverScene,
+    "victory": VictoryScene,
     "shelf": ShelfScene,
 }

@@ -60,6 +60,7 @@ class RoundScene(Scene):
         return amb
 
     def _sync_tray_buttons(self):
+        self.tray_scroll = min(self.tray_scroll, self.max_scroll())
         self.tray_left.enabled = self.tray_scroll > 0
         self.tray_right.enabled = self.tray_scroll < self.max_scroll()
 
@@ -70,12 +71,15 @@ class RoundScene(Scene):
         return self.run.cellar_plots if self.in_cellar() else self.run.plots
 
     def view_seeds(self):
-        """Return plantable species for the active board; Eclipse adds nocturnal seeds to the surface tray."""
+        """Return plantable species for the active board, but only ones the player
+        actually owns; Eclipse adds owned nocturnal seeds to the surface tray."""
+        run = self.run
         if self.in_cellar():
-            return list(data.CELLAR_PLANTS)
-        seeds = list(data.SURFACE_PLANTS)
-        if self.run.twist().get("eclipse"):
-            seeds += [sid for sid in data.NOCTURNAL_PLANTS if sid not in seeds]
+            return [sid for sid in data.CELLAR_PLANTS if run.seeds.get(sid, 0) > 0]
+        seeds = [sid for sid in data.SURFACE_PLANTS if run.seeds.get(sid, 0) > 0]
+        if run.twist().get("eclipse"):
+            seeds += [sid for sid in data.NOCTURNAL_PLANTS
+                      if sid not in seeds and run.seeds.get(sid, 0) > 0]
         return seeds
 
     def toggle_shovel(self):
@@ -484,6 +488,8 @@ class RoundScene(Scene):
             gfx.draw_text(surf, str(i + 1), r[0] + 14, r[1] + 13, DIM)
             if gfx.inside(mouse, r):
                 seed_hover = sid
+        if not visible:
+            gfx.draw_text(surf, "NO SEEDS - OPEN PACKS", 10, TRAY_Y + 11, DIM)
         if len(seeds) > TRAY_SLOTS:
             self._sync_tray_buttons()
             self.tray_left.draw(surf, mouse)

@@ -32,9 +32,10 @@ class SummaryScene(Scene):
         ok, _ = self.run.pay_pending_bill()
         self.app.save_run()
         if ok:
-            if self.run.won:
-                self.app.finish_run()
-                self.app.goto("gameover")
+            if self.run.won and not getattr(self.run, "endless", False) \
+                    and not getattr(self.run, "retired", False):
+                # The win is a choice: retire with the farm, or farm on forever.
+                self.app.goto("victory")
                 return
             self.go_shop()
 
@@ -125,10 +126,14 @@ class SummaryScene(Scene):
         gfx.panel(surf, rx, ry0, rw, rh, "BILL COLLECTOR" if pending else "QUOTA & NEXT ROUND", fill=(38, 33, 58))
 
         bp = run.bill_progress()
-        gfx.draw_text(surf, "BILLS PAID: %d / %d" % (run.quotas_paid, WIN_QUOTAS), rx + 6, ry0 + 16, TEXT)
+        paid_label = "BILLS PAID: %d" % run.quotas_paid
+        if not getattr(run, "endless", False):
+            paid_label += " / %d" % WIN_QUOTAS
+        gfx.draw_text(surf, paid_label, rx + 6, ry0 + 16, TEXT)
+        pips = min(run.quotas_paid, WIN_QUOTAS)
         for k in range(WIN_QUOTAS):
             px = rx + 6 + k * 17
-            pcol = GOOD if k < run.quotas_paid else ((BAD if pending else ACCENT) if k == run.quotas_paid else PANEL_DARK)
+            pcol = GOOD if k < pips else ((BAD if pending else ACCENT) if k == pips else PANEL_DARK)
             gfx.rect(surf, pcol, px, ry0 + 25, 14, 4)
 
         if pending:
@@ -150,7 +155,11 @@ class SummaryScene(Scene):
                 left_after = run.money - bill
                 gfx.draw_text(surf, "AFTER PAYING", rx + 6, ry0 + 69, DIM)
                 gfx.draw_text(surf, "$%s" % fmt(left_after), rx + rw - 6, ry0 + 69, GOOD, align="right")
-                msg = "PAY TO WIN THE FARM!" if bp["quota_index"] >= WIN_QUOTAS else "QUOTA MET! PAY TO CONTINUE."
+                msg = (
+                    "PAY TO KEEP THE FARM!" if bp["quota_index"] > WIN_QUOTAS
+                    else "PAY TO WIN THE FARM!" if bp["quota_index"] >= WIN_QUOTAS
+                    else "QUOTA MET! PAY TO CONTINUE."
+                )
                 gfx.draw_wrapped(surf, msg, rx + 6, ry0 + 86, rw - 12, GOOD)
             else:
                 short = bill - run.money

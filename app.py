@@ -22,7 +22,7 @@ from .settings import (
 from .state import Run
 from .tutorial import DialogueOverlay, TUTORIAL_STAGES, tutorial_steps
 
-RUN_SCENE_NAMES = ("packs", "round", "summary", "shop")
+RUN_SCENE_NAMES = ("packs", "round", "summary", "shop", "victory")
 
 
 class App:
@@ -198,6 +198,9 @@ class App:
             self.save_run()
         if self.run.phase == "shop":
             self.goto("shop")
+        elif self.run.phase == "summary" and self.run.won and not self.run.endless and not self.run.retired:
+            # The win is pending its retire/endless choice; don't let a reload skip it.
+            self.goto("victory")
         elif self.run.phase == "summary":
             self.goto("summary")
         else:
