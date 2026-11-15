@@ -394,8 +394,13 @@ class PacksScene(Scene):
         gfx.panel(surf, fx, fy, fw, fh, fill=(38, 33, 58))
         gfx.rect(surf, tcol, fx, fy, 3, fh)
         prefix = "BOSS FORECAST: " if twist.get("boss") else "WEATHER FORECAST: "
-        gfx.draw_text(surf, prefix + twist["name"].upper(), fx + 7, fy + 4, tcol)
-        gfx.draw_text(surf, "%dS" % run.round_time(), fx + fw - 5, fy + 4, DIM, align="right")
+        time_label = "%dS" % run.round_time()
+        # Leave room for the round-time chip, then measure rather than guessing
+        # how many characters of "THE GARDEN GHOST" will fit.
+        head_width = fw - 12 - gfx.text_width(time_label) - 4
+        gfx.draw_text(surf, gfx.fit_text(prefix + twist["name"].upper(), head_width),
+                      fx + 7, fy + 4, tcol)
+        gfx.draw_text(surf, time_label, fx + fw - 5, fy + 4, DIM, align="right")
         desc_lines = gfx.wrap(twist.get("short", twist["desc"]), fw - 12)
         for k, line in enumerate(desc_lines[:2]):
             gfx.draw_text(surf, line, fx + 7, fy + 13 + k * 7, DIM if k else TEXT)

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from .state import Run, Plot
 from . import data
@@ -231,6 +232,60 @@ class MechanicTests(unittest.TestCase):
             run.update(0.1)
         self.assertGreater(run.money, 0)     # it harvested on its own
 
+    def test_relic_effects_change_the_numbers(self):
+        capsule = Run(seed=1)
+        capsule.relics = ["time_capsule"]
+        capsule.phase = "round"
+        capsule.capsule_income = 100
+        before = capsule.money
+        capsule._tick_capsule(10)
+        self.assertEqual(capsule.money - before, 25)
+
+        def sale(relics):
+            run = Run(seed=1)
+            run.twist_id = lambda _rnd=None: "none"
+            run.relics = list(relics)
+            run.round = 1
+            run.plots = [Plot("daisy", progress=data.PLANTS["daisy"]["grow"])] \
+                + [Plot() for _ in range(11)]
+            run.cellar_plots = [Plot() for _ in range(4)]
+            run.stock_species = "daisy"
+            run.money = 0
+            return run.end_round()["sale"]
+
+        self.assertEqual(sale(["stock_market"]), 2 * sale([]))
+
+        collector = Run(seed=1)
+        collector.relics = ["collector"]
+        collector.plots = [Plot(species) for species in
+                           ("daisy", "tomato", "sunflower", "cactus", "pumpkin")] \
+            + [Plot() for _ in range(7)]
+        self.assertGreater(collector.relic_power(), 1.0)
+
+        def bad_weather_growth(relics):
+            run = Run(seed=1)
+            run.twist_id = lambda _rnd=None: "drought"
+            run.relics = list(relics)
+            return run.growth_speed()
+
+        self.assertGreater(bad_weather_growth(["emergency_generator"]),
+                           bad_weather_growth([]))
+
+        owl = Run(seed=1)
+        owl.relics = ["friendly_owl"]
+        owl.phase = "round"
+        owl.seeds = {}
+        owl._tick_owl(12)
+        self.assertTrue(any(e["kind"] == "owl_seed" for e in owl.events))
+        self.assertGreater(sum(owl.seeds.values()), 0)
+
+        snail = Run(seed=1)
+        snail.relics = ["eternal_snail"]
+        self.assertGreater(snail.growth_speed(), 1.0)
+        snail.phase = "round"
+        snail.started = True
+        self.assertTrue(snail.snail_bite())
+        self.assertTrue(snail.snail_bitten)
 
 class HeirloomTests(unittest.TestCase):
     def test_heirloom_rewards_scale_with_progress(self):
@@ -287,6 +342,30 @@ class HeirloomTests(unittest.TestCase):
         self.assertEqual(again.perk("packs"), 1)
         self.assertEqual(again.heirlooms_spent, run.heirlooms_spent)
 
+    def test_heirlooms_apply_to_a_run(self):
+        clock = Run(seed=1, perks={"clock": 2})
+        clock.twist_id = lambda _rnd=None: "none"
+        clock.plots[0] = Plot("daisy")
+        clock.start_timer()
+        self.assertGreater(clock.plots[0].progress, 0)
+
+        penny = Run(seed=1, perks={"penny": 3})
+        penny.last_summary = {"paid": True}
+        penny.shop_offers = ["green_thumb", "beehive", "clover"]
+        with patch.object(penny.rng, "random", return_value=0.0):
+            penny._roll_free_offer()
+        self.assertIsNotNone(penny.free_offer)
+        self.assertEqual(penny.relic_offer_price(penny.free_offer), 0)
+
+        insurance = Run(seed=1, perks={"insurance": 1})
+        insurance.round = 3
+        insurance.money = 50
+        summary = insurance.end_round()
+        self.assertTrue(summary["can_afford"])
+        ok, _msg = insurance.pay_pending_bill()
+        self.assertTrue(ok)
+        self.assertTrue(summary["waived"])
+        self.assertEqual(insurance.bill_waivers, 0)
 
 class PriceTests(unittest.TestCase):
     def test_relics_are_dearer_than_they_used_to_be(self):
@@ -1079,6 +1158,35 @@ class UnpaidQuotaTests(unittest.TestCase):
                 else:
                     os.environ["BLOOM_SAVE_DIR"] = old
 
+    def test_insurance_waiver_is_offered_on_the_summary_screen(self):
+        try:
+            import pygame
+        except ImportError:
+            self.skipTest("pygame not installed")
+        import os, tempfile
+        from .app import App
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("BLOOM_SAVE_DIR")
+            os.environ["BLOOM_SAVE_DIR"] = tmp
+            try:
+                app = App()
+                app.new_run()
+                app.run.perks["insurance"] = 1
+                app.run.bill_waivers = 1
+                app.run.round = 3
+                app.run.money = 100
+                app.after_round()
+                self.assertEqual(app.scene_name, "summary")
+                self.assertTrue(app.scene.pay_btn.enabled)
+                self.assertEqual(app.scene.pay_btn.label, "USE WAIVER")
+                bx, by = app.scene.decline_btn.x + 5, app.scene.decline_btn.y + 5
+                app.handle_click((bx, by))
+                self.assertIsNotNone(app.confirm_modal)
+            finally:
+                if old is None:
+                    os.environ.pop("BLOOM_SAVE_DIR", None)
+                else:
+                    os.environ["BLOOM_SAVE_DIR"] = old
 
 class RareRelicPricingTests(unittest.TestCase):
     def test_rare_relics_start_slightly_above_uncommon_and_scale_steeper(self):
@@ -2006,6 +2114,26 @@ class FlytrapTests(unittest.TestCase):
         self.assertEqual(run.plots[0].gorged, 0)
         self.assertEqual(sum(1 for p in run.plots if p.species == "daisy"), far)
 
+    def test_flytrap_eats_nearby_critters(self):
+        import types
+        from . import ambient
+        from .settings import CRITTER_FEED_VALUE
+
+        run = self.run_with("venus_flytrap")
+        run.twist_id = lambda _rnd=None: "none"
+        run.phase = "round"
+        run.finished = False
+        manager = ambient.GardenAmbient(run)
+        critter = types.SimpleNamespace(
+            species="ant", x=32.0, y=55.0, away=0.0, offscreen=False,
+            _leave_for_a_while=lambda _rng: None,
+        )
+        manager.critters = [critter]
+        manager.flytrap_cd.clear()
+        manager._feed_flytraps(0.1, run, plot_rects=[(10, 40, 50, 30)])
+        self.assertEqual(run.plots[0].fed, CRITTER_FEED_VALUE)
+        self.assertTrue(any(e["kind"] == "critter_eaten" for e in run.events))
+        self.assertIn((False, 0), manager.flytrap_cd)
 
 class CloverTests(unittest.TestCase):
     def run_with(self, *species):
@@ -2327,6 +2455,34 @@ class RelicEvolutionFixTests(unittest.TestCase):
             self.assertNotEqual(frames[0], frames[1])
             self.assertTrue(preview.grid)
             self.assertFalse(pygame.display.get_init())
+
+
+class SpritePreviewLayoutTests(unittest.TestCase):
+    """One outsized portrait must not push every other sprite a screen apart."""
+
+    def test_a_large_portrait_gets_its_own_rows_instead_of_inflating_every_cell(self):
+        import pygame
+        from . import preview_sprites
+        pygame.font.init()
+        art = preview_sprites.load()
+        names = list(art.grids)
+        self.assertIn("moss", names)
+
+        usual = preview_sprites.usual_tile(art, names)
+        self.assertTrue(preview_sprites.is_outsized(art, "moss", usual))
+        self.assertFalse(preview_sprites.is_outsized(art, "daisy", usual))
+
+        sheet = preview_sprites.compose(art, names, 3, 1280)
+        without_portrait = preview_sprites.compose(
+            art, [name for name in names if name != "moss"], 3, 1280)
+        # Moss used to set the shared cell size: one card per row, 113 rows tall.
+        # It now adds a single row of its own below the same tight grid.
+        self.assertEqual(sheet.get_width(), without_portrait.get_width())
+        self.assertLess(sheet.get_height(), without_portrait.get_height() * 2)
+        self.assertGreater(sheet.get_height(), without_portrait.get_height())
+        # Asking for the portrait by itself is still a normal, drawable sheet.
+        alone = preview_sprites.compose(art, ["moss"], 3, 1280)
+        self.assertGreater(alone.get_height(), 0)
 
 
 if __name__ == "__main__":

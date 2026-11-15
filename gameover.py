@@ -28,7 +28,10 @@ class GameOverScene(Scene):
         gfx.rect(surf, (30, 22, 36), 0, 0, CANVAS_W, CANVAS_H)
         result = self.app.last_result or {}
         won = bool(result.get("won"))
-        headline = "THE FARM IS YOURS" if won else "THE BILL COLLECTOR CAME"
+        if result.get("cause") == "snail":
+            headline = "THE ETERNAL SNAIL CAUGHT YOU"
+        else:
+            headline = "THE FARM IS YOURS" if won else "THE BILL COLLECTOR CAME"
         gfx.draw_text(surf, headline, 160, 14, GOOD if won else ACCENT, scale=2, align="center")
         gfx.draw_text(
             surf,
@@ -59,21 +62,44 @@ class ShelfScene(Scene):
 
     ROW_Y = 27
     ROW_H = 23
+    ROWS_PER_PAGE = 5
 
     def on_enter(self):
         self.msg = ""
         self.t = 0.0
+        self.page = 0
+        self.pages = max(1, math.ceil(len(data.PERK_ORDER) / self.ROWS_PER_PAGE))
         self.buy_buttons = []
         for i, key in enumerate(data.PERK_ORDER):
             b = Button(
-                214, self.ROW_Y + i * self.ROW_H + 1, 100, 20, "",
+                214, self.ROW_Y + (i % self.ROWS_PER_PAGE) * self.ROW_H + 1, 100, 20, "",
                 lambda k=key: self.buy(k), color=(70, 130, 70),
             )
             b.key = key
             self.buy_buttons.append(b)
+        self.page_prev = Button(244, 144, 18, 11, "<", lambda: self.set_page(self.page - 1),
+                                color=(96, 70, 140))
+        self.page_next = Button(298, 144, 18, 11, ">", lambda: self.set_page(self.page + 1),
+                                color=(96, 70, 140))
         self.back_btn = Button(126, 156, 68, 18, "BACK", lambda: self.app.goto("title"), color=(70, 130, 70))
-        self.buttons = self.buy_buttons + [self.back_btn]
+        self.set_page(0)
         self.refresh()
+
+    def set_page(self, page):
+        self.page = max(0, min(self.pages - 1, int(page)))
+        start = self.page * self.ROWS_PER_PAGE
+        visible = self.buy_buttons[start:start + self.ROWS_PER_PAGE]
+        self.page_prev.enabled = self.page > 0
+        self.page_next.enabled = self.page < self.pages - 1
+        self.buttons = visible + [self.page_prev, self.page_next, self.back_btn]
+
+    def visible_keys(self):
+        start = self.page * self.ROWS_PER_PAGE
+        return data.PERK_ORDER[start:start + self.ROWS_PER_PAGE]
+
+    def on_wheel(self, dy):
+        self.set_page(self.page + (1 if dy < 0 else -1))
+        return True
 
     def update(self, dt):
         self.t = getattr(self, "t", 0.0) + dt
@@ -128,6 +154,10 @@ class ShelfScene(Scene):
     def on_key(self, key):
         if key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
             self.app.goto("title")
+        elif key in (pygame.K_LEFT, pygame.K_a):
+            self.set_page(self.page - 1)
+        elif key in (pygame.K_RIGHT, pygame.K_d):
+            self.set_page(self.page + 1)
 
     def draw(self, surf):
         gfx.rect(surf, BG, 0, 0, CANVAS_W, CANVAS_H)
@@ -139,13 +169,17 @@ class ShelfScene(Scene):
             gfx.draw_text(surf, self.msg, 314, 19, GOOD, align="right")
 
         tip = None
-        for i, key in enumerate(data.PERK_ORDER):
-            row_y = self.ROW_Y + i * self.ROW_H
-            self.draw_row(surf, i, key, row_y)
+        start = self.page * self.ROWS_PER_PAGE
+        for row, key in enumerate(self.visible_keys()):
+            row_y = self.ROW_Y + row * self.ROW_H
+            self.draw_row(surf, start + row, key, row_y)
             if gfx.inside(self.mouse, (4, row_y, 208, self.ROW_H)):
                 tip = self.heirloom_tooltip(key)
 
-        gfx.draw_text(surf, "EARN MORE: +1 FOR EVERY ROUND SURVIVED, +3 FOR EVERY BILL PAID.", 6, 145, DIM)
+        gfx.draw_text(surf, "EARN: +1/ROUND, +3/BILL.", 6, 145, DIM)
+        gfx.draw_text(surf, "%d/%d" % (self.page + 1, self.pages), 280, 146, TEXT, align="center")
+        self.page_prev.draw(surf, self.mouse)
+        self.page_next.draw(surf, self.mouse)
         self.back_btn.draw(surf, self.mouse)
         if tip:
             gfx.tooltip(surf, tip, self.mouse, 186)

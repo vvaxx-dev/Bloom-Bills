@@ -543,6 +543,18 @@ class IndexScene(Scene):
             y += 9
         y += gfx.draw_wrapped(surf, relic["desc"], 168, y, 136, TEXT) * 7 + 3
 
+        syn = data.synergy_text(self.selected)
+        if syn and y < 138:
+            gfx.draw_text(surf, "PLANT PAIRING", 168, y, ACCENT)
+            y += 8
+            syn_lines = gfx.wrap(syn, 136)[:2]
+            for line in syn_lines:
+                if y > 150:
+                    break
+                gfx.draw_text(surf, line, 168, y, GOOD)
+                y += 7
+            y += 2
+
         levels = relic.get("levels", [])
         if levels:
             gfx.draw_text(surf, "EVOLUTIONS", 168, y, color)
@@ -596,7 +608,7 @@ class IndexScene(Scene):
             max_bonus = data.perk_text(self.selected, perk["max"])
             y += gfx.draw_wrapped(surf, "MAX: " + max_bonus, 168, y, 136, WATER) * 7 + 2
         if y < 154:
-            gfx.draw_text(surf, perk["desc"], 168, y, DIM)
+            gfx.draw_text(surf, gfx.fit_text(perk["desc"], 136), 168, y, DIM)
         gfx.draw_text(
             surf, "BANKED: %s" % fmt(self.app.profile.get("heirlooms", 0)),
             236, 163, ACCENT, align="center",

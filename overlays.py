@@ -1,5 +1,7 @@
 """Modal overlays layered above active scenes: confirmations, settings, and mid-run pause."""
 
+import math
+
 import pygame
 
 from . import data, gfx
@@ -189,7 +191,32 @@ class PauseModal:
         self.new_btn = Button(bx + 10, by + 57, 88, 22, "NEW RUN", self.new_run_clicked, color=PANEL_LIGHT)
         self.menu_btn = Button(bx + 10, by + 84, 88, 22, "MAIN MENU", self.main_menu_clicked, color=(96, 70, 140))
         self.quit_btn = Button(bx + 10, by + 111, 88, 22, "QUIT", self.quit_clicked, color=(150, 70, 60))
-        self.buttons = [self.cog_btn, self.resume_btn, self.new_btn, self.menu_btn, self.quit_btn]
+        self.heirlooms_per_page = 5
+        self.heirloom_pages = max(1, math.ceil(len(data.PERK_ORDER) / self.heirlooms_per_page))
+        self.heirloom_page = 0
+        hx, hy, hh = bx + 106, by + 30, 108
+        self.heirloom_prev = Button(hx + 4, hy + hh - 12, 18, 10, "<",
+                                    lambda: self.set_heirloom_page(self.heirloom_page - 1),
+                                    color=(96, 70, 140))
+        self.heirloom_next = Button(hx + 24, hy + hh - 12, 18, 10, ">",
+                                    lambda: self.set_heirloom_page(self.heirloom_page + 1),
+                                    color=(96, 70, 140))
+        self.buttons = [self.cog_btn, self.resume_btn, self.new_btn, self.menu_btn, self.quit_btn,
+                        self.heirloom_prev, self.heirloom_next]
+        self.set_heirloom_page(0)
+
+    def set_heirloom_page(self, page):
+        self.heirloom_page = max(0, min(self.heirloom_pages - 1, int(page)))
+        self.heirloom_prev.enabled = self.heirloom_page > 0
+        self.heirloom_next.enabled = self.heirloom_page < self.heirloom_pages - 1
+
+    def visible_heirlooms(self):
+        start = self.heirloom_page * self.heirlooms_per_page
+        return data.PERK_ORDER[start:start + self.heirlooms_per_page]
+
+    def on_wheel(self, dy):
+        self.set_heirloom_page(self.heirloom_page + (1 if dy < 0 else -1))
+        return True
 
     def resume(self):
         self.app.pause_modal = None
@@ -256,6 +283,10 @@ class PauseModal:
     def on_key(self, key):
         if key == pygame.K_ESCAPE:
             self.resume()
+        elif key in (pygame.K_LEFT, pygame.K_a):
+            self.set_heirloom_page(self.heirloom_page - 1)
+        elif key in (pygame.K_RIGHT, pygame.K_d):
+            self.set_heirloom_page(self.heirloom_page + 1)
 
     def draw(self, surf, mouse):
         gfx.dim_overlay(surf, 165)
@@ -275,7 +306,7 @@ class PauseModal:
         gfx.draw_text(surf, "BANK: %d" % banked, hx + hw - 5, hy + 4, ACCENT, align="right")
 
         perk_tip = None
-        for i, key in enumerate(data.PERK_ORDER):
+        for i, key in enumerate(self.visible_heirlooms()):
             perk = data.PERKS[key]
             col = perk.get("color", GOOD)
             level = run.perk(key) if run else int(self.app.profile["perks"].get(key, 0))
@@ -301,9 +332,14 @@ class PauseModal:
                 ]
 
         if run:
-            gfx.draw_text(surf, "EARNED SO FAR: +%d" % run.heirloom_reward(), hx + hw // 2, hy + hh - 10, ACCENT, align="center")
+            gfx.draw_text(surf, "EARNED SO FAR: +%d" % run.heirloom_reward(),
+                          hx + hw - 5, hy + hh - 10, ACCENT, align="right")
+        gfx.draw_text(surf, "%d/%d" % (self.heirloom_page + 1, self.heirloom_pages),
+                      hx + 48, hy + hh - 10, TEXT)
+        self.heirloom_prev.draw(surf, mouse)
+        self.heirloom_next.draw(surf, mouse)
 
-        for b in self.buttons:
+        for b in self.buttons[:-2]:
             b.draw(surf, mouse)
         if self.cog_btn.hover(mouse):
             gfx.tooltip(surf, [("SETTINGS", ACCENT)], (self.cog_btn.x - 46, self.cog_btn.y + 13), 44)

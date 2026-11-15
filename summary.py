@@ -17,8 +17,10 @@ class SummaryScene(Scene):
         pending = bool(summary.get("pending_bill")) or bool(self.run.pending_bill)
         if pending:
             bill = summary.get("bill", self.run.pending_bill)
-            self.pay_btn = Button(58, 150, 96, 20, "PAY $%s" % fmt(bill), self.pay_bill, color=(70, 130, 70))
-            self.pay_btn.enabled = self.run.money >= bill
+            can_pay = self.run.money >= bill or getattr(self.run, "bill_waivers", 0) > 0
+            label = "USE WAIVER" if self.run.money < bill and can_pay else "PAY $%s" % fmt(bill)
+            self.pay_btn = Button(58, 150, 96, 20, label, self.pay_bill, color=(70, 130, 70))
+            self.pay_btn.enabled = can_pay
             self.decline_btn = Button(166, 150, 96, 20, "DON'T PAY", self.decline_clicked, color=(150, 70, 60))
             self.next_btn = None
             self.buttons = [self.pay_btn, self.decline_btn]
@@ -41,7 +43,8 @@ class SummaryScene(Scene):
 
     def decline_clicked(self):
         bill = self.run.pending_bill or (self.run.last_summary or {}).get("bill", 0)
-        if bill and self.run.money >= bill and hasattr(self.app, "ask_confirm"):
+        can_pay = self.run.money >= bill or getattr(self.run, "bill_waivers", 0) > 0
+        if bill and can_pay and hasattr(self.app, "ask_confirm"):
             self.app.ask_confirm(
                 "FORFEIT THIS RUN?",
                 "YOU CAN AFFORD $%s! REFUSING TO PAY ENDS THE RUN." % fmt(bill),
@@ -138,7 +141,7 @@ class SummaryScene(Scene):
 
         if pending:
             bill = summary.get("bill", run.pending_bill)
-            can_pay = run.money >= bill
+            can_pay = run.money >= bill or getattr(run, "bill_waivers", 0) > 0
             if self.pay_btn is not None:
                 self.pay_btn.enabled = can_pay
             frac = min(1.0, run.money / max(1, bill))
@@ -152,14 +155,21 @@ class SummaryScene(Scene):
             gfx.bar(surf, rx + 6, ry0 + 57, rw - 12, 6, frac, GOOD if can_pay else BAD)
 
             if can_pay:
-                left_after = run.money - bill
-                gfx.draw_text(surf, "AFTER PAYING", rx + 6, ry0 + 69, DIM)
+                waived = run.money < bill
+                if self.pay_btn is not None:
+                    self.pay_btn.label = "USE WAIVER" if waived else "PAY $%s" % fmt(bill)
+                left_after = run.money if waived else run.money - bill
+                gfx.draw_text(surf, "AFTER WAIVER" if waived else "AFTER PAYING",
+                              rx + 6, ry0 + 69, DIM)
                 gfx.draw_text(surf, "$%s" % fmt(left_after), rx + rw - 6, ry0 + 69, GOOD, align="right")
-                msg = (
-                    "PAY TO KEEP THE FARM!" if bp["quota_index"] > WIN_QUOTAS
-                    else "PAY TO WIN THE FARM!" if bp["quota_index"] >= WIN_QUOTAS
-                    else "QUOTA MET! PAY TO CONTINUE."
-                )
+                if waived:
+                    msg = "OLD INSURANCE CARD COVERS THIS BILL!"
+                else:
+                    msg = (
+                        "PAY TO KEEP THE FARM!" if bp["quota_index"] > WIN_QUOTAS
+                        else "PAY TO WIN THE FARM!" if bp["quota_index"] >= WIN_QUOTAS
+                        else "QUOTA MET! PAY TO CONTINUE."
+                    )
                 gfx.draw_wrapped(surf, msg, rx + 6, ry0 + 86, rw - 12, GOOD)
             else:
                 short = bill - run.money
@@ -185,7 +195,7 @@ class SummaryScene(Scene):
             tw = run.twist(nxt)
             tcol = BAD if tw.get("boss") else TONE_COLORS.get(tw.get("tone", "neutral"), TEXT)
             gfx.draw_text(surf, "UP NEXT: ROUND %d" % nxt, rx + 6, ry0 + 74, TEXT)
-            gfx.draw_text(surf, tw["name"].upper(), rx + 6, ry0 + 84, tcol)
+            gfx.draw_text(surf, gfx.fit_text(tw["name"].upper(), rw - 12), rx + 6, ry0 + 84, tcol)
             desc_lines = gfx.wrap(tw.get("short", tw["desc"]), rw - 12)
             for k, line in enumerate(desc_lines[:3]):
                 gfx.draw_text(surf, line, rx + 6, ry0 + 94 + k * 7, DIM)

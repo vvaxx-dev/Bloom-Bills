@@ -35,6 +35,14 @@ RARE_RELIC_PRICE_GROWTH = 1.35
 COMPOST_WINDOW = 15.0
 MUTATION_CHANCE = 0.1
 
+CLEAR_SKIES_CHANCE = 0.5
+CRITTER_FEED_VALUE = 3
+CRITTER_EAT_RADIUS = 10.0
+CRITTER_EAT_COOLDOWN = 3.5
+CURSOR_SNAIL_SPEED = 19.0
+CURSOR_SNAIL_GRACE = 3.0
+CURSOR_SNAIL_CATCH = 3.0
+
 # Selling unplanted seeds: a seed sells for a fraction of the value the grown
 # plant would fetch at the end of a round, so dumping a whole shelf is pocket
 # money, not a strategy that beats planting.

@@ -12,7 +12,8 @@ try:
     from . import data
     from .settings import (
         BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE, CELLAR_SPEED,
-        COLS, LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
+        CLEAR_SKIES_CHANCE, COLS, CRITTER_FEED_VALUE,
+        LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
         MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
         QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
@@ -23,7 +24,8 @@ except ImportError:
     import data
     from settings import (
         BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE, CELLAR_SPEED,
-        COLS, LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
+        CLEAR_SKIES_CHANCE, COLS, CRITTER_FEED_VALUE,
+        LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
         MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
         QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
@@ -166,6 +168,14 @@ class Run:
         self._relic_lvls = {}
         self._effects_cache = (None, ())
         self.heirlooms_spent = 0
+        self.bill_waivers = 1 if self.perks.get("insurance", 0) else 0
+        self.insurance_used = False
+        self.free_offer = None
+        self.stock_species = None
+        self.capsule_timer = 0.0
+        self.capsule_income = 0
+        self.owl_timer = 0.0
+        self.snail_bitten = False
 
     def _emit(self, kind, **payload):
         if len(self.events) < MAX_EVENTS:
@@ -212,6 +222,8 @@ class Run:
         elif key == "relics" and self.perk(key) == 3 and self.phase == "shop":
             # Add the new slot without rerolling existing or already sold offers.
             self._fill_relic_offers()
+        elif key == "insurance" and not self.insurance_used:
+            self.bill_waivers = 1
 
     def relic_level(self, rid):
         """Number of evolution thresholds met by `self.counters` for relic `rid`."""
@@ -270,6 +282,95 @@ class Run:
         for e in self._effects():
             p *= e.get(key, 1.0)
         return p
+
+    def _planted_species(self):
+        return [p.species for group in (self.plots, self.cellar_plots) for p in group if p.species]
+
+    def _synergy_count(self, syn):
+        planted = self._planted_species()
+        if syn.get("mono"):
+            return len(planted) if planted and len(set(planted)) == 1 else 0
+        if syn.get("distinct"):
+            return len(set(planted))
+        if syn.get("mutant"):
+            return sum(1 for sid in planted if data.PLANTS[sid].get("mutant"))
+        if syn.get("rarity"):
+            return sum(1 for sid in planted
+                       if data.PLANTS[sid].get("rarity") in syn["rarity"])
+        tag = syn.get("tag")
+        if tag:
+            return sum(1 for sid in planted if tag in data.PLANTS[sid]["tags"])
+        species = syn.get("species")
+        if species:
+            return sum(1 for sid in planted if sid == species or data.PLANTS[sid].get("base") == species)
+        return 0
+
+    def _synergy_active(self, syn):
+        if syn.get("weather") and not self.twist().get(syn["weather"]):
+            return False
+        return self._synergy_count(syn) >= syn.get("min", 1)
+
+    def active_synergies(self):
+        """Return `(relic_id, synergy)` pairs currently lit up by the garden."""
+        out = []
+        for rid in self.relics:
+            syn = data.RELIC_SYNERGIES.get(rid)
+            if syn and self._synergy_active(syn):
+                out.append((rid, syn))
+        return out
+
+    def active_synergy_ids(self):
+        """Set of owned relic ids whose plant pairing is currently active."""
+        return {rid for rid, _syn in self.active_synergies()}
+
+    @staticmethod
+    def _synergy_matches_plant(syn, species):
+        if species not in data.PLANTS:
+            return False
+        if syn.get("all") or syn.get("mono") or syn.get("distinct"):
+            return True
+        if syn.get("mutant"):
+            return bool(data.PLANTS[species].get("mutant"))
+        if syn.get("rarity"):
+            return data.PLANTS[species].get("rarity") in syn["rarity"]
+        tag = syn.get("tag")
+        if tag:
+            return tag in data.PLANTS[species]["tags"]
+        wanted = syn.get("species")
+        if wanted:
+            return species == wanted or data.PLANTS[species].get("base") == wanted
+        return False
+
+    def relic_power(self):
+        """Global multiplier on relic-derived growth from The Collector."""
+        power = 1.0 + self._sum("relic_power") * len(set(self._planted_species()))
+        syn = data.RELIC_SYNERGIES.get("collector")
+        if syn and self._synergy_active(syn):
+            # Five or more species make the collection itself stronger.
+            power = 1.0 + (power - 1.0) * (1.0 + syn.get("power", 0.0))
+        return power
+
+    def _relic_scale(self, rid):
+        """How strongly one relic's harvest effects apply this instant."""
+        scale = self.relic_power()
+        syn = data.RELIC_SYNERGIES.get(rid)
+        if syn and self._synergy_active(syn):
+            scale *= 1.0 + syn.get("power", 0.0)
+        return scale
+
+    def synergy_growth(self, species):
+        bonus = 0.0
+        for _rid, syn in self.active_synergies():
+            if self._synergy_matches_plant(syn, species):
+                bonus += syn.get("growth", 0.0)
+        return bonus
+
+    def synergy_harvest(self, species):
+        bonus = 0.0
+        for _rid, syn in self.active_synergies():
+            if self._synergy_matches_plant(syn, species):
+                bonus += syn.get("harvest", 0.0)
+        return bonus
 
     @staticmethod
     def is_quota_round(rnd):
@@ -359,7 +460,24 @@ class Run:
         return self.season(rnd)["name"]
 
     def growth_speed(self):
-        return (1.0 + self._sum("growth")) * self.twist()["growth"]
+        # The Collector scales relic growth bonuses, and the Emergency
+        # Generator pushes back against bad-weather slowdowns.
+        power = self.relic_power()
+        base = 1.0 + self._sum("growth") * power
+        weather = self.twist()["growth"]
+        backup = self._sum("bad_weather_growth") * power
+        if backup and self.twist().get("tone") == "bad":
+            weather *= 1.0 + backup
+        return base * weather
+
+    def cellar_growth_speed(self):
+        """Cellar crops are weatherproof, but the Generator still powers them."""
+        power = self.relic_power()
+        speed = (1.0 + self._sum("growth") * power) * CELLAR_SPEED
+        backup = self._sum("bad_weather_growth") * power
+        if backup and self.twist().get("tone") == "bad":
+            speed *= 1.0 + backup
+        return speed
 
     def plant_disabled(self, i, cellar=False):
         """Return whether the active boss has made a planted plot dormant."""
@@ -375,7 +493,9 @@ class Run:
             return 0.0
         p = plot_list[i]
         if cellar:
-            return (1.0 + self._sum("growth")) * CELLAR_SPEED * (1.5 if self.is_chosen(i, cellar) else 1.0)
+            return (self.cellar_growth_speed()
+                    * (1.5 if self.is_chosen(i, cellar) else 1.0)
+                    * (1.0 + self.synergy_growth(p.species) if p.species else 1.0))
         if self.plant_disabled(i):
             return 0.0
         speed = self.growth_speed() * (1.5 if self.is_chosen(i, cellar) else 1.0)
@@ -383,6 +503,8 @@ class Run:
             speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
         if p.water_left > 0:
             speed *= WATER_BOOST
+        if p.species:
+            speed *= 1.0 + self.synergy_growth(p.species)
         return speed
 
     def water_time(self):
@@ -466,6 +588,11 @@ class Run:
         tags = sp["tags"]
         chips = float(sp["yield"]) + sp.get("mature_bonus", 0) * int(plot.mature_time + 1e-9)
         effects = self._effects()
+        planted = self._planted_species()
+        distinct = len(set(planted))
+        # A lit-up pairing amplifies its relic's own effects; The Collector
+        # amplifies every relic by 2% per species. Scale 1.0 is a no-op.
+        scales = [self._relic_scale(rid) for rid in self.relics]
 
         # Layout mechanics reshape the base harvest before relics multiply it.
         chips += plot.fed + plot.gorged
@@ -475,34 +602,29 @@ class Run:
             chips *= plot.bloom
         chips = int(round(chips))
 
-        for e in effects:
+        for e, scale in zip(effects, scales):
             for tag, amount in e.get("yield_add", []):
                 if tag == "all" or tag in tags:
-                    chips += amount
+                    chips += amount * scale
             for tag, needs, amount in e.get("adjacent", []):
                 if tag in tags:
                     for n in self.neighbours(i, cellar):
                         other = plot_list[n].species
                         if other and needs in data.PLANTS[other]["tags"]:
-                            chips += amount
+                            chips += amount * scale
 
         mult = 2.0 ** milestone_level(self.mastery.get(plot.species, 0))
-        planted = [
-            p.species
-            for group in (self.plots, self.cellar_plots)
-            for p in group
-            if p.species
-        ]
-        distinct = len(set(planted))
-        for e in effects:
+        for e, scale in zip(effects, scales):
             for tag, m in e.get("yield_mult", []):
                 if tag == "all" or tag in tags:
-                    mult *= m
+                    mult *= 1.0 + (m - 1.0) * scale
             if e.get("distinct_bonus"):
-                mult *= 1.0 + e["distinct_bonus"] * distinct
+                mult *= 1.0 + e["distinct_bonus"] * distinct * scale
             if e.get("mono_mult") and distinct == 1 and len(planted) >= 2:
-                mult *= e["mono_mult"]
+                mult *= 1.0 + (e["mono_mult"] - 1.0) * scale
 
+        # The plant side of a pairing: matching crops pay a little more.
+        mult *= 1.0 + self.synergy_harvest(plot.species)
         if sp.get("mutant"):
             mult *= 1.0 + self._sum("mutant_bonus")
         if self.compost_active():
@@ -701,12 +823,44 @@ class Run:
         self.creep_grown = {False: 0, True: 0}
         self.round_income = 0
         self.events = []
+        self.capsule_timer = 0.0
+        self.capsule_income = 0
+        self.owl_timer = 0.0
+        self.snail_bitten = False
+        self.free_offer = None
+        self.stock_species = None
         for group in (self.plots, self.cellar_plots):
             for p in group:
                 p.clear()
 
+    def _pick_stock_species(self):
+        """Stock Market's species of the round, biased toward rare crops when paired."""
+        pool = [sid for sid, count in self.seeds.items() if count > 0 and sid in data.PLANTS]
+        pool += [sid for sid in self._planted_species() if sid not in pool]
+        if not pool:
+            pool = list(data.SURFACE_PLANTS)
+        syn = data.RELIC_SYNERGIES["stock_market"]
+        boost = self._synergy_active(syn)
+        weights = [
+            1.0 + syn.get("power", 0.0)
+            if boost and data.PLANTS[sid].get("rarity") in syn["rarity"] else 1.0
+            for sid in pool
+        ]
+        return self.rng.choices(pool, weights=weights)[0]
+
     def start_timer(self):
+        if self.started:
+            return
         self.started = True
+        if self._has("stock_market") and not self.stock_species:
+            self.stock_species = self._pick_stock_species()
+        # Antique Clock: a couple of seconds of growth before the timer starts.
+        free = 2 * self.perk("clock")
+        if free > 0:
+            self._advance(self.plots, False, self.growth_speed(), False, float(free))
+            if self.cellar_unlocked:
+                self._advance(self.cellar_plots, True, self.cellar_growth_speed(),
+                              False, float(free))
 
     def finish_early(self):
         if self.started:
@@ -735,6 +889,7 @@ class Run:
                 plot_speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
             if self.is_chosen(i, cellar):
                 plot_speed *= 1.5
+            plot_speed *= 1.0 + self.synergy_growth(p.species)
             grow = data.PLANTS[p.species]["grow"]
             if self.auto_harvest:
                 p.progress += plot_speed * (dt + (WATER_BOOST - 1.0) * boosted)
@@ -814,7 +969,7 @@ class Run:
             if w > 0 and self.time_left > w > self.time_left - step:
                 step = self.time_left - w
                 crosses_half = False
-            clearing = crosses_half and self._has("clear_weather") and self.rng.random() < 0.25
+            clearing = crosses_half and self._has("clear_weather") and self.rng.random() < CLEAR_SKIES_CHANCE
             self._suppress_blight = clearing
             self._step_round(step)
             self._suppress_blight = False
@@ -856,13 +1011,15 @@ class Run:
         auto = self._has("auto_water") or bool(tw.get("rain"))
         self._advance(self.plots, cellar=False, speed=self.growth_speed(), auto=auto, dt=dt)
         if self.cellar_unlocked:
-            cellar_speed = (1.0 + self._sum("growth")) * CELLAR_SPEED
-            self._advance(self.cellar_plots, cellar=True, speed=cellar_speed, auto=False, dt=dt)
+            self._advance(self.cellar_plots, cellar=True, speed=self.cellar_growth_speed(),
+                          auto=False, dt=dt)
 
         previous = self.time_left
         self.time_left -= dt
         if self.time_left > 1e-9:
             self._announce_compost(w)
+        self._tick_capsule(dt)
+        self._tick_owl(dt)
 
         half = self.time_total / 2.0
         if tw["blight"] and not self._suppress_blight and not self.blight_done and previous > half >= self.time_left:
@@ -878,6 +1035,9 @@ class Run:
             self.crow_timer += dt
             while self.crow_timer >= crow:
                 self.crow_timer -= crow
+                if self._has("scare_crows"):
+                    self._emit("owl_scare", cellar=False)
+                    continue
                 for _ in range(max(1, tw.get("crow_count", 1))):
                     alive = [i for i, p in enumerate(self.plots) if p.species]
                     if not alive:
@@ -921,6 +1081,70 @@ class Run:
             self.time_left = 0.0
             self.finished = True
 
+    def _tick_capsule(self, dt):
+        """Time Capsule: every 10s, pay a slice of the last 10s of harvests."""
+        period = self._sum("capsule_period")
+        if period <= 0:
+            return
+        self.capsule_timer += dt
+        while self.capsule_timer >= period - 1e-9:
+            self.capsule_timer -= period
+            payout = int(self.capsule_income * self._sum("capsule_share")
+                         * self._relic_scale("time_capsule"))
+            self.capsule_income = 0
+            if payout <= 0:
+                continue
+            self.money += payout
+            self.round_income += payout
+            self.total_earned += payout
+            self._emit("capsule", amount=payout)
+
+    def _tick_owl(self, dt):
+        """The Friendly Owl drops a bonus seed every few seconds."""
+        period = self._sum("owl_seed_period")
+        if period <= 0:
+            return
+        self.owl_timer += dt
+        while self.owl_timer >= period - 1e-9:
+            self.owl_timer -= period
+            self._grant_owl_seed()
+
+    def _grant_owl_seed(self):
+        pool = [sid for sid, count in self.seeds.items() if count > 0 and sid in data.PLANTS]
+        pool += [sid for sid in self._planted_species() if sid not in pool]
+        if not pool:
+            pool = list(data.SURFACE_PLANTS)
+        sid = self.rng.choice(sorted(set(pool)))
+        # A flytrap on the board means the owl is hunting over a full garden.
+        count = 2 if self._synergy_active(data.RELIC_SYNERGIES["friendly_owl"]) else 1
+        self.seeds[sid] = self.seeds.get(sid, 0) + count
+        self._emit("owl_seed", name=data.PLANTS[sid]["name"], count=count, cellar=False)
+
+    def critter_eaten(self, i, species=None, cellar=False):
+        """A Venus Flytrap snapped up an ambient critter: feed its next harvest."""
+        plot_list = self.cellar_plots if cellar else self.plots
+        if self.phase != "round" or self.finished or not 0 <= i < len(plot_list):
+            return False
+        plot = plot_list[i]
+        if not plot.species or not data.PLANTS[plot.species].get("feed") or self.plant_disabled(i, cellar):
+            return False
+        plot.fed += CRITTER_FEED_VALUE
+        self.counters["critter"] = self.counters.get("critter", 0) + 1
+        self._emit("critter_eaten", plot=i, cellar=cellar, amount=CRITTER_FEED_VALUE,
+                   name=(species or "critter").replace("_", " ").upper())
+        return True
+
+    def snail_bite(self):
+        """The Eternal Snail caught the cursor. That's the run."""
+        if self.phase != "round" or not self.started or self.finished or self.snail_bitten:
+            return False
+        self.snail_bitten = True
+        self.dead = True
+        self.finished = True
+        self.time_left = 0.0
+        self._emit("snail_bite")
+        return True
+
     def _harvest(self, i, cellar=False):
         plot_list = self.cellar_plots if cellar else self.plots
         plot = plot_list[i]
@@ -935,6 +1159,7 @@ class Run:
         self.money += value
         self.round_income += value
         self.total_earned += value
+        self.capsule_income += value
         self.mastery[species] = self.mastery.get(species, 0) + 1
         self.counters["harvest"] = self.counters.get("harvest", 0) + 1
         for tag in sp["tags"]:
@@ -1135,13 +1360,16 @@ class Run:
 
         upkeep = 0
         sale = 0
+        stock_effect = self._sum("stock_market") if self.stock_species else 1.0
+        stock_mult = 1.0 + max(0.0, stock_effect - 1.0) * self._relic_scale("stock_market")
         for group in (self.plots, self.cellar_plots):
             for p in group:
                 if p.species:
                     sp = data.PLANTS[p.species]
                     upkeep += sp.get("upkeep", 0)
                     frac = min(1.0, p.progress / sp["grow"])
-                    sale += int(sp["sell"] * frac * sale_mult)
+                    pick_mult = stock_mult if p.species == self.stock_species else 1.0
+                    sale += int(sp["sell"] * frac * sale_mult * pick_mult)
                 p.clear()
 
         self.money += sale
@@ -1172,8 +1400,9 @@ class Run:
             "upkeep": upkeep,
             "victory": False,
             "twist": self.twist_id(self.round),
+            "stock_species": self.stock_species,
             "pending_bill": bool(bill),
-            "can_afford": (self.money >= bill) if bill else True,
+            "can_afford": (self.money >= bill or self.bill_waivers > 0) if bill else True,
             "shortfall": max(0, bill - self.money) if bill else 0,
         }
         self.phase = "summary"
@@ -1184,16 +1413,26 @@ class Run:
         if not bill:
             return True, "No bill due."
         if self.money < bill:
-            return False, "Not enough money for the bill."
-        self.money -= bill
+            # Old Insurance Card: one bill per run is waived instead of paid.
+            if self.bill_waivers <= 0:
+                return False, "Not enough money for the bill."
+            self.bill_waivers -= 1
+            self.insurance_used = True
+            waived = True
+        else:
+            self.money -= bill
+            waived = False
         self.quotas_paid += 1
         self.pending_bill = 0
+        if self.last_summary is None:
+            self.last_summary = {}
         self.last_summary["paid"] = True
+        self.last_summary["waived"] = waived
         self.last_summary["money"] = self.money
         if self.quotas_paid >= WIN_QUOTAS and not self.won:
             self.won = True
             self.last_summary["victory"] = True
-        return True, "Bill paid!"
+        return True, ("Old Insurance Card covered the bill!" if waived else "Bill paid!")
 
     def decline_bill(self):
         self.pending_bill = 0
@@ -1212,6 +1451,18 @@ class Run:
         self.phase = "shop"
         self.rerolls = 0
         self.roll_offers()
+        self._roll_free_offer()
+
+    def _roll_free_offer(self):
+        """Lucky Penny: after a paid bill, one shop offer may cost nothing."""
+        self.free_offer = None
+        if self.perk("penny") <= 0 or not (self.last_summary or {}).get("paid"):
+            return
+        if self.rng.random() >= 0.08 * self.perk("penny"):
+            return
+        live = [i for i, rid in enumerate(self.shop_offers) if rid is not None]
+        if live:
+            self.free_offer = self.rng.choice(live)
 
     def relic_slots(self):
         return RELIC_SLOTS + (1 if self.perk("relics") >= 2 else 0)
@@ -1220,6 +1471,8 @@ class Run:
         return 3 + (1 if self.perk("relics") >= 3 else 0)
 
     def roll_offers(self):
+        # Rerolling (or entering a fresh shop) removes any Lucky Penny freebie.
+        self.free_offer = None
         self.shop_offers = []
         self._fill_relic_offers()
 
@@ -1242,6 +1495,14 @@ class Run:
         growth = RARE_RELIC_PRICE_GROWTH if rarity in ("rare", "exquisite") else RELIC_PRICE_GROWTH
         return int(data.RELICS[rid]["cost"] * rarity_mult * growth ** (self.round - 1) * (0.85 if self.perk("relics") >= 1 else 1.0))
 
+    def relic_offer_price(self, index):
+        """Price of offer `index`, honouring a Lucky Penny free offer."""
+        if not 0 <= index < len(self.shop_offers) or self.shop_offers[index] is None:
+            return 0
+        if index == self.free_offer:
+            return 0
+        return self.relic_price(self.shop_offers[index])
+
     def reroll_price(self):
         return int(REROLL_BASE_PRICE * 2.0 ** self.rerolls * RELIC_PRICE_GROWTH ** (self.round - 1))
 
@@ -1260,14 +1521,17 @@ class Run:
         if len(self.relics) >= self.relic_slots():
             return False, "Relic slots are full."
         rid = self.shop_offers[index]
-        price = self.relic_price(rid)
+        free = index == self.free_offer
+        price = 0 if free else self.relic_price(rid)
         if self.money < price:
             return False, "Not enough money."
         self.money -= price
         self.relics.append(rid)
         self._relic_lvls[rid] = self.relic_level(rid)
         self.shop_offers[index] = None
-        return True, "Bought %s!" % data.RELICS[rid]["name"]
+        if free:
+            self.free_offer = None
+        return True, ("Took %s for free!" if free else "Bought %s!") % data.RELICS[rid]["name"]
 
     def sell_relic(self, index):
         if not 0 <= index < len(self.relics):
@@ -1350,6 +1614,10 @@ class Run:
             "won": self.won, "dead": self.dead, "pending_bill": self.pending_bill,
             "endless": self.endless, "retired": self.retired,
             "heirlooms_spent": self.heirlooms_spent, "last_summary": self.last_summary,
+            "bill_waivers": self.bill_waivers, "insurance_used": self.insurance_used,
+            "free_offer": self.free_offer, "stock_species": self.stock_species,
+            "capsule_timer": self.capsule_timer, "capsule_income": self.capsule_income,
+            "owl_timer": self.owl_timer, "snail_bitten": self.snail_bitten,
         }
 
     @classmethod
@@ -1376,6 +1644,19 @@ class Run:
         run.mastery = {k: int(v) for k, v in d.get("mastery", {}).items() if k in data.PLANTS}
         run.counters = {k: int(v) for k, v in d.get("counters", {}).items()}
         run.shop_offers = [r if r in data.RELICS else None for r in d.get("shop_offers", [])]
+        run.free_offer = d.get("free_offer")
+        if not isinstance(run.free_offer, int) or not (0 <= run.free_offer < len(run.shop_offers)) \
+                or run.shop_offers[run.free_offer] is None:
+            run.free_offer = None
+        run.bill_waivers = int(d.get("bill_waivers", 1 if run.perk("insurance") else 0))
+        run.insurance_used = bool(d.get("insurance_used", False))
+        run.stock_species = d.get("stock_species")
+        if run.stock_species not in data.PLANTS:
+            run.stock_species = None
+        run.capsule_timer = float(d.get("capsule_timer", 0.0))
+        run.capsule_income = int(d.get("capsule_income", 0))
+        run.owl_timer = float(d.get("owl_timer", 0.0))
+        run.snail_bitten = bool(d.get("snail_bitten", False))
         run.rerolls = int(d.get("rerolls", 0))
         run.quotas_paid = int(d.get("quotas_paid", 0))
         run.total_earned = int(d.get("total_earned", 0))

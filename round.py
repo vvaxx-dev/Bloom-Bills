@@ -306,7 +306,9 @@ class RoundScene(Scene):
         run = self.run
         run.auto_harvest = bool(getattr(self.app, "settings_cfg", {}).get("auto_harvest", False))
         run.update(dt * self.fast)
-        self._ambient().update(dt * self.fast, run, self.in_cellar())
+        board_rects = [plot_rect(i) for i in range(len(self.plant_list()))]
+        self._ambient().update(dt * self.fast, run, self.in_cellar(),
+                               plot_rects=board_rects, mouse=self.mouse)
         show_floaters = self._floaters_enabled()
 
         for ev in run.events:
@@ -319,6 +321,21 @@ class RoundScene(Scene):
                 continue
             if kind == "compost":
                 self.app.toast("COMPOST HEAP! X2 VALUE FOR FINAL %dS!" % ev["window"], 2.5)
+                continue
+            if kind == "capsule":
+                self.app.toast("TIME CAPSULE! +$%d FROM LAST 10S." % ev["amount"], 2.0)
+                continue
+            if kind == "owl_seed":
+                self.app.toast("THE OWL DROPPED %d %s SEED%s!"
+                               % (ev["count"], ev["name"].upper(), "" if ev["count"] == 1 else "S"), 2.0)
+                continue
+            if kind == "owl_scare":
+                if self.in_cellar():
+                    continue
+                self.app.toast("THE OWL SCARED THE CROWS AWAY!", 2.0)
+                continue
+            if kind == "snail_bite":
+                self.app.toast("THE ETERNAL SNAIL CAUGHT YOUR CURSOR!", 3.0)
                 continue
             if bool(ev.get("cellar")) != self.in_cellar():
                 continue
@@ -379,6 +396,13 @@ class RoundScene(Scene):
                     self.floaters.append([fx, fy, "LUCKY!", GOOD, 0.0])
                 self.app.toast(
                     "LUCKY CLOVER! %s IS X%g FOR THE ROUND." % (ev["name"].upper(), ev.get("mult", 1.5)), 2.0)
+            elif kind == "critter_eaten":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "CHOMP!", GOOD, 0.0])
+                self.app.toast(
+                    "FLYTRAP ATE A %s! +$%d BASE" % (ev.get("name", "CRITTER").upper(), ev.get("amount", 0)),
+                    2.0,
+                )
         run.events.clear()
 
         if show_floaters:
@@ -407,7 +431,9 @@ class RoundScene(Scene):
             msg = "BOSS: %s! %s" % (twist["name"].upper(), twist.get("short", twist["desc"]).upper())
             col = BAD
         elif not run.weather_cleared and run.twist_id(run.round) != "none":
-            msg = "%s: %s" % (twist["name"].upper(), twist["desc"].upper())
+            # The full Eclipse sentence is much wider than the 320px HUD row;
+            # the short line keeps the meaning without painting off screen.
+            msg = "%s: %s" % (twist["name"].upper(), twist.get("short", twist["desc"]).upper())
             col = TONE_COLORS[twist.get("tone", "neutral")]
         elif self.in_cellar():
             msg, col = "THE CELLAR: SELF-WATERING, WEATHERPROOF.", WATER
@@ -415,7 +441,7 @@ class RoundScene(Scene):
             msg, col = "WEATHER: FAIR WEATHER - PLANT SEEDS, THEN PRESS START.", DIM
         else:
             msg, col = "CLICK TO WATER; CLICK MATURE PLANTS TO HARVEST.", DIM
-        gfx.draw_text(surf, msg, 5, 18, col)
+        gfx.draw_text(surf, gfx.fit_text(msg, CANVAS_W - 10), 5, 18, col)
 
         frac = run.time_left / run.time_total if run.time_total else 0
         compost_now = run.compost_active()
@@ -440,7 +466,7 @@ class RoundScene(Scene):
 
         # Keep the soil lanes clean; seasonal art lives in the topbar while
         # sparse autumn leaves and winter snow pass over the garden itself.
-        amb.draw_foreground(surf, run, cellar=self.in_cellar())
+        amb.draw_foreground(surf, run, cellar=self.in_cellar(), mouse=self.mouse)
 
         if hover is not None:
             x, y, w, h = plot_rect(hover)
@@ -458,7 +484,8 @@ class RoundScene(Scene):
             plus = " +" if run.relic_level(rid) > 0 else ""
             active_tag = " *" if (rid == "compost" and compost_now) or (rid == "chosen_bloom" and run.chosen_plant is None) else ""
             rcol = GOOD if (rid == "compost" and compost_now) else data.RARITY_COLORS[data.RELICS[rid]["rarity"]]
-            gfx.draw_text(surf, data.RELICS[rid]["name"] + plus + active_tag, 248, ry, rcol)
+            gfx.draw_text(surf, gfx.fit_text(data.RELICS[rid]["name"] + plus + active_tag, 68),
+                          248, ry, rcol)
             if gfx.inside(mouse, (244, ry - 1, 72, 8)):
                 relic_hover = rid
         if not run.relics:
@@ -514,6 +541,11 @@ class RoundScene(Scene):
                 (rel["name"] + (" +%d" % lv if lv else ""), data.RARITY_COLORS[rel["rarity"]]),
                 (rel["desc"], TEXT),
             ]
+            syn = data.synergy_text(relic_hover)
+            if syn:
+                lines.append(("PAIRING: " + syn, GOOD))
+            if relic_hover in run.active_synergy_ids():
+                lines.append(("PAIRING ACTIVE!", GOOD))
             if relic_hover == "chosen_bloom":
                 lines.append(("CLICK TO CHOOSE A PLANT" if run.chosen_plant is None else "CHOICE USED THIS ROUND", ACCENT))
             if relic_hover == "compost":

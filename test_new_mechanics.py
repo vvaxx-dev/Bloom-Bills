@@ -1,4 +1,4 @@
-"""Coverage for manual harvesting, exquisite relics, and the Relic Cabinet."""
+"""Coverage for manual harvesting, relics, heirlooms, and interface details."""
 import os
 import tempfile
 import unittest
@@ -76,7 +76,7 @@ class RelicTests(unittest.TestCase):
         for kind in ("sunny", "locusts", "blight", "crow_swarm", "hailstorm", "heatwave"):
             with self.subTest(kind=kind):
                 run = self.weather(kind)
-                with patch.object(run.rng, "random", return_value=0.24):
+                with patch.object(run.rng, "random", return_value=0.49):
                     run.update(15)
                 self.assertTrue(run.weather_cleared)
                 self.assertEqual(run.twist()["name"], "Fair Weather")
@@ -89,7 +89,7 @@ class RelicTests(unittest.TestCase):
 
     def test_failed_roll_only_once_and_no_relic_no_roll(self):
         run = self.weather("sunny")
-        with patch.object(run.rng, "random", return_value=0.25) as roll:
+        with patch.object(run.rng, "random", return_value=0.50) as roll:
             run.update(10)
             run.update(1)
             self.assertEqual(roll.call_count, 1)
@@ -158,6 +158,39 @@ class RelicTests(unittest.TestCase):
         run.start_next_round()
         self.assertEqual(run.twist()["growth"], 1.25)
 
+    def test_plant_pairings_require_a_dedicated_garden(self):
+        run = Run(seed=1)
+        run.twist_id = lambda _rnd=None: "none"
+        run.relics = ["green_thumb", "biodiversity", "stock_market"]
+        run.plots = [Plot("daisy") for _ in range(3)] + [Plot() for _ in range(9)]
+        self.assertNotIn("green_thumb", run.active_synergy_ids())
+        run.plots[3] = Plot("daisy")
+        self.assertIn("green_thumb", run.active_synergy_ids())
+
+        run.plots = [Plot(s) for s in
+                     ("daisy", "tomato", "sunflower", "cactus", "pumpkin")] \
+            + [Plot() for _ in range(7)]
+        self.assertNotIn("biodiversity", run.active_synergy_ids())
+        run.plots[5] = Plot("orchid")
+        self.assertIn("biodiversity", run.active_synergy_ids())
+
+        run.relics = ["stock_market"]
+        run.plots = [Plot("pumpkin"), Plot("cranberries")] \
+            + [Plot() for _ in range(10)]
+        self.assertNotIn("stock_market", run.active_synergy_ids())
+        run.plots[2] = Plot("queen_night")
+        self.assertIn("stock_market", run.active_synergy_ids())
+
+    def test_pairing_descriptions_state_their_plant_counts(self):
+        from . import gfx
+
+        for rid, syn in data.RELIC_SYNERGIES.items():
+            with self.subTest(relic=rid):
+                self.assertGreaterEqual(syn["min"], 2)
+                self.assertIn(str(syn["min"]), syn["desc"])
+                self.assertLessEqual(len(gfx.wrap(syn["desc"], 136)), 2)
+                self.assertTrue(all(gfx.text_width(line) <= 102
+                                    for line in gfx.wrap(syn["desc"], 102)))
 
 class InterfaceTests(unittest.TestCase):
     def test_settings_and_selection_shop_interactions(self):
@@ -202,6 +235,17 @@ class InterfaceTests(unittest.TestCase):
             app.goto("shelf")
             app.scene.draw(app.canvas)
 
+    def test_long_hud_labels_fit_the_canvas(self):
+        from . import gfx
+        from .settings import CANVAS_W
+
+        for tid, twist in data.TWISTS.items():
+            with self.subTest(twist=tid):
+                self.assertTrue(twist.get("short"))
+                self.assertLessEqual(gfx.text_width(twist["short"]), CANVAS_W - 10)
+        for rid, relic in data.RELICS.items():
+            with self.subTest(relic=rid):
+                self.assertLessEqual(gfx.text_width(gfx.fit_text(relic["name"], 68)), 68)
 
 class CellarPlotBuyabilityTests(unittest.TestCase):
     def test_cellar_plots_unlock_for_purchase_after_12_garden_plots_and_persist(self):
@@ -282,10 +326,20 @@ class HeirloomArtworkTests(unittest.TestCase):
             app.scene.update(0.5)
             app.mouse = (40, app.scene.ROW_Y + 6)
             app.scene.draw(app.canvas)
+            self.assertEqual(len(data.PERK_ORDER), 8)
+            self.assertEqual(app.scene.pages, 2)
+            self.assertEqual(app.scene.visible_keys(), data.PERK_ORDER[:5])
+            app.scene.set_page(1)
+            self.assertEqual(app.scene.visible_keys(), data.PERK_ORDER[5:])
+            app.scene.draw(app.canvas)
 
             app.new_run()
             app.goto("round")
             app.open_pause()
+            self.assertEqual(app.pause_modal.heirloom_pages, 2)
+            self.assertEqual(app.pause_modal.visible_heirlooms(), data.PERK_ORDER[:5])
+            app.pause_modal.on_wheel(-1)
+            self.assertEqual(app.pause_modal.visible_heirlooms(), data.PERK_ORDER[5:])
             app.pause_modal.draw(app.canvas, (180, 75))
 
 

@@ -376,7 +376,7 @@ def free_pack_weight(kind, rnd):
 
 RELICS = {
     "clear_skies": {"name": "Clear Skies", "rarity": "exquisite", "cost": 1000,
-                    "desc": "25% chance at halfway to clear any weather or boss for the rest of the round.",
+                    "desc": "50% chance at halfway to clear any weather or boss for the rest of the round.",
                     "effects": {"clear_weather": True}},
     "chosen_bloom": {"name": "Chosen Bloom", "rarity": "exquisite", "cost": 1000,
                      "desc": "Click this relic, then choose one plant per round: grows 50% faster, harvests x2.",
@@ -448,22 +448,88 @@ RELICS = {
                       "effects": {"mutate_on_plant": 0.25, "mutant_bonus": 0.2},
                       "levels": [{"stat": "harvest", "goal": 200, "effects": {"mutate_on_plant": 0.15},
                                   "desc": "40% chance to sprout mutated. Mutants are 1.2x better."}]},
+    "time_capsule":  {"name": "Time Capsule", "rarity": "rare", "cost": 780,
+                      "desc": "Every 10s, bank 25% of the harvest money earned in the previous 10s.",
+                      "effects": {"capsule_period": 10.0, "capsule_share": 0.25}},
+    "stock_market":  {"name": "Stock Market", "rarity": "rare", "cost": 720,
+                      "desc": "Each round one species you own sells for 2x when the round ends.",
+                      "effects": {"stock_market": 2.0}},
+    "collector":     {"name": "The Collector", "rarity": "rare", "cost": 820,
+                      "desc": "Every different species planted makes all relic effects 2% stronger.",
+                      "effects": {"relic_power": 0.02}},
+    "emergency_generator": {"name": "Emergency Generator", "rarity": "rare", "cost": 690,
+                      "desc": "During bad weather, all plants grow 20% faster.",
+                      "effects": {"bad_weather_growth": 0.20}},
+    "friendly_owl":  {"name": "The Friendly Owl", "rarity": "uncommon", "cost": 590,
+                      "desc": "Scares off every crow and drops a bonus seed every 12s.",
+                      "effects": {"scare_crows": True, "owl_seed_period": 12.0}},
+    "eternal_snail": {"name": "Eternal Snail", "rarity": "exquisite", "cost": 1000,
+                      "desc": "All plants grow 30% faster. A cursed snail follows your cursor: if it catches you, the run ends.",
+                      "effects": {"growth": 0.30, "cursor_snail": True}},
 }
 RELIC_ORDER = list(RELICS)
 
+RELIC_SYNERGIES = {
+    "green_thumb": {"tag": "flower", "min": 4, "growth": 0.05, "power": 0.10,
+                    "desc": "4+ FLOWERS: +5% GROWTH, GREEN THUMB +10% POWER."},
+    "beehive": {"tag": "flower", "min": 5, "growth": 0.05, "harvest": 0.05, "power": 0.10,
+                "desc": "5+ FLOWERS: +5% GROWTH/+5% VALUE, BEEHIVE +10% POWER."},
+    "desert_rose": {"tag": "desert", "min": 4, "growth": 0.08, "power": 0.10,
+                    "desc": "4+ DESERT CROPS: +8% GROWTH, ROSE +10% POWER."},
+    "spore_lantern": {"tag": "mushroom", "min": 4, "growth": 0.08, "harvest": 0.05, "power": 0.10,
+                      "desc": "4+ MUSHROOMS: +8% GROWTH/+5% VALUE, LANTERN +10% POWER."},
+    "scarecrow": {"tag": "veg", "min": 4, "growth": 0.05, "power": 0.10,
+                  "desc": "4+ VEGETABLES: +5% GROWTH, SCARECROW +10% POWER."},
+    "monoculture": {"mono": True, "min": 4, "growth": 0.06, "power": 0.10,
+                    "desc": "4+ PLOTS OF ONE SPECIES: +6% GROWTH, MONOCULTURE +10% POWER."},
+    "biodiversity": {"distinct": True, "min": 6, "growth": 0.04, "harvest": 0.03,
+                     "power": 0.10, "all": True,
+                     "desc": "6+ SPECIES: ALL +4% GROWTH/+3% VALUE, BIO +10% POWER."},
+    "mutagen": {"mutant": True, "min": 2, "growth": 0.08, "power": 0.10,
+                "desc": "2+ MUTANTS: +8% GROWTH, MUTAGEN +10% POWER."},
+    "clear_skies": {"tag": "nocturnal", "min": 3, "weather": "eclipse",
+                    "growth": 0.10,
+                    "desc": "ECLIPSE/ETERNAL NIGHT + 3 NIGHT CROPS: +10% GROWTH."},
+    "friendly_owl": {"tag": "carnivore", "min": 2, "harvest": 0.08,
+                     "desc": "2+ CARNIVORES: +8% VALUE, OWL DROPS DOUBLE SEEDS."},
+    "collector": {"distinct": True, "min": 5, "growth": 0.03, "power": 0.05, "all": True,
+                  "desc": "5+ SPECIES: ALL +3% GROWTH, ALL RELICS +5% POWER."},
+    "stock_market": {"rarity": ("rare", "legendary"), "min": 3, "power": 0.10,
+                     "desc": "3+ RARE/LEGENDARY CROPS: RARE PICKS WEIGH +10%."},
+}
+
+def synergy_text(rid):
+    """One-line description of a relic's plant pairing, or an empty string."""
+    syn = RELIC_SYNERGIES.get(rid)
+    return syn["desc"] if syn else ""
+
 TWISTS = {
-    "none":          {"name": "Fair Weather",  "desc": "No weather. Smooth sailing.",        "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "neutral"},
-    "still":         {"name": "Dead Calm",     "desc": "Nothing stirs. A quiet day.",        "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "neutral"},
-    "sunny":         {"name": "Sunny Day",     "desc": "All plants grow 25% faster.",        "growth": 1.25, "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "good"},
-    "rain":          {"name": "Rain",          "desc": "Crops water themselves all round.",  "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "rain": True, "tone": "good"},
-    "market":        {"name": "Market Day",    "desc": "Harvests are worth 25% more.",       "growth": 1.0,  "yield": 1.25, "time": 0,   "ban": None,     "blight": False, "tone": "good"},
+    # `short` is the one-line HUD version of `desc`. The forecast and the round
+    # banner are a single 320px row, so every twist needs a line that fits; the
+    # full `desc` stays in tooltips and the Garden Index where it can wrap.
+    "none":          {"name": "Fair Weather",  "desc": "No weather. Smooth sailing.",        "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "neutral",
+                      "short": "NO WEATHER. SMOOTH SAILING."},
+    "still":         {"name": "Dead Calm",     "desc": "Nothing stirs. A quiet day.",        "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "neutral",
+                      "short": "NOTHING STIRS. A QUIET DAY."},
+    "sunny":         {"name": "Sunny Day",     "desc": "All plants grow 25% faster.",        "growth": 1.25, "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "good",
+                      "short": "ALL PLANTS GROW 25% FASTER."},
+    "rain":          {"name": "Rain",          "desc": "Crops water themselves all round.",  "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "rain": True, "tone": "good",
+                      "short": "CROPS WATER THEMSELVES ALL ROUND."},
+    "market":        {"name": "Market Day",    "desc": "Harvests are worth 25% more.",       "growth": 1.0,  "yield": 1.25, "time": 0,   "ban": None,     "blight": False, "tone": "good",
+                      "short": "HARVESTS ARE WORTH 25% MORE."},
     "eclipse":       {"name": "Eclipse",       "desc": "Dark at noon: nocturnal seeds grow on the surface. Sun-lovers grow 20% slower.",
-                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "eclipse": True, "tone": "neutral"},
-    "drought":       {"name": "Drought",       "desc": "Plants grow 35% slower.",            "growth": 0.65, "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "bad"},
-    "locusts":       {"name": "Locusts",       "desc": "Harvests are worth 40% less.",       "growth": 1.0,  "yield": 0.6,  "time": 0,   "ban": None,     "blight": False, "tone": "bad"},
-    "short":         {"name": "Short Days",    "desc": "The round is 20 seconds shorter.",   "growth": 1.0,  "yield": 1.0,  "time": -20, "ban": None,     "blight": False, "tone": "bad"},
-    "frost":         {"name": "Frost",         "desc": "Desert plants cannot be planted.",   "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": "desert", "blight": False, "tone": "bad"},
-    "blight":        {"name": "Blight",        "desc": "A random plant withers halfway.",    "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": True,  "tone": "bad"},
+                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "eclipse": True, "tone": "neutral",
+                      "short": "NOCTURNAL SEEDS UP TOP. SUN-LOVERS -20%."},
+    "drought":       {"name": "Drought",       "desc": "Plants grow 35% slower.",            "growth": 0.65, "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "bad",
+                      "short": "PLANTS GROW 35% SLOWER."},
+    "locusts":       {"name": "Locusts",       "desc": "Harvests are worth 40% less.",       "growth": 1.0,  "yield": 0.6,  "time": 0,   "ban": None,     "blight": False, "tone": "bad",
+                      "short": "HARVESTS ARE WORTH 40% LESS."},
+    "short":         {"name": "Short Days",    "desc": "The round is 20 seconds shorter.",   "growth": 1.0,  "yield": 1.0,  "time": -20, "ban": None,     "blight": False, "tone": "bad",
+                      "short": "THE ROUND IS 20 SECONDS SHORTER."},
+    "frost":         {"name": "Frost",         "desc": "Desert plants cannot be planted.",   "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": "desert", "blight": False, "tone": "bad",
+                      "short": "DESERT PLANTS CANNOT BE PLANTED."},
+    "blight":        {"name": "Blight",        "desc": "A random plant withers halfway.",    "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": True,  "tone": "bad",
+                      "short": "A RANDOM PLANT WITHERS AT HALFWAY."},
     "crow_swarm":    {"name": "Crazy Crows!",  "desc": "Every 6s the flock eats a random plant - one at a time, all round. Mutants are 20% less likely to be picked.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "crow": 6, "crow_count": 1,
                       "crow_mutant_weight": 0.8, "tone": "bad",
@@ -528,8 +594,21 @@ PERKS = {
 PERKS["relics"] = {"name": "Relic Cabinet", "max": 3, "costs": [35, 60, 100],
                    "desc": "RELIC DISCOUNT, THEN EXTRA SLOTS", "now": "{n}",
                    "art": "heirloom_relics", "lore": "A cabinet of old relics makes room for greater wonders."}
-PERK_ORDER = ["cash", "plots", "packs", "yield", "relics"]
-PERK_STEP = {"cash": 2, "plots": 1, "packs": 1, "yield": 10}
+PERKS["penny"] = {"name": "Lucky Penny", "max": 3, "costs": [7, 11, 16],
+                  "desc": "CHANCE OF A FREE RELIC AFTER A BILL", "now": "+{n}% FREE RELIC CHANCE",
+                  "art": "heirloom_penny",
+                  "lore": "A penny found the morning after every bill. Reroll the shop and the free offer vanishes."}
+PERKS["clock"] = {"name": "Antique Clock", "max": 3, "costs": [9, 14, 20],
+                  "desc": "2S OF FREE GROWTH PER LEVEL EACH ROUND", "now": "+{n}S FREE GROWTH",
+                  "art": "heirloom_clock",
+                  "lore": "Its hands jump forward when the round begins, so every seed wakes up a little older."}
+PERKS["insurance"] = {"name": "Old Insurance Card", "max": 1, "costs": [24],
+                      "desc": "ONE FREE BILL WAIVER PER RUN", "now": "1 FREE BILL WAIVER",
+                      "art": "heirloom_insurance",
+                      "lore": "Faded, stamped, and good for exactly one bill the collector would rather not discuss."}
+PERK_ORDER = ["cash", "plots", "packs", "yield", "relics", "penny", "clock", "insurance"]
+PERK_STEP = {"cash": 2, "plots": 1, "packs": 1, "yield": 10,
+             "penny": 8, "clock": 2, "insurance": 1}
 PERK_COST_GROWTH = 1.15
 
 
@@ -573,7 +652,11 @@ def perk_text(key, level):
     """Format the cumulative bonus label for `key` at `level`."""
     if key == "relics":
         return ["NO BONUS", "RELICS 15% OFF", "15% OFF, 6 OWNED", "15% OFF, 6 OWNED, 4 OFFERS"][max(0, min(3, level))]
+    if key == "insurance":
+        return "1 FREE BILL WAIVER" if level else "NO BONUS"
     n = deep_pockets_pct(level) if key == "cash" else PERK_STEP[key] * level
+    if not n:
+        return "NO BONUS"
     return PERKS[key]["now"].format(n=n, s="" if n == 1 else "S")
 
 

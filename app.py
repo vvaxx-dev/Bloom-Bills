@@ -247,6 +247,7 @@ class App:
             "round": run.round, "quotas_paid": run.quotas_paid, "total_earned": run.total_earned,
             "heirlooms": gain, "spent": run.heirlooms_spent, "won": run.won,
             "bill": s.get("bill", 0), "money": s.get("money", run.money), "new_best": new_best,
+            "cause": "snail" if getattr(run, "snail_bitten", False) else "",
         }
         self.run = None
 
@@ -270,12 +271,19 @@ class App:
     def draw_toasts(self):
         if not self.toasts:
             return
-        text = self.toasts[0][0]
-        w = gfx.text_width(text) + 10
+        text = str(self.toasts[0][0])
+        max_w = CANVAS_W - 16
+        lines = gfx.wrap(text, max_w) or [""]
+        if len(lines) > 2:
+            lines = [lines[0], gfx.fit_text(" ".join(lines[1:]), max_w)]
+        w = max(gfx.text_width(line) for line in lines) + 10
+        h = 4 + 7 * len(lines)
         x = (CANVAS_W - w) // 2
-        gfx.rect(self.canvas, PANEL_DARK, x - 1, 17, w + 2, 13)
-        gfx.rect(self.canvas, (80, 40, 40), x, 18, w, 11)
-        gfx.draw_text(self.canvas, text, CANVAS_W // 2, 21, TEXT, align="center")
+        y = 15
+        gfx.rect(self.canvas, PANEL_DARK, x - 1, y, w + 2, h + 1)
+        gfx.rect(self.canvas, (80, 40, 40), x, y + 1, w, h - 1)
+        for i, line in enumerate(lines):
+            gfx.draw_text(self.canvas, line, CANVAS_W // 2, y + 2 + i * 7, TEXT, align="center")
 
     def handle_key(self, key):
         if key == pygame.K_F11:
@@ -326,8 +334,11 @@ class App:
                 self.mouse = self.to_canvas(ev.pos)
                 self.handle_click(self.mouse)
             elif ev.type == pygame.MOUSEWHEEL:
-                if not self.active_modal():
+                modal = self.active_modal()
+                if not modal:
                     self.scene.on_wheel(ev.y)
+                elif hasattr(modal, "on_wheel"):
+                    modal.on_wheel(ev.y)
             elif ev.type == pygame.KEYDOWN:
                 self.handle_key(ev.key)
         self.mouse = self.to_canvas(pygame.mouse.get_pos())

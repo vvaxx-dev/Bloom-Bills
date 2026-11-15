@@ -72,15 +72,53 @@ def draw_text(surf, text, x, y, color=TEXT, scale=1, align="left", shadow=None):
     return w
 
 
+def fit_text(text, max_width, scale=1, ellipsis="..."):
+    """Trim one line of text so it never paints past `max_width` pixels.
+
+    The pixel font is not monospace, so this measures glyph by glyph instead of
+    guessing a character count. Used by the round banner, toasts and forecast
+    chips: anywhere a long weather sentence shares a single 320px row with the
+    rest of the HUD.
+    """
+    text = str(text)
+    if text_width(text, scale) <= max_width:
+        return text
+    suffix = ellipsis if text_width(ellipsis, scale) <= max_width else ""
+    room = max_width - text_width(suffix, scale)
+    out = ""
+    for ch in text:
+        if text_width(out + ch, scale) > room:
+            break
+        out += ch
+    return (out.rstrip() + suffix) if suffix else out.rstrip()
+
+
 def wrap(text, max_width, scale=1):
+    """Word-wrap text, hard-breaking a single word that is wider than the box.
+
+    A long unbroken token used to be emitted whole (because `not line` let it
+    through), which is how weather descriptions and lore leaked off the right
+    edge of tooltips. Split it at glyph boundaries instead.
+    """
     lines, line = [], ""
     for word in str(text).split():
         trial = word if not line else line + " " + word
-        if text_width(trial, scale) <= max_width or not line:
+        if text_width(trial, scale) <= max_width:
             line = trial
-        else:
+            continue
+        if line:
             lines.append(line)
+            line = ""
+        if text_width(word, scale) <= max_width:
             line = word
+            continue
+        chunk = ""
+        for ch in word:
+            if chunk and text_width(chunk + ch, scale) > max_width:
+                lines.append(chunk)
+                chunk = ""
+            chunk += ch
+        line = chunk
     if line:
         lines.append(line)
     return lines
@@ -457,6 +495,14 @@ def tooltip(surf, lines, pos, width=96):
     for text, color in lines:
         for part in wrap(text, width - 8):
             wrapped.append((part, color))
+    # A very long lore string can still wrap to more lines than the canvas has.
+    # Fold the overflow into the last line with an ellipsis rather than letting
+    # the panel and its text run off the bottom of the screen.
+    max_lines = max(1, (CANVAS_H - 10) // 7)
+    if len(wrapped) > max_lines:
+        text, color = wrapped[max_lines - 1]
+        rest = " ".join(part for part, _c in wrapped[max_lines - 1:])
+        wrapped = wrapped[:max_lines - 1] + [(fit_text(rest, width - 8), color)]
     h = len(wrapped) * 7 + 6
     x = max(2, min(pos[0], CANVAS_W - width - 2))
     y = pos[1] + 15 if pos[1] - h < 2 else pos[1] - h

@@ -6,6 +6,10 @@ import random
 import pygame
 
 from . import data, gfx
+from .settings import (
+    CRITTER_EAT_COOLDOWN, CRITTER_EAT_RADIUS, CURSOR_SNAIL_CATCH,
+    CURSOR_SNAIL_GRACE, CURSOR_SNAIL_SPEED,
+)
 from .sprites_data import PALETTE
 
 # Garden board coordinates (strictly below timebar y=27..32, left of RELICS x=244, above tray y=148).
@@ -410,6 +414,62 @@ class Critter:
         surf.blit(sp, (px, py))
 
 
+class CursorSnail:
+    """The Eternal Snail's cursed twin: a slow violet snail that hunts the mouse.
+
+    It only exists while the relic is owned, gives the player a short grace
+    period, and ends the run if it ever reaches the cursor. Keeping the mouse
+    moving is the whole counterplay.
+    """
+
+    def __init__(self, rng, mouse=None):
+        mx = float(mouse[0]) if mouse and mouse[0] >= 0 else BOARD_LEFT
+        my = float(mouse[1]) if mouse and mouse[1] >= 0 else BOARD_TOP
+        self.x = BOARD_LEFT + 2 if mx > (BOARD_LEFT + BOARD_RIGHT) / 2 else BOARD_RIGHT - 10
+        self.y = BOARD_TOP + 4 if my > (BOARD_TOP + BOARD_BOTTOM) / 2 else BOARD_BOTTOM - 8
+        self.t = rng.random() * 2.0
+        self.grace = CURSOR_SNAIL_GRACE
+        self.facing_left = True
+
+    def update(self, dt, mouse, run):
+        self.t += dt
+        if not mouse or mouse[0] < 0 or mouse[1] < 0:
+            # No real cursor yet: wait out the grace period instead of killing
+            # a player who has not touched the garden.
+            self.grace = max(self.grace, 0.5)
+            return False
+        self.grace -= dt
+        mx, my = float(mouse[0]), float(mouse[1])
+        dx, dy = mx - self.x, my - self.y
+        dist = math.hypot(dx, dy)
+        if dist > 0.001:
+            step = min(dist, CURSOR_SNAIL_SPEED * dt)
+            self.x += dx / dist * step
+            self.y += dy / dist * step
+            self.facing_left = dx < 0
+        self.x = max(float(BOARD_LEFT), min(float(BOARD_RIGHT - 8), self.x))
+        self.y = max(float(BOARD_TOP + 4), min(float(BOARD_BOTTOM - 4), self.y))
+        if self.grace <= 0 and dist <= CURSOR_SNAIL_CATCH:
+            return bool(run.snail_bite())
+        return False
+
+    def draw(self, surf):
+        frame = int(self.t * 3.0) % 2
+        sname = "critter_cursed_snail_%d" % frame
+        sp = _critter_surface(sname, flip_x=self.facing_left)
+        w, h = sp.get_size()
+        px, py = int(round(self.x)), int(round(self.y - h // 2))
+        # A thin violet rim makes this chaser distinct from the harmless brown
+        # garden snail that already wanders the lanes.
+        rim = (150, 90, 200)
+        surf.fill(rim, (px - 1, py, 1, h))
+        surf.fill(rim, (px + w, py, 1, h))
+        surf.fill(rim, (px, py - 1, w, 1))
+        surf.fill(rim, (px, py + h, w, 1))
+        surf.blit(_critter_surface(sname, flip_x=self.facing_left, shadow=True), (px + 1, py + 1))
+        surf.blit(sp, (px, py))
+
+
 class GardenAmbient:
     """Manages a sparse stream of critters plus seasonal and weather effects."""
 
@@ -418,6 +478,9 @@ class GardenAmbient:
         self.rng = random.Random((getattr(run, "seed", 1) or 1) * 65537 + 19)
         self._state_key = None
         self.critters = []
+        self.flytrap_cd = {}
+        self.eat_sparks = []
+        self.cursor_snail = None
         self.sync(run, cellar=False)
 
     def sync(self, run, cellar=False):
@@ -430,12 +493,67 @@ class GardenAmbient:
         spawn_rng = random.Random(seed * 91813 + rnd * 131 + (31 if cellar else 0))
         roster = choose_critter_roster(rnd, seed=seed, cellar=cellar)
         self.critters = [Critter(sp, spawn_rng) for sp in roster]
+        self.flytrap_cd.clear()
+        self.eat_sparks.clear()
+        self.cursor_snail = None
 
-    def update(self, dt, run, cellar=False):
+    def update(self, dt, run, cellar=False, plot_rects=(), mouse=None):
         self.t += dt
         self.sync(run, cellar=cellar)
         for c in self.critters:
             c.update(dt, self.rng)
+        self._feed_flytraps(dt, run, cellar=cellar, plot_rects=plot_rects)
+        self._update_cursor_snail(dt, run, mouse=mouse)
+        self.eat_sparks = [[x, y, age + dt] for x, y, age in self.eat_sparks if age + dt < 0.45]
+
+    def _feed_flytraps(self, dt, run, cellar=False, plot_rects=()):
+        """A Venus Flytrap snaps up an ambient critter that wanders near its mouth."""
+        for key in list(self.flytrap_cd):
+            self.flytrap_cd[key] -= dt
+            if self.flytrap_cd[key] <= 0:
+                del self.flytrap_cd[key]
+        if getattr(run, "phase", "") != "round" or getattr(run, "finished", False):
+            return
+        plots = run.cellar_plots if cellar else run.plots
+        traps = []
+        for i, plot in enumerate(plots):
+            if (plot.species and data.PLANTS[plot.species].get("feed")
+                    and i < len(plot_rects)):
+                traps.append((i, plot_rects[i]))
+        if not traps:
+            return
+        for critter in self.critters:
+            if critter.away > 0 or critter.offscreen:
+                continue
+            cx, cy = critter.x + 3.0, critter.y
+            for i, (x, y, w, h) in traps:
+                key = (bool(cellar), i)
+                if key in self.flytrap_cd:
+                    continue
+                dx = max(x - cx, 0.0, cx - (x + w))
+                dy = max(y - cy, 0.0, cy - (y + h))
+                if dx * dx + dy * dy > CRITTER_EAT_RADIUS ** 2:
+                    continue
+                if run.critter_eaten(i, species=critter.species, cellar=cellar):
+                    critter._leave_for_a_while(self.rng)
+                    self.flytrap_cd[key] = CRITTER_EAT_COOLDOWN
+                    self.eat_sparks.append([cx, cy, 0.0])
+                    break
+
+    def _update_cursor_snail(self, dt, run, mouse=None):
+        """Spawn/chase/retire the Eternal Snail's cursed cursor-chaser."""
+        active = (getattr(run, "phase", "") == "round"
+                  and getattr(run, "started", False)
+                  and not getattr(run, "finished", False)
+                  and run._has("cursor_snail")
+                  and not getattr(run, "snail_bitten", False))
+        if not active:
+            self.cursor_snail = None
+            return
+        if self.cursor_snail is None:
+            self.cursor_snail = CursorSnail(self.rng, mouse)
+        if self.cursor_snail.update(dt, mouse, run):
+            self.cursor_snail = None
 
     def draw_foliage(self, surf, run, cellar=False, plot_rects=()):
         """Keep surface lanes clean; the season is illustrated in the topbar.
@@ -458,12 +576,25 @@ class GardenAmbient:
                 surf.fill((46, 120, 62), (sx, BOARD_BOTTOM - 1, 3, 2))
                 surf.fill((120, 200, 210), (sx + 1, BOARD_BOTTOM - 2, 1, 1))
 
-    def draw_foreground(self, surf, run, cellar=False):
-        """Draw crawling/hopping/flying critters plus simple season & weather particles."""
+    def draw_foreground(self, surf, run, cellar=False, plot_rects=(), mouse=None):
+        """Draw critters, chomp sparks, the cursed snail, and weather particles."""
         self.sync(run, cellar=cellar)
         for c in self.critters:
             c.draw(surf)
+        self._draw_eat_sparks(surf)
         self._draw_weather_and_season_fx(surf, run, cellar=cellar)
+        if self.cursor_snail is not None:
+            self.cursor_snail.draw(surf)
+
+    def _draw_eat_sparks(self, surf):
+        for sx, sy, age in self.eat_sparks:
+            radius = 1.0 + age * 12.0
+            for k in range(4):
+                ang = k * math.pi / 2 + age * 2.0
+                px = int(round(sx + math.cos(ang) * radius))
+                py = int(round(sy + math.sin(ang) * radius - age * 4))
+                if BOARD_TOP <= py < BOARD_BOTTOM and BOARD_LEFT <= px < BOARD_RIGHT:
+                    surf.fill((250, 210, 70), (px, py, 1, 1))
 
     def _draw_weather_and_season_fx(self, surf, run, cellar=False):
         w_span = BOARD_RIGHT - BOARD_LEFT - 4

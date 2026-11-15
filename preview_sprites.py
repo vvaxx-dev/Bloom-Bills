@@ -13,7 +13,9 @@ Every sprite is drawn the two ways the game draws it: at 2x on soil, as on a
 plot, and at 1x on a panel, as in the seed tray and the shop. Mistakes that
 are easy to make in a text grid are spelled out in red: a row that is too long
 or too short, a colour key that is not in PALETTE. A size other than the usual
-12x12 is shown in yellow.
+12x12 is shown in yellow. Art much larger than that tile (Moss's portrait, for
+example) gets its own rows at the bottom instead of spreading every other card
+apart.
 """
 
 import argparse
@@ -21,6 +23,7 @@ import difflib
 import os
 import sys
 import traceback
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -217,24 +220,71 @@ def card(art, name, scale, face, grid=False):
     return surf
 
 
+def usual_tile(art, names):
+    """The grid size most of the listed sprites use, to recognise outsized art."""
+    sizes = []
+    for name in names:
+        rows = rows_of(art, lookup(art, name)[0])
+        if rows:
+            sizes.append(max(len(rows[0]), len(rows)))
+    if not sizes:
+        return 0
+    counts = Counter(sizes)
+    return max(counts, key=lambda size: (counts[size], -size))  # ties prefer the smaller tile
+
+
+def is_outsized(art, name, usual):
+    """True when a sprite is far bigger than the usual tile on the sheet."""
+    rows = rows_of(art, lookup(art, name)[0])
+    return bool(rows) and usual > 0 and max(len(rows[0]), len(rows)) > 2 * usual
+
+
+def layout(group, width):
+    """Place one group of cards in a tight grid; return its size and positions."""
+    if not group:
+        return 0, 0, []
+    cell_w = max(c.get_width() for c in group) + GAP
+    cell_h = max(c.get_height() for c in group) + GAP
+    across = max(1, min(len(group), (width - GAP) // cell_w))
+    spots = [(GAP + (i % across) * cell_w, (i // across) * cell_h) for i in range(len(group))]
+    return across * cell_w - GAP, -(-len(group) // across) * cell_h, spots
+
+
 def compose(art, names, scale, width, grid=False, error=""):
-    """The whole picture: anything wrong in red at the top, then a card per sprite, as many across as fit `width`."""
+    """The whole picture: problems in red, then a tight grid of cards as wide as `width` allows.
+
+    Cells are sized from the regular sprites only. One portrait much larger than
+    the rest used to inflate every cell and leave the other sprites a screen
+    apart, so outsized art is laid out in its own rows at the bottom instead.
+    """
     pygame.font.init()
     face = pygame.font.Font(None, TEXT_SIZE)
     cards = [card(art, name, scale, face, grid) for name in names]
-    cell_w = max([c.get_width() for c in cards] + [0]) + GAP
-    cell_h = max([c.get_height() for c in cards] + [0]) + GAP
-    across = max(1, min(len(cards), (width - GAP) // cell_w))
+    usual = usual_tile(art, names)
+    regular = [c for name, c in zip(names, cards) if not is_outsized(art, name, usual)]
+    outsized = [c for name, c in zip(names, cards) if is_outsized(art, name, usual)]
+
     lines = [line for said in report(art, names, error) for line in wrap(said, face, width - 2 * GAP)]
     line_h = face.get_linesize()
     top = GAP + (len(lines) * line_h + GAP if lines else 0)
-    sheet_w = max([across * cell_w - GAP] + [face.size(line)[0] for line in lines]) + 2 * GAP
-    surf = pygame.Surface((sheet_w, top + -(-len(cards) // across) * cell_h))
+
+    grid_w, grid_h, grid_spots = layout(regular, width)
+    big_w, big_h, big_spots = layout(outsized, width)
+    label = face.render("OVERSIZED SPRITES", True, DIM) if outsized else None
+    label_h = label.get_height() + GAP if label else 0
+
+    sheet_w = max([grid_w, big_w] + [face.size(line)[0] for line in lines]) + 2 * GAP
+    surf = pygame.Surface((sheet_w, top + grid_h + label_h + big_h + GAP))
     surf.fill(BG)
     for i, line in enumerate(lines):
         surf.blit(face.render(line, True, BAD), (GAP, GAP + i * line_h))
-    for i, one in enumerate(cards):
-        surf.blit(one, (GAP + (i % across) * cell_w, top + (i // across) * cell_h))
+    for one, (x, y) in zip(regular, grid_spots):
+        surf.blit(one, (x, top + y))
+    if label:
+        surf.blit(label, (GAP, top + grid_h))
+    big_top = top + grid_h + label_h
+    for one, (x, y) in zip(outsized, big_spots):
+        surf.blit(one, (x, big_top + y))
     return surf
 
 

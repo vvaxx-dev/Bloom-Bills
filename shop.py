@@ -38,8 +38,8 @@ class ShopScene(Scene):
             if rid is None:
                 b.label, b.enabled = "SOLD", False
             else:
-                price = run.relic_price(rid)
-                b.label = "BUY $" + fmt(price)
+                price = run.relic_offer_price(i)
+                b.label = "TAKE FREE!" if i == run.free_offer else "BUY $" + fmt(price)
                 b.enabled = run.money >= price and len(run.relics) < run.relic_slots()
         for i, b in enumerate(self.sell_buttons):
             if i < len(run.relics):
@@ -129,6 +129,9 @@ class ShopScene(Scene):
             (rel["rarity"].upper(), col),
             (rel["desc"], TEXT),
         ]
+        syn = data.synergy_text(rid)
+        if syn:
+            lines.append(("PAIRING: " + syn, GOOD))
         for step in rel.get("levels", [])[:lv]:
             lines.append((step["desc"], GOOD))
         for step in rel.get("levels", [])[lv:]:
@@ -165,6 +168,8 @@ class ShopScene(Scene):
             gfx.draw_text(surf, rel["rarity"], x + 25, y + 14, col)
             for line_no, line in enumerate(gfx.wrap(rel["desc"], card_w - 12)[:7]):
                 gfx.draw_text(surf, line, x + 6, y + 26 + line_no * 7, TEXT)
+            if i == run.free_offer:
+                gfx.draw_text(surf, "LUCKY PENNY: FREE!", x + card_w // 2, y + 86, GOOD, align="center")
             if gfx.inside(self.mouse, (x, y, card_w, 78)):
                 offer_hover = rid
         for b in self.buy_buttons:
@@ -206,12 +211,14 @@ class ShopScene(Scene):
         else:
             gfx.draw_text(surf, "NO BILL", fx + fw - 4, fy + 3, GOOD, align="right")
 
-        wname = twist["name"].upper()
-        while len(wname) > 1 and gfx.text_width(wname) > fw - 8:
-            wname = wname[:-1]
+        wname = gfx.fit_text(twist["name"].upper(), fw - 10)
         gfx.draw_text(surf, wname, fx + 5, fy + 11, tcol)
-        sub = "BOSS!" if twist.get("boss") else ("HOVER INFO" if twist["name"] != "Fair Weather" else "CALM SKIES")
-        gfx.draw_text(surf, sub, fx + 5, fy + 18, DIM)
+        # Short weather lines replace the old "HOVER INFO" placeholder so the
+        # forecast chip stays inside its 98px panel even for Eclipse or bosses.
+        sub = ("BOSS! " if twist.get("boss") else "") + twist.get("short", twist["desc"])
+        if twist["name"] == "Fair Weather":
+            sub = "CALM SKIES"
+        gfx.draw_text(surf, gfx.fit_text(sub, fw - 10), fx + 5, fy + 18, DIM)
 
         self.plot_btn.draw(surf, self.mouse)
         self.reroll_btn.draw(surf, self.mouse)
