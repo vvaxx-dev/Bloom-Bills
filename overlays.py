@@ -187,10 +187,11 @@ class PauseModal:
             bx + bw - 25, by + 4, 19, 19, "", app.open_settings,
             icon="cog", chromeless=True, hover_subs=gfx.COG_HOVER_SUBS,
         )
-        self.resume_btn = Button(bx + 10, by + 30, 88, 22, "RESUME", self.resume, color=(70, 130, 70))
-        self.new_btn = Button(bx + 10, by + 57, 88, 22, "NEW RUN", self.new_run_clicked, color=PANEL_LIGHT)
-        self.menu_btn = Button(bx + 10, by + 84, 88, 22, "MAIN MENU", self.main_menu_clicked, color=(96, 70, 140))
-        self.quit_btn = Button(bx + 10, by + 111, 88, 22, "QUIT", self.quit_clicked, color=(150, 70, 60))
+        self.resume_btn = Button(bx + 10, by + 30, 88, 19, "RESUME", self.resume, color=(70, 130, 70))
+        self.index_btn = Button(bx + 10, by + 51, 88, 19, "GARDEN INDEX", self.garden_index_clicked, color=(112, 72, 48))
+        self.new_btn = Button(bx + 10, by + 72, 88, 19, "NEW RUN", self.new_run_clicked, color=PANEL_LIGHT)
+        self.menu_btn = Button(bx + 10, by + 93, 88, 19, "MAIN MENU", self.main_menu_clicked, color=(96, 70, 140))
+        self.quit_btn = Button(bx + 10, by + 114, 88, 19, "QUIT", self.quit_clicked, color=(150, 70, 60))
         self.heirlooms_per_page = 5
         self.heirloom_pages = max(1, math.ceil(len(data.PERK_ORDER) / self.heirlooms_per_page))
         self.heirloom_page = 0
@@ -201,7 +202,7 @@ class PauseModal:
         self.heirloom_next = Button(hx + 24, hy + hh - 12, 18, 10, ">",
                                     lambda: self.set_heirloom_page(self.heirloom_page + 1),
                                     color=(96, 70, 140))
-        self.buttons = [self.cog_btn, self.resume_btn, self.new_btn, self.menu_btn, self.quit_btn,
+        self.buttons = [self.cog_btn, self.resume_btn, self.index_btn, self.new_btn, self.menu_btn, self.quit_btn,
                         self.heirloom_prev, self.heirloom_next]
         self.set_heirloom_page(0)
 
@@ -217,6 +218,14 @@ class PauseModal:
     def on_wheel(self, dy):
         self.set_heirloom_page(self.heirloom_page + (1 if dy < 0 else -1))
         return True
+
+    def garden_index_clicked(self):
+        """Open the Garden Index mid-run; closing it returns to this pause."""
+        self.app.pause_modal = None
+        if hasattr(self.app, "open_index"):
+            self.app.open_index()
+        else:
+            self.app.goto("index")
 
     def resume(self):
         self.app.pause_modal = None

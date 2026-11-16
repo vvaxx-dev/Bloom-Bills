@@ -176,6 +176,9 @@ class Run:
         self.capsule_income = 0
         self.owl_timer = 0.0
         self.snail_bitten = False
+        # Crossbreed seeds discovered this run; the app mirrors these into
+        # the persistent profile so the Garden Index stays revealed forever.
+        self.discovered_crossbreeds = set()
 
     def _emit(self, kind, **payload):
         if len(self.events) < MAX_EVENTS:
@@ -486,6 +489,38 @@ class Run:
             return False
         return bool(self.twist().get("honey_only") and not data.produces_honey(plots[i].species))
 
+    def _effective_twist_id(self):
+        """Twist id actually in force (Clear Skies rewrites it to Fair Weather)."""
+        return "none" if self.weather_cleared else self.twist_id()
+
+    def _plant_speed_mult(self, species, cellar=False):
+        """Per-species weather/season growth multiplier for crossbreed traits.
+
+        Solar Saffron leans into sunshine, the Spiny Pumpkin treats drought
+        and heatwaves as fair sun, and the Ghost Bloom hurries in Autumn.
+        Weather traits only bite on the surface; the cellar is weatherproof,
+        but the season still reaches it.
+        """
+        if species not in data.PLANTS:
+            return 1.0
+        sp = data.PLANTS[species]
+        mult = 1.0
+        season_mult = sp.get("season_growth", {}).get(self.season_name())
+        if season_mult:
+            mult *= season_mult
+        if cellar:
+            return mult
+        twist_id = self._effective_twist_id()
+        twist = self.twist()
+        twist_mult = sp.get("twist_growth", {}).get(twist_id)
+        if twist_mult:
+            mult *= twist_mult
+        if twist_id in sp.get("hardy_twists", ()):
+            # Undo the weather's slowdown, then grow at the hardy rate
+            # (1.25x, as if the day were fair and bright) instead.
+            mult *= float(sp.get("hardy_growth", 1.25)) / max(float(twist.get("growth", 1.0)), 0.01)
+        return mult
+
     def plot_growth_speed(self, i, cellar=False):
         """Effective growth rate of plot `i`, including cellar, eclipse, and watering modifiers."""
         plot_list = self.cellar_plots if cellar else self.plots
@@ -495,6 +530,7 @@ class Run:
         if cellar:
             return (self.cellar_growth_speed()
                     * (1.5 if self.is_chosen(i, cellar) else 1.0)
+                    * (self._plant_speed_mult(p.species, cellar=True) if p.species else 1.0)
                     * (1.0 + self.synergy_growth(p.species) if p.species else 1.0))
         if self.plant_disabled(i):
             return 0.0
@@ -504,6 +540,7 @@ class Run:
         if p.water_left > 0:
             speed *= WATER_BOOST
         if p.species:
+            speed *= self._plant_speed_mult(p.species)
             speed *= 1.0 + self.synergy_growth(p.species)
         return speed
 
@@ -715,6 +752,9 @@ class Run:
             return nocturnal or "fungus" in sp["tags"]
         if nocturnal and not self.twist().get("eclipse"):
             return False
+        # Winter-hardy crosses (the Frost Tomato) ignore the Frost ban.
+        if sp.get("frost_hardy") and self._effective_twist_id() == "frost":
+            return True
         ban = self.twist()["ban"]
         return not (ban and ban in sp["tags"])
 
@@ -889,6 +929,7 @@ class Run:
                 plot_speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
             if self.is_chosen(i, cellar):
                 plot_speed *= 1.5
+            plot_speed *= self._plant_speed_mult(p.species, cellar=cellar)
             plot_speed *= 1.0 + self.synergy_growth(p.species)
             grow = data.PLANTS[p.species]["grow"]
             if self.auto_harvest:
@@ -1113,7 +1154,9 @@ class Run:
         pool = [sid for sid, count in self.seeds.items() if count > 0 and sid in data.PLANTS]
         pool += [sid for sid in self._planted_species() if sid not in pool]
         if not pool:
-            pool = list(data.SURFACE_PLANTS)
+            # Never hand out a crossbreed here: those seeds are earned by
+            # cross-pollination alone, not dropped by a passing owl.
+            pool = [sid for sid in data.SURFACE_PLANTS if not data.PLANTS[sid].get("crossbreed")]
         sid = self.rng.choice(sorted(set(pool)))
         # A flytrap on the board means the owl is hunting over a full garden.
         count = 2 if self._synergy_active(data.RELIC_SYNERGIES["friendly_owl"]) else 1
@@ -1145,11 +1188,60 @@ class Run:
         self._emit("snail_bite")
         return True
 
+    def _roll_crossbreed(self, i, cellar=False):
+        """Roll cross-pollination for the plant about to be harvested.
+
+        Parents must stand in orthogonally adjacent plots on the same board
+        (above, below, left or right) under the recipe's weather/season.
+        Every eligible neighbour pair rolls independently, and there is no
+        per-round cap: each harvest of either parent is a fresh chance.
+        Returns the child species id on success, else None.
+        """
+        plot_list = self.cellar_plots if cellar else self.plots
+        if not 0 <= i < len(plot_list) or not plot_list[i].species:
+            return None
+        species = plot_list[i].species
+        twist_id = self._effective_twist_id()
+        twist = self.twist()
+        season_name = self.season_name()
+        candidates = [plot_list[n].species for n in self.neighbours(i, cellar)]
+        # The cellar sits directly below the surface, so the plot at the
+        # same index on the other board also counts as a neighbour (above
+        # or below). That is how a cellar Moonflower can cross with the
+        # Pumpkin ripening over its head in Autumn.
+        other_board = self.plots if cellar else self.cellar_plots
+        if i < len(other_board):
+            candidates.append(other_board[i].species)
+        for other in candidates:
+            if not other:
+                continue
+            cid = data.crossbreed_match(species, other, twist_id, twist, season_name)
+            if cid is None:
+                continue
+            if self.rng.random() < float(data.PLANTS[cid].get("chance", 0.15)):
+                return cid
+        return None
+
+    def _grant_crossbreed(self, cid, i, cellar=False):
+        """Bank one freshly cross-pollinated seed and announce the discovery."""
+        self.seeds[cid] = self.seeds.get(cid, 0) + 1
+        first = cid not in self.discovered_crossbreeds
+        self.discovered_crossbreeds.add(cid)
+        self._emit(
+            "crossbreed", plot=i, cellar=cellar, species=cid,
+            name=data.PLANTS[cid]["name"], first=first,
+        )
+
     def _harvest(self, i, cellar=False):
         plot_list = self.cellar_plots if cellar else self.plots
         plot = plot_list[i]
         species = plot.species
         sp = data.PLANTS[species]
+
+        # Cross-pollination is judged on the garden as it stands, before a
+        # Man-Eater's bite (or any other harvest side effect) can move or
+        # remove the neighbouring parent.
+        crossbred = self._roll_crossbreed(i, cellar)
 
         # A Man-Eater feeds before it is paid, so the bite counts this harvest.
         if sp.get("consume"):
@@ -1175,6 +1267,8 @@ class Run:
         self._feed_flytraps(i, cellar)
         self.refresh_relic_levels()
         self._maybe_mutate(i, cellar)
+        if crossbred:
+            self._grant_crossbreed(crossbred, i, cellar)
 
     def _feed_flytraps(self, i, cellar=False):
         """Every harvest on the farm feeds each growing flytrap a little."""
@@ -1615,6 +1709,7 @@ class Run:
             "endless": self.endless, "retired": self.retired,
             "heirlooms_spent": self.heirlooms_spent, "last_summary": self.last_summary,
             "bill_waivers": self.bill_waivers, "insurance_used": self.insurance_used,
+            "crossbreeds_found": sorted(self.discovered_crossbreeds),
             "free_offer": self.free_offer, "stock_species": self.stock_species,
             "capsule_timer": self.capsule_timer, "capsule_income": self.capsule_income,
             "owl_timer": self.owl_timer, "snail_bitten": self.snail_bitten,
@@ -1653,6 +1748,9 @@ class Run:
         run.stock_species = d.get("stock_species")
         if run.stock_species not in data.PLANTS:
             run.stock_species = None
+        run.discovered_crossbreeds = {
+            cid for cid in d.get("crossbreeds_found", []) if cid in data.CROSSBREEDS
+        }
         run.capsule_timer = float(d.get("capsule_timer", 0.0))
         run.capsule_income = int(d.get("capsule_income", 0))
         run.owl_timer = float(d.get("owl_timer", 0.0))

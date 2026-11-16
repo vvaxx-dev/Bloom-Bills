@@ -70,17 +70,22 @@ class RoundScene(Scene):
     def plant_list(self):
         return self.run.cellar_plots if self.in_cellar() else self.run.plots
 
+    def relic_display(self):
+        """Owned relics in rarity order, as shown in the round sidebar."""
+        return data.sort_by_rarity(list(self.run.relics), data.RELICS)
+
     def view_seeds(self):
         """Return plantable species for the active board, but only ones the player
-        actually owns; Eclipse adds owned nocturnal seeds to the surface tray."""
+        actually owns; Eclipse adds owned nocturnal seeds to the surface tray.
+        The tray is always in rarity order."""
         run = self.run
         if self.in_cellar():
-            return [sid for sid in data.CELLAR_PLANTS if run.seeds.get(sid, 0) > 0]
+            return data.sort_by_rarity([sid for sid in data.CELLAR_PLANTS if run.seeds.get(sid, 0) > 0])
         seeds = [sid for sid in data.SURFACE_PLANTS if run.seeds.get(sid, 0) > 0]
         if run.twist().get("eclipse"):
             seeds += [sid for sid in data.NOCTURNAL_PLANTS
                       if sid not in seeds and run.seeds.get(sid, 0) > 0]
-        return seeds
+        return data.sort_by_rarity(seeds)
 
     def toggle_shovel(self):
         self.shovel_mode = not self.shovel_mode
@@ -177,7 +182,7 @@ class RoundScene(Scene):
             return True
         run = self.run
         if "chosen_bloom" in run.relics:
-            idx = run.relics.index("chosen_bloom")
+            idx = self.relic_display().index("chosen_bloom")
             if gfx.inside(pos, (244, 47 + idx * 9, 72, 9)):
                 if run.chosen_plant is None:
                     self.choose_mode = not self.choose_mode
@@ -324,6 +329,21 @@ class RoundScene(Scene):
                 continue
             if kind == "capsule":
                 self.app.toast("TIME CAPSULE! +$%d FROM LAST 10S." % ev["amount"], 2.0)
+                continue
+            if kind == "crossbreed":
+                if hasattr(self.app, "discover_crossbreed"):
+                    self.app.discover_crossbreed(ev["species"])
+                self.app.toast(
+                    "%s %s SEED +1!" % (
+                        "CROSSBREED DISCOVERED!" if ev.get("first") else "CROSSBREED!",
+                        ev["name"].upper(),
+                    ), 3.0,
+                )
+                if show_floaters and bool(ev.get("cellar")) == self.in_cellar() \
+                        and ev["plot"] < MAX_PLOTS:
+                    x, y, w, _h = plot_rect(ev["plot"])
+                    self.floaters.append(
+                        [x + w // 2, y + 8, "NEW SEED!", data.RARITY_COLORS["exquisite"], 0.0])
                 continue
             if kind == "owl_seed":
                 self.app.toast("THE OWL DROPPED %d %s SEED%s!"
@@ -662,6 +682,16 @@ class RoundScene(Scene):
             lines.append(("READY: CLICK TO HARVEST", GOOD))
         if sp.get("mature_bonus"):
             lines.append(("MATURE %dS: +$%d BASE" % (int(p.mature_time), int(p.mature_time) * sp["mature_bonus"]), WATER))
+        if sp.get("crossbreed"):
+            lines.append(("CROSSBREED - NO PACK SELLS IT", ACCENT))
+        if sp.get("twist_growth", {}).get("sunny"):
+            lines.append(("GROWS 25% FASTER IN SUNSHINE", GOOD))
+        if sp.get("hardy_twists"):
+            lines.append(("THRIVES IN DROUGHT AND HEATWAVES", GOOD))
+        if sp.get("season_growth"):
+            lines.append(("GROWS 25% FASTER IN AUTUMN", GOOD))
+        if sp.get("frost_hardy"):
+            lines.append(("WINTER-HARDY IN FROST", WATER))
         if run.is_chosen(i, cellar):
             lines.append(("CHOSEN: 1.5X GROWTH, 2X HARVEST", ACCENT))
         if self.shovel_mode:

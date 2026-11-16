@@ -773,7 +773,11 @@ class MutationCoverageTests(unittest.TestCase):
                 self.assertTrue(data.mutants_for(sid))
 
     def test_nocturnal_crops_can_mutate(self):
+        # Crossbreeds are terminal forms (no_mutations), like Crystal Bloom:
+        # every ordinary nocturnal crop still has a mutation to chase.
         for sid in data.NOCTURNAL_PLANTS:
+            if data.PLANTS[sid].get("no_mutations"):
+                continue
             with self.subTest(crop=sid):
                 self.assertTrue(data.mutants_for(sid))
 

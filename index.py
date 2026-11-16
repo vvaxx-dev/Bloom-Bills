@@ -26,6 +26,7 @@ CATEGORIES = [
     ("farmer", "FARMER"),
     ("night", "NIGHT"),
     ("mutant", "MUTANTS"),
+    ("crossbreed", "CROSSBREEDS"),
 ]
 UPGRADE_SUBSECTIONS = [
     ("relics", "RELICS"),
@@ -37,18 +38,34 @@ _DESERT_PLANTS = [sid for sid in data.SURFACE_PLANTS if "desert" in data.PLANTS[
 
 
 def _category_ids(cat):
-    """Return the plant ids in one garden-index category."""
+    """Return the plant ids in one garden-index category, in rarity order."""
     if cat == "garden":
-        return list(_GARDEN_PLANTS)
+        return data.sort_by_rarity(list(_GARDEN_PLANTS))
     if cat == "desert":
-        return list(_DESERT_PLANTS)
+        return data.sort_by_rarity(list(_DESERT_PLANTS))
     if cat == "farmer":
-        return list(data.FARMER_PLANTS)
+        return data.sort_by_rarity(list(data.FARMER_PLANTS))
     if cat == "night":
-        return list(data.NOCTURNAL_PLANTS)
+        return data.sort_by_rarity(list(data.NOCTURNAL_PLANTS))
     if cat == "mutant":
-        return list(data.MUTANTS)
-    return list(data.PLANT_ORDER) + list(data.MUTANTS)
+        return data.sort_mutants(list(data.MUTANTS))
+    if cat == "crossbreed":
+        return list(data.CROSSBREED_ORDER)
+    return list(data.PLANT_ORDER) + data.sort_mutants(list(data.MUTANTS))
+
+
+# Silhouette colours for an undiscovered crossbreed: its shape is a fair
+# hint, its colours are not given away.
+_SILHOUETTE_SUBS = None
+
+
+def _silhouette_subs():
+    global _SILHOUETTE_SUBS
+    if _SILHOUETTE_SUBS is None:
+        from .sprites_data import PALETTE
+
+        _SILHOUETTE_SUBS = {key: (42, 36, 58) for key in PALETTE}
+    return _SILHOUETTE_SUBS
 
 
 def _shorten(text, width):
@@ -95,11 +112,19 @@ class IndexScene(Scene):
 
         self.plant_subsection_buttons = []
         for index, (sid, label) in enumerate(CATEGORIES):
-            col, row = index % 3, index // 3
-            button = Button(
-                16 + col * 46, 21 + row * 14, 43, 12, label,
-                lambda s=sid: self.set_subsection(s),
-            )
+            if sid == "crossbreed":
+                # The seventh tab gets a full-width row of its own under the
+                # usual 3x2 grid, so the cards below only shift down once.
+                button = Button(
+                    16, 49, 134, 11, label,
+                    lambda s=sid: self.set_subsection(s),
+                )
+            else:
+                col, row = index % 3, index // 3
+                button = Button(
+                    16 + col * 46, 21 + row * 14, 43, 12, label,
+                    lambda s=sid: self.set_subsection(s),
+                )
             button.subsection = sid
             self.plant_subsection_buttons.append(button)
 
@@ -110,7 +135,7 @@ class IndexScene(Scene):
             self.upgrade_subsection_buttons.append(button)
 
         self.subsection_buttons = self.plant_subsection_buttons
-        self.back_btn = Button(279, 2, 37, 13, "BACK", lambda: self.app.goto("title"), color=(130, 70, 70))
+        self.back_btn = Button(279, 2, 37, 13, "BACK", self._go_back, color=(130, 70, 70))
         self.prev_btn = Button(18, 154, 20, 13, "<", self.prev_page)
         self.next_btn = Button(132, 154, 20, 13, ">", self.next_page)
         self.mutant_rects = []
@@ -133,8 +158,33 @@ class IndexScene(Scene):
         if self.entry_type == "plants":
             return _category_ids(self.subsection)
         if self.entry_type == "relics":
-            return list(data.RELIC_ORDER)
+            return data.sort_by_rarity(list(data.RELIC_ORDER), data.RELICS)
         return list(data.PERK_ORDER)
+
+    def _go_back(self):
+        """Back to the title, or to the paused run the Index was opened from."""
+        return_from_index = getattr(self.app, "return_from_index", None)
+        if return_from_index is not None and getattr(self.app, "_index_return_scene", None) is not None:
+            return_from_index()
+        else:
+            self.app.goto("title")
+
+    def discovered_crossbreeds(self):
+        """Crossbreed ids the player has ever found (profile + live run)."""
+        found = set(getattr(self.app, "profile", {}).get("discovered_crossbreeds", []))
+        run = getattr(self.app, "run", None)
+        if run is not None:
+            found.update(getattr(run, "discovered_crossbreeds", set()))
+            found.update(sid for sid, n in run.seeds.items() if n > 0)
+        profile = getattr(self.app, "profile", {})
+        found.update(
+            sid for sid, n in profile.get("harvested", {}).items() if n
+        )
+        return {cid for cid in found if cid in data.CROSSBREEDS}
+
+    def is_undiscovered(self, entry_id):
+        """True for a crossbreed still shown as ??? in the Index."""
+        return entry_id in data.CROSSBREEDS and entry_id not in self.discovered_crossbreeds()
 
     @property
     def pages(self):
@@ -216,7 +266,12 @@ class IndexScene(Scene):
         self.selected = sid
         ids = self.entries()
         if sid not in ids:
-            self.subsection = "mutant" if data.PLANTS[sid].get("mutant") else "all"
+            if data.PLANTS[sid].get("crossbreed"):
+                self.subsection = "crossbreed"
+            elif data.PLANTS[sid].get("mutant"):
+                self.subsection = "mutant"
+            else:
+                self.subsection = "all"
             self.category = self.subsection
             self.subsection_by_section["plants"] = self.subsection
             ids = self.entries()
@@ -303,7 +358,7 @@ class IndexScene(Scene):
 
     def on_key(self, key):
         if key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
-            self.app.goto("title")
+            self._go_back()
         elif key == pygame.K_LEFT:
             self.prev_page()
         elif key == pygame.K_RIGHT:
@@ -324,6 +379,11 @@ class IndexScene(Scene):
     def _card_meta(self, entry_id):
         if self.entry_type == "plants":
             meta = data.PLANTS[entry_id]
+            if self.is_undiscovered(entry_id):
+                return (
+                    "???", entry_id, _silhouette_subs(),
+                    data.RARITY_COLORS[meta["rarity"]], "",
+                )
             return (
                 meta["name"], meta.get("art", meta.get("base", entry_id)), meta.get("subs"),
                 data.RARITY_COLORS[meta["rarity"]], "",
@@ -363,15 +423,15 @@ class IndexScene(Scene):
                     style=gfx.plant_anim_style(entry_id, meta, art),
                     started=selected, hovered=hovered,
                 )
-                gfx.draw_sprite(surf, art, x + (w - 24) // 2, y + 2, 2, subs, anim=anim)
+                gfx.draw_sprite(surf, art, x + (w - 24) // 2, y + 1, 2, subs, anim=anim)
             else:
                 bob = -1 if hovered else 0
-                gfx.draw_sprite(surf, art, x + (w - 24) // 2, y + 2 + bob, 2, subs)
+                gfx.draw_sprite(surf, art, x + (w - 24) // 2, y + 1 + bob, 2, subs)
 
             if badge:
                 gfx.draw_text(surf, badge, x + w - 2, y + 3, GOOD if badge != "0/0" else DIM, align="right")
             gfx.draw_text(
-                surf, _shorten(name, w - 4), x + w // 2, y + 26,
+                surf, _shorten(name, w - 4), x + w // 2, y + 24,
                 TEXT if selected else DIM, align="center",
             )
 
@@ -428,7 +488,33 @@ class IndexScene(Scene):
             style=gfx.plant_anim_style(self.selected, sp, art),
             started=True, glow=(sp.get("base", self.selected) == "mycelium"),
         )
-        gfx.draw_sprite(surf, art, px + 3, py + 3, 2, sp.get("subs"), anim=anim)
+        gfx.draw_sprite(
+            surf, art, px + 3, py + 3, 2,
+            _silhouette_subs() if self.is_undiscovered(self.selected) else sp.get("subs"),
+            anim=anim,
+        )
+
+        if self.is_undiscovered(self.selected):
+            gfx.draw_text(surf, "???", 202, 26, TEXT)
+            gfx.draw_text(surf, "UNDISCOVERED", 202, 34, rcol)
+            gfx.draw_text(surf, "CROSSBREED", 202, 42, DIM)
+            gfx.rect(surf, PANEL_DARK, 168, 59, 136, 1)
+            gfx.draw_text(surf, "GROW TIME:", 168, 63, DIM)
+            gfx.draw_text(surf, "???", 304, 63, TEXT, align="right")
+            gfx.draw_text(surf, "HARVEST:", 168, 71, DIM)
+            gfx.draw_text(surf, "???", 304, 71, TEXT, align="right")
+            gfx.draw_text(surf, "END-ROUND SELL:", 168, 79, DIM)
+            gfx.draw_text(surf, "???", 304, 79, TEXT, align="right")
+            y = 91
+            gfx.draw_text(surf, "FIELD NOTES", 168, y, ACCENT)
+            y += 8
+            y += gfx.draw_wrapped(surf, sp.get("hint", ""), 168, y, 136, GOOD) * 7 + 3
+            gfx.draw_wrapped(
+                surf,
+                "NO PACK SELLS THIS SEED. TWO PARENTS MUST GROW SIDE BY SIDE (OR ONE IN THE CELLAR DIRECTLY BELOW).",
+                168, y, 136, DIM,
+            )
+            return
 
         name_lines = gfx.wrap(sp["name"], 102)
         for row, line in enumerate(name_lines[:2]):
@@ -484,6 +570,17 @@ class IndexScene(Scene):
                 button_rect[0] + button_rect[2] // 2, button_rect[1] + 4, TEXT, align="center",
             )
             self.base_rect = (base_id, button_rect)
+        elif sp.get("crossbreed"):
+            gfx.draw_text(surf, "CROSSBREED", 168, y, ACCENT)
+            y += 8
+            y += gfx.draw_wrapped(
+                surf, data.crossbreed_recipe_text(sp), 168, y, 136, TEXT,
+            ) * 7 + 2
+            y += gfx.draw_wrapped(
+                surf,
+                "%d%% ON HARVEST OF EITHER PARENT. NO PACK SELLS IT." % round(100 * sp.get("chance", 0.15)),
+                168, y, 136, GOOD,
+            ) * 7 + 2
         else:
             packs = [data.PACKS[key]["short"] for key in data.packs_for_plant(self.selected)]
             y += gfx.draw_wrapped(

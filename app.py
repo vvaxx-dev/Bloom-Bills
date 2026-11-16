@@ -57,7 +57,54 @@ class App:
         self.debug = os.environ.get("BLOOM_DEBUG") == "1"
         self.goto("title")
 
+    def open_index(self):
+        """Open the Garden Index without losing the live in-run scene."""
+        if self.scene_name == "index":
+            return
+        if self.run and self.scene_name in RUN_SCENE_NAMES:
+            self._index_return_scene = self.scene
+            self._index_return_name = self.scene_name
+            self._index_return_pause = True
+        self.goto("index")
+
+    def return_from_index(self):
+        """Leave the Garden Index, restoring any scene parked by open_index."""
+        scene, name = self._index_return_scene, self._index_return_name
+        want_pause = self._index_return_pause
+        self._index_return_scene = None
+        self._index_return_name = ""
+        self._index_return_pause = False
+        if scene is None:
+            self.goto("title")
+            return
+        self.pause_modal = None
+        self.settings_modal = None
+        self.confirm_modal = None
+        self.dialogue_modal = None
+        self.scene = scene
+        self.scene_name = name
+        if want_pause and self.run and name in RUN_SCENE_NAMES:
+            self.open_pause()
+
+    def discover_crossbreed(self, cid):
+        """Persist a crossbreed discovery into profile.json immediately."""
+        from . import data as _data
+
+        if cid not in _data.CROSSBREEDS:
+            return
+        found = list(self.profile.get("discovered_crossbreeds", []))
+        if cid not in found:
+            found.append(cid)
+            self.profile["discovered_crossbreeds"] = sorted(found)
+            self.saves.save_profile(self.profile)
+        if self.run is not None:
+            self.run.discovered_crossbreeds.add(cid)
+
     def goto(self, name, **kwargs):
+        if name != "index":
+            self._index_return_scene = None
+            self._index_return_name = ""
+            self._index_return_pause = False
         self.scene_name = name
         self.pause_modal = None
         self.settings_modal = None
@@ -240,6 +287,13 @@ class App:
         for sid, count in run.mastery.items():
             harvested[sid] = harvested.get(sid, 0) + int(count)
         profile["harvested"] = harvested
+        from . import data as _data
+
+        discovered = set(profile.get("discovered_crossbreeds", []))
+        discovered.update(getattr(run, "discovered_crossbreeds", set()))
+        # Anything already harvested (e.g. from an older save) is no mystery.
+        discovered.update(sid for sid, n in harvested.items() if n and sid in _data.CROSSBREEDS)
+        profile["discovered_crossbreeds"] = sorted(discovered)
         self.saves.save_profile(profile)
         self.saves.clear_run()
         s = run.last_summary or {}

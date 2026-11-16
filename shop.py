@@ -31,6 +31,21 @@ class ShopScene(Scene):
         self.buttons = self.buy_buttons + self.sell_buttons + [self.plot_btn, self.reroll_btn, self.next_btn]
         self.refresh()
 
+    def relic_display_order(self):
+        """Original relic indices in rarity order, for the owned-relic row.
+
+        The row is displayed sorted by rarity (then name); selling still
+        acts on the original index into `run.relics`.
+        """
+        return sorted(
+            range(len(self.run.relics)),
+            key=lambda idx: (
+                data.rarity_rank(data.RELICS[self.run.relics[idx]]["rarity"]),
+                data.RELICS[self.run.relics[idx]]["name"].lower(),
+                idx,
+            ),
+        )
+
     def refresh(self):
         run = self.run
         for i, b in enumerate(self.buy_buttons):
@@ -41,9 +56,11 @@ class ShopScene(Scene):
                 price = run.relic_offer_price(i)
                 b.label = "TAKE FREE!" if i == run.free_offer else "BUY $" + fmt(price)
                 b.enabled = run.money >= price and len(run.relics) < run.relic_slots()
-        for i, b in enumerate(self.sell_buttons):
-            if i < len(run.relics):
-                refund = max(1, int(run.relic_price(run.relics[i]) * 0.5))
+        display_order = self.relic_display_order()
+        for pos, b in enumerate(self.sell_buttons):
+            if pos < len(display_order):
+                rid = run.relics[display_order[pos]]
+                refund = max(1, int(run.relic_price(rid) * 0.5))
                 b.label, b.enabled = "SELL $" + fmt(refund), True
             else:
                 b.label, b.enabled = "", False
@@ -64,9 +81,12 @@ class ShopScene(Scene):
         self.reroll_btn.label = "REROLL\n$" + fmt(reroll_price)
         self.reroll_btn.enabled = run.money >= reroll_price
 
-    def sell_relic_clicked(self, i):
-        if not 0 <= i < len(self.run.relics):
+    def sell_relic_clicked(self, pos):
+        """Sell the relic shown at owned-row position `pos` (rarity order)."""
+        order = self.relic_display_order()
+        if not 0 <= pos < len(order):
             return
+        i = order[pos]
         rid = self.run.relics[i]
         rel = data.RELICS[rid]
         refund = max(1, int(self.run.relic_price(rid) * 0.5))
@@ -180,20 +200,22 @@ class ShopScene(Scene):
             gfx.draw_text(surf, self.msg, 314, 119, ACCENT, align="right")
 
         owned_hover = None
+        display_order = self.relic_display_order()
         slot_w = 60 if run.relic_slots() == 5 else 50
-        for i in range(run.relic_slots()):
-            x = 4 + i * (slot_w + 2)
+        for pos in range(run.relic_slots()):
+            x = 4 + pos * (slot_w + 2)
             slot_rect = (x, 125, slot_w, 24)
             gfx.rect(surf, PANEL_DARK, *slot_rect)
-            if i < len(run.relics):
-                rel = data.RELICS[run.relics[i]]
+            if pos < len(display_order):
+                orig = display_order[pos]
+                rel = data.RELICS[run.relics[orig]]
                 gfx.rect(surf, data.RARITY_COLORS[rel["rarity"]], x, 125, slot_w, 1)
                 lines = gfx.wrap(rel["name"], slot_w - 6)
                 for k, line in enumerate(lines[:2]):
                     gfx.draw_text(surf, line, x + slot_w // 2, 128 + k * 7, TEXT, align="center")
-                self.sell_buttons[i].draw(surf, self.mouse)
+                self.sell_buttons[pos].draw(surf, self.mouse)
                 if gfx.inside(self.mouse, slot_rect):
-                    owned_hover = i
+                    owned_hover = orig
             else:
                 gfx.draw_text(surf, "EMPTY", x + slot_w // 2, 134, (70, 62, 96), align="center")
 

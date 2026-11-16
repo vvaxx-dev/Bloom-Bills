@@ -8,6 +8,7 @@ SETTINGS_DEFAULT = {"confirmations": True, "floaters": True, "auto_harvest": Fal
 PROFILE_DEFAULT = {
     "v": 1, "heirlooms": 0, "perks": {}, "best_round": 0, "runs": 0, "wins": 0,
     "settings": SETTINGS_DEFAULT.copy(), "harvested": {}, "tutorial_done": [],
+    "discovered_crossbreeds": [],
 }
 
 
@@ -56,6 +57,11 @@ class SaveManager:
         profile["harvested"] = (
             {str(k): int(v) for k, v in raw_harvested.items() if isinstance(v, (int, float))}
             if isinstance(raw_harvested, dict) else {}
+        )
+        raw_crossbreeds = profile.get("discovered_crossbreeds")
+        profile["discovered_crossbreeds"] = (
+            sorted({str(x) for x in raw_crossbreeds if isinstance(x, str)})
+            if isinstance(raw_crossbreeds, list) else []
         )
         raw_tutorial = profile.get("tutorial_done")
         profile["tutorial_done"] = (

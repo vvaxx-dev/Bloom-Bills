@@ -7,12 +7,12 @@ A compact gardening economy game: grow crops against a clock, pay eight escalati
 | System | Current value |
 | --- | --- |
 | Canvas | 320×180 internal resolution, integer-scaled 6× by default; 2×–8× in Settings, borderless by default |
-| Runtime | About 13,000 lines of Python across 28 files (including three test modules and a sprite preview tool); one runtime dependency: `pygame-ce>=2.5` |
+| Runtime | About 14,400 lines of Python across 29 files (including four test modules and a sprite preview tool); one runtime dependency: `pygame-ce>=2.5` |
 | Round clock | 45 seconds for rounds 1–3; the base drops 2 seconds per round from round 4 to a 30-second floor, then weather/relics can add or remove time, with a 10-second minimum |
 | Starting position | $15, 4 surface plots, and 2 free packs of 3 seeds each |
 | Bills | Rounds 3, 6, 9 … 24; `300 × 5^(bill-1)`, so the eighth is **$23,437,500** |
 | Win | Pay the eighth bill at round 24, then retire with the deed or continue into endless mode |
-| Content | 25 base plants, 35 mutant forms, 8 seed packs, 25 relics, 8 heirlooms, 19 weather twists including 8 bosses, and 12 relic/plant pairings |
+| Content | 25 base plants, 12 crossbreeds, 35 mutant forms, 8 seed packs, 25 relics, 8 heirlooms, 19 weather twists including 8 bosses, and 12 relic/plant pairings |
 
 ## Quick start
 
@@ -27,8 +27,8 @@ python3 main.py
 
 `save.py` writes two JSON files with atomic temp-file replacement:
 
-- `profile.json` — banked heirlooms, purchased perk levels, best round, settings, harvest milestones, and completed tutorial stages.
-- `run.json` — the active run snapshot, including RNG state so forecasts stay stable after a reload.
+- `profile.json` — banked heirlooms, purchased perk levels, best round, settings, harvest milestones, discovered crossbreeds, and completed tutorial stages.
+- `run.json` — the active run snapshot, including RNG state so forecasts stay stable after a reload, plus any crossbreeds discovered this run (merged into `profile.json` when the run ends, and written there the moment one drops).
 
 `paths.py` resolves the save directory as:
 
@@ -110,7 +110,7 @@ There are 25 base plants, 35 mutant forms, and 8 packs. Pack prices below are ba
 | Cursed | 6 | $600 | Devil's Ivy, Widow's Bloom, Moonflower, Queen of the Night |
 | Golden | 9 | $750 | Pumpkin, Cactus, Golden Orchid |
 
-Crystal Bloom appears only in Rare Packs. Golden Orchid appears in Garden, Golden, and Rare Packs. Every pool is weighted; the packs screen shows the rounded percentages for each seed.
+Crystal Bloom appears only in Rare Packs. Golden Orchid appears in Garden, Golden, and Rare Packs. Every pool is weighted; the packs screen shows the rounded percentages for each seed. Seed pools, the seed shelf, and the round tray are all listed in rarity order (common → uncommon → rare → legendary → exquisite, then name).
 
 ## Plants with special rules
 
@@ -121,6 +121,22 @@ Crystal Bloom appears only in Rare Packs. Golden Orchid appears in Garden, Golde
 - **Venus Flytrap.** Pays little on its own, but each harvest of another crop on either board adds $2 to each Flytrap's next bite. An ambient critter wandering near a Flytrap adds $3 to that Flytrap's next base harvest, with a short cooldown. Its Man-Eater mutation eats one orthogonal neighbour before it is paid and keeps half that plant's base yield.
 - **Four-Leaf Clover.** Pays nothing itself. Each harvest of the clover has a 25% chance to multiply one neighbouring paying plant's base harvest by 1.5 for the rest of the round. Its only mutation, Five-Leaf Clover, uses a 50% chance for 2× instead.
 - **Crystal Bloom.** A slow legendary Rare Pack seed. Once mature, each full second left unharvested adds $20 to its next harvest before multipliers. Auto Harvest collects immediately, so it cannot build this bonus; end-of-round sales use the ordinary partial-progress formula instead.
+- **Crossbreeding.** Twelve seeds are sold by no pack. When two parent plants grow in orthogonally adjacent plots (above, below, left or right — the cellar plot directly below a surface plot also counts), harvesting either parent rolls a recipe chance (8–20%) to drop one child seed into the shelf; there is no per-round cap, so a pair can be harvested repeatedly while its condition holds. Ordinary recipes accept a parent in any form (a Golden Sunflower still counts as a Sunflower); the Eclipse Sovereign demands the exact Golden Sunflower + Blood Moonflower mutants under an eclipse and takes precedence over the ordinary Eclipse Bloom. Crossbreeds never mutate further.
+
+| Crossbreed | Parents (adjacent) | Condition | Grow / Yield | Inherited twist |
+| --- | --- | --- | --- | --- |
+| Eclipse Bloom | Sunflower + Moonflower | Eclipse | 15s / $150 | Sun-and-moon flower: cellar or eclipse-top, races in the dark |
+| Rainbow Daisy | Daisy + Four-Leaf Clover | Rain | 9s / $45 | Pays, and 25% of harvests ×1.5 a neighbour |
+| Solar Saffron | Saffron + Sunflower | Sunny Day | 24s / $320 | A further +25% growth in sunshine |
+| Spiny Pumpkin | Cactus + Pumpkin | Drought or Heatwave | 22s / $220 | Treats drought and heatwaves as fair sun (×1.25) |
+| Frost Tomato | Tomato + Cranberries | Frost | 16s / $110 | Winter-hardy: plantable during Frost |
+| Ghost Bloom | Pumpkin + Moonflower | Autumn | 18s / $200 | +25% growth in Autumn; the Moonflower may haunt from the cellar below |
+| Man-Eater Tomato | Venus Flytrap + Tomato | Any | 14s / $90 | Eats a neighbour per harvest, is fed $2 by harvests, snaps critters |
+| Lucky Orchid | Four-Leaf Clover + Golden Orchid | Any | 28s / $380 | 25% of harvests ×1.5 a neighbour |
+| Prism Bloom | Crystal Bloom + Golden Orchid | Any | 30s / $450 | +$30 per full second mature — Auto Harvest starves it |
+| Snap Aloe | Aloe Vera + Venus Flytrap | Any | 15s / $70 | Fed $2 by every harvest anywhere, critters included |
+| Desert Bloom | Prickly Pear + Agave | Any | 26s / $350 | Desert, fruit and flower at once: feeds both pairing families |
+| Eclipse Sovereign | Golden Sunflower + Blood Moonflower (exact mutants) | Eclipse | 18s / $600 | The crowned chase seed |
 
 Ambient critters visit in groups of at most three. They crawl, hop, or fly off screen, stay away briefly, and re-enter from another garden edge. They are decorative except when a Venus Flytrap eats one. The Eternal Snail relic adds a separate violet cursor-chaser that ends the run if it catches the mouse after its grace period.
 
@@ -183,9 +199,9 @@ Every heirloom has its own 12×12 pixel-art badge and lore entry. All effects ca
 
 ## Garden Index and interface
 
-The title-screen **Garden Index** has two top sections, **Plants** and **Upgrades**. Plants has **ALL**, **GARDEN**, **DESERT**, **FARMER**, **NIGHT**, and **MUTANTS** subsections; Upgrades has **RELICS** and **HEIRLOOMS**. Entries are shown in a 3×3 grid, nine per page. Left/Right or the wheel pages, Up/Down cycles subsections, and Tab switches Plants/Upgrades.
+The **Garden Index** has two top sections, **Plants** and **Upgrades**. Plants has **ALL**, **GARDEN**, **DESERT**, **FARMER**, **NIGHT**, **MUTANTS**, and **CROSSBREEDS** subsections; Upgrades has **RELICS** and **HEIRLOOMS**. Entries are shown in a 3×3 grid, nine per page, and every catalogue — plants, mutants (by base rarity), crossbreeds, relics, pack pools, the seed shelf, the round tray, and the owned-relic rows — is ordered by rarity first, then name. Left/Right or the wheel pages, Up/Down cycles subsections, and Tab switches Plants/Upgrades. The Index opens from the title screen and from the in-game **pause menu** (Esc → **GARDEN INDEX**); closing it returns to the paused round exactly as it was left.
 
-Relic pages show artwork, price, description, ownership, evolution goals, and plant-pairing requirements. Heirloom pages show artwork, permanent level, current and next bonuses, cost, and lore. The index covers all 25 relics, all 8 heirlooms, every base plant, and all 35 mutants.
+Relic pages show artwork, price, description, ownership, evolution goals, and plant-pairing requirements. Heirloom pages show artwork, permanent level, current and next bonuses, cost, and lore. The index covers all 25 relics, all 8 heirlooms, every base plant, and all 35 mutants. Undiscovered crossbreeds appear in the **CROSSBREEDS** subsection as **???** silhouettes whose **FIELD NOTES** hint at the parents and condition; discovering one (the id is stored in `profile.json`) permanently reveals its name, stats, exact recipe, and harvest chance, and its seeds join the packs-screen shelf — until then the shelf keeps the secret.
 
 Long weather text, relic descriptions, and heirloom lore are hard-wrapped at glyph boundaries so an unbroken word cannot leak past a panel. HUD lines use measured fitting; toasts wrap to at most two lines; tooltips are anchored near the cursor, flip below it near the top edge, and are clamped to the canvas.
 
@@ -246,10 +262,10 @@ With no sprite names it shows every grid. The live window watches `sprites_data.
 From the repository root:
 
 ```sh
-PYTHONPATH=.. SDL_VIDEODRIVER=dummy python3 -m unittest Bloom-Bills.test_balance Bloom-Bills.test_new_mechanics Bloom-Bills.test_tutorial
+PYTHONPATH=.. SDL_VIDEODRIVER=dummy python3 -m unittest Bloom-Bills.test_balance Bloom-Bills.test_new_mechanics Bloom-Bills.test_tutorial Bloom-Bills.test_crossbreeding
 ```
 
-That runs **208 tests**: 151 economy/mechanics tests, 47 UI/art/index tests, and 10 tutorial tests. They cover bill and price ladders, save/load, weather and boss effects, mutations, packs, seed resale, relic and heirloom effects, plant pairings, sprite coverage and sheet layout, text fitting, the Garden Index, heirloom paging, flytrap critter feeding, and the bill-waiver summary UI. UI tests need `pygame-ce`; `SDL_VIDEODRIVER=dummy` lets them run headless.
+That runs **237 tests**: 151 economy/mechanics tests, 47 UI/art/index tests, 10 tutorial tests, and 29 crossbreeding tests. They cover bill and price ladders, save/load, weather and boss effects, mutations, packs, seed resale, relic and heirloom effects, plant pairings, sprite coverage and sheet layout, text fitting, the Garden Index, heirloom paging, flytrap critter feeding, the bill-waiver summary UI, crossbreed recipes/adjacency/weather gates/discovery, and rarity ordering of every catalogue. UI tests need `pygame-ce`; `SDL_VIDEODRIVER=dummy` lets them run headless.
 
 ## Status
 

@@ -79,9 +79,31 @@ class PacksScene(Scene):
         self.refresh()
         self.announce_season()
 
+    def shelf_order(self):
+        """Seed shelf order: rarity order, with mystery crossbreeds hidden.
+
+        An undiscovered, unowned crossbreed never appears on the shelf (its
+        name is a secret for the Garden Index to keep); the moment one is
+        found, its seeds join the shelf in rarity order like any other.
+        """
+        found = set(getattr(self.app, "profile", {}).get("discovered_crossbreeds", []))
+        run = getattr(self, "run", None)
+        if run is not None:
+            found.update(getattr(run, "discovered_crossbreeds", set()))
+        found.update(
+            sid for sid, n in getattr(self.app, "profile", {}).get("harvested", {}).items() if n
+        )
+        order = []
+        for sid in data.PLANT_ORDER:
+            if data.PLANTS[sid].get("crossbreed") and sid not in found \
+                    and not (run is not None and run.seeds.get(sid, 0) > 0):
+                continue
+            order.append(sid)
+        return order
+
     @property
     def seed_pages(self):
-        return max(1, (len(data.PLANT_ORDER) + SEEDS_PER_PAGE - 1) // SEEDS_PER_PAGE)
+        return max(1, (len(self.shelf_order()) + SEEDS_PER_PAGE - 1) // SEEDS_PER_PAGE)
 
     def page_left(self):
         self.seed_page = max(0, self.seed_page - 1)
@@ -168,7 +190,8 @@ class PacksScene(Scene):
         lines = [(pack["name"].upper() + ":", DIM)]
         if pack.get("luck"):
             lines.append(("RARE SEEDS x%s LIKELIER" % fmt(pack["luck"]), ACCENT))
-        for sid, w in pack["pool"].items():
+        for sid in data.sort_by_rarity(list(pack["pool"])):
+            w = pack["pool"][sid]
             sp = data.PLANTS[sid]
             lines.append(("%s %d%%" % (sp["name"], round(100 * w / total)), data.RARITY_COLORS[sp["rarity"]]))
         if index == 0:
@@ -185,7 +208,7 @@ class PacksScene(Scene):
 
     def visible_seed_order(self):
         start = self.seed_page * SEEDS_PER_PAGE
-        return data.PLANT_ORDER[start:start + SEEDS_PER_PAGE]
+        return self.shelf_order()[start:start + SEEDS_PER_PAGE]
 
     def pick_seed(self, sid):
         """Highlight one seed on the shelf so the resale strip knows its target."""
@@ -199,8 +222,9 @@ class PacksScene(Scene):
 
     def ensure_seed_visible(self, sid):
         """Turn the shelf to the page that holds `sid`, so a pick is never hidden."""
-        if sid in data.PLANT_ORDER:
-            self.seed_page = data.PLANT_ORDER.index(sid) // SEEDS_PER_PAGE
+        order = self.shelf_order()
+        if sid in order:
+            self.seed_page = order.index(sid) // SEEDS_PER_PAGE
 
     def sell_target(self):
         """The seed the resale strip acts on: whatever is highlighted on the shelf."""
@@ -481,6 +505,8 @@ class PacksScene(Scene):
             ]
             if run.seeds.get(seed_hover, 0) > 0:
                 lines.append(("CLICK IT TO PICK IT, THEN SELL", DIM))
+            if sp.get("crossbreed"):
+                lines.append(("CROSSBREED - NO PACK SELLS IT", ACCENT))
             if "nocturnal" in sp["tags"]:
                 lines.append(("NOCTURNAL: CELLAR OR ECLIPSE", WATER))
             if sp.get("upkeep"):

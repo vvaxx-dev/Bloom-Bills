@@ -15,6 +15,38 @@ RARITY_COLORS = {
 }
 RARITY_WEIGHT = {"common": 60, "uncommon": 28, "rare": 10, "legendary": 3, "exquisite": 2}
 
+# Canonical rarity ladder, lowest to highest. Every plant/relic catalogue in
+# the game (Garden Index, seed shelf, round tray, shop, pack tooltips) is
+# ordered by this ladder first, then alphabetically by display name, so a
+# common never sits below a legendary just because it was added later.
+# Mutants share the dedicated "mutant" rarity and always sort after the
+# ordinary ladder in mixed lists.
+RARITY_ORDER = ["common", "uncommon", "rare", "legendary", "exquisite"]
+RARITY_RANK = {name: rank for rank, name in enumerate(RARITY_ORDER)}
+
+
+def rarity_rank(rarity):
+    """Sort rank for a rarity string; unknown/mutant rarities sort last."""
+    return RARITY_RANK.get(rarity, len(RARITY_ORDER))
+
+
+def sort_by_rarity(ids, table=None):
+    """Return `ids` ordered by (rarity, display name) using `table` metadata.
+
+    `table` defaults to the global PLANTS table at call time, so this helper
+    can be defined before the plant table itself exists.
+    """
+    if table is None:
+        table = PLANTS
+    return sorted(
+        ids,
+        key=lambda sid: (
+            rarity_rank(table[sid].get("rarity", "")),
+            str(table[sid].get("name", sid)).lower(),
+            str(sid),
+        ),
+    )
+
 PLANTS = {
     "crystal_bloom": {"name": "Crystal Bloom", "tags": ["flower"], "grow": 25, "yield": 200, "sell": 350,
                       "rarity": "legendary", "color": (100, 210, 250), "mature_bonus": 20, "no_mutations": True,
@@ -338,6 +370,219 @@ for _mid, _mutant in MUTANTS.items():
         _entry["aura"] = _mutant.get("aura", _base.get("aura"))
     PLANTS[_mid] = _entry
 
+# ---------------------------------------------------------------------------
+# Crossbreeds: seeds that no pack sells. Two parent plants growing in
+# orthogonally adjacent plots (above, below, left or right, on the same
+# board — or one in the cellar plot directly below the other) can
+# cross-pollinate: harvesting either parent rolls the recipe's
+# `chance`, and a success drops one child seed straight into the seed shelf.
+# There is no per-round cap, so a well-kept pair can be harvested again and
+# again while its weather/season condition holds.
+#
+# Ordinary recipes accept a parent in any form: a Golden Sunflower still
+# counts as a Sunflower. The Eclipse Sovereign is the exception — it demands
+# the two exact mutant forms, and that exact match always takes precedence
+# over the ordinary Eclipse Bloom recipe for the same pair of lineages.
+# Crossbreeds never mutate further and appear in no pack pool.
+CROSSBREEDS = {
+    "eclipse_bloom": {
+        "name": "Eclipse Bloom", "tags": ["flower", "nocturnal"],
+        "grow": 15, "yield": 150, "sell": 260, "rarity": "legendary",
+        "color": (205, 180, 245),
+        "parents": ("sunflower", "moonflower"), "condition": "eclipse", "chance": 0.20,
+        "hint": "WHEN DAY AND NIGHT BLOOM SIDE BY SIDE AND THE SUN GOES DARK, ONE FLOWER TRIES TO BE BOTH.",
+        "note": "Sun and moon in one flower. Cellar or eclipse-top; races in the dark.",
+    },
+    "rainbow_daisy": {
+        "name": "Rainbow Daisy", "tags": ["flower", "lucky"],
+        "grow": 9, "yield": 45, "sell": 78, "rarity": "rare",
+        "color": (250, 160, 200), "bloom_chance": 0.25, "bloom_mult": 1.5,
+        "parents": ("daisy", "four_leaf_clover"), "condition": "rain", "chance": 0.20,
+        "hint": "A LUCKY LITTLE DAISY, KISSED BY RAIN. AFTER A SHOWER, LUCK LEAVES COLOURS BEHIND.",
+        "note": "Pays properly, and 25% of harvests x1.5 a neighbour for the round.",
+    },
+    "solar_saffron": {
+        "name": "Solar Saffron", "tags": ["flower", "spice"],
+        "grow": 24, "yield": 320, "sell": 550, "rarity": "legendary",
+        "color": (250, 175, 60), "twist_growth": {"sunny": 1.25},
+        "parents": ("saffron", "sunflower"), "condition": "sunny", "chance": 0.20,
+        "hint": "SPICE THAT DREAMS OF THE SUN. BESIDE A SUNFLOWER ON A BRIGHT DAY, SAFFRON LEARNS TO DRINK LIGHT.",
+        "note": "Grows a further 25% faster on Sunny Days.",
+    },
+    "spiny_pumpkin": {
+        "name": "Spiny Pumpkin", "tags": ["desert", "veg", "fruit"],
+        "grow": 22, "yield": 220, "sell": 380, "rarity": "rare",
+        "color": (235, 145, 60), "hardy_twists": ("drought", "heatwave"), "hardy_growth": 1.25,
+        "parents": ("cactus", "pumpkin"), "condition": "drought_heatwave", "chance": 0.20,
+        "hint": "A PUMPKIN THAT TOOK LESSONS FROM A CACTUS. WHEN THE GROUND CRACKS, IT JUST GRINS WITH ITS SPINES.",
+        "note": "Treats Drought and Heatwave as fair sun: x1.25 growth in both.",
+    },
+    "frost_tomato": {
+        "name": "Frost Tomato", "tags": ["fruit", "berry"],
+        "grow": 16, "yield": 110, "sell": 190, "rarity": "rare",
+        "color": (240, 100, 85), "frost_hardy": True,
+        "parents": ("tomato", "cranberries"), "condition": "frost", "chance": 0.20,
+        "hint": "A TOMATO WITH CRANBERRY BLOOD, COLD AT HEART. SET IT BY CRANBERRIES WHEN THE FROST BITES AND SOMETHING HARDIER WAKES.",
+        "note": "Winter-hardy: plantable during Frost.",
+    },
+    "ghost_bloom": {
+        "name": "Ghost Bloom", "tags": ["nocturnal", "veg"],
+        "grow": 18, "yield": 200, "sell": 345, "rarity": "legendary",
+        "color": (215, 225, 240), "season_growth": {"Autumn": 1.25},
+        "parents": ("pumpkin", "moonflower"), "condition": "autumn", "chance": 0.20,
+        "hint": "IN AUTUMN, WHEN A MOONFLOWER LEANS TOO CLOSE TO A RIPENING PUMPKIN, SOMETHING PALE COMES TO HAUNT THE PATCH.",
+        "note": "Grows 25% faster in Autumn. Quite at home in the dark.",
+    },
+    "maneater_tomato": {
+        "name": "Man-Eater Tomato", "tags": ["carnivore", "fruit"],
+        "grow": 14, "yield": 90, "sell": 155, "rarity": "rare",
+        "color": (225, 75, 65), "consume": True, "feed": 2,
+        "parents": ("venus_flytrap", "tomato"), "condition": "any", "chance": 0.15,
+        "hint": "NEVER PLANT A TOMATO WITHIN SNAPPING DISTANCE OF A FLYTRAP UNLESS YOU MEAN IT. SOMETIMES THE TOMATO LEARNS.",
+        "note": "Eats a neighbour per harvest for half its base. Fed $2 by harvests; eats critters.",
+    },
+    "lucky_orchid": {
+        "name": "Lucky Orchid", "tags": ["flower", "rare", "lucky"],
+        "grow": 28, "yield": 380, "sell": 650, "rarity": "legendary",
+        "color": (250, 205, 85), "bloom_chance": 0.25, "bloom_mult": 1.5,
+        "parents": ("four_leaf_clover", "orchid"), "condition": "any", "chance": 0.15,
+        "hint": "AN ORCHID WITH A CLOVER AT ITS FEET, COUNTING ITS PETALS AND FINDING THEM LUCKY.",
+        "note": "25% of its harvests x1.5 a neighbour's base harvest for the round.",
+    },
+    "prism_bloom": {
+        "name": "Prism Bloom", "tags": ["flower", "rare"],
+        "grow": 30, "yield": 450, "sell": 780, "rarity": "exquisite",
+        "color": (175, 220, 250), "mature_bonus": 30,
+        "parents": ("crystal_bloom", "orchid"), "condition": "any", "chance": 0.12,
+        "hint": "WHERE CRYSTAL AND ORCHID SHARE THE LIGHT, THE LIGHT ITSELF TAKES ROOT AND REFUSES TO BE PICKED.",
+        "note": "+$30 per full second mature. Auto-harvest starves it.",
+    },
+    "snap_aloe": {
+        "name": "Snap Aloe", "tags": ["desert", "succulent", "carnivore"],
+        "grow": 15, "yield": 70, "sell": 120, "rarity": "rare",
+        "color": (120, 205, 125), "feed": 2,
+        "parents": ("aloe_vera", "venus_flytrap"), "condition": "any", "chance": 0.15,
+        "hint": "ALOE LEARNED PATIENCE FROM THE DESERT AND APPETITE FROM ITS NEIGHBOUR. MINCE NO WORDS: IT BITES.",
+        "note": "Fed $2 by every harvest anywhere, critters included.",
+    },
+    "desert_bloom": {
+        "name": "Desert Bloom", "tags": ["desert", "fruit", "flower"],
+        "grow": 26, "yield": 350, "sell": 600, "rarity": "legendary",
+        "color": (245, 155, 175),
+        "parents": ("prickly_pear", "agave"), "condition": "any", "chance": 0.15,
+        "hint": "ONCE IN A LONG DRY SPELL, THE PEAR AND THE AGAVE FLOWER AT THE SAME MOMENT, SIDE BY SIDE.",
+        "note": "Desert, fruit and flower at once: feeds both pairing families.",
+    },
+    "eclipse_sovereign": {
+        "name": "Eclipse Sovereign", "tags": ["flower", "nocturnal", "rare"],
+        "grow": 18, "yield": 600, "sell": 1030, "rarity": "exquisite",
+        "color": (255, 220, 130), "exact_parents": True,
+        "parents": ("sunflower_gold", "moonflower_blood"), "condition": "eclipse", "chance": 0.08,
+        "hint": "GOLD MUST WED BLOOD WHILE THE SKY IS SWALLOWED. TWO CROWNS, ONE DARKENED SUN, NO SECOND CHANCES PROMISED.",
+        "note": "The garden's crowned chase seed. Handle with awe.",
+    },
+}
+for _cid, _entry in CROSSBREEDS.items():
+    _entry["crossbreed"] = True
+    _entry["no_mutations"] = True
+    PLANTS[_cid] = _entry
+CROSSBREED_ORDER = sort_by_rarity(list(CROSSBREEDS))
+
+# Board membership for crossbreeds: nocturnal crosses live in the cellar and
+# join the surface tray during an eclipse, exactly like ordinary nocturnal
+# plants; the rest are surface plants. Every catalogue list is then kept in
+# rarity order (see RARITY_ORDER above) from here on.
+_NOCTURNAL_CROSSBREEDS = [cid for cid in CROSSBREED_ORDER if "nocturnal" in CROSSBREEDS[cid]["tags"]]
+_SURFACE_CROSSBREEDS = [cid for cid in CROSSBREED_ORDER if cid not in _NOCTURNAL_CROSSBREEDS]
+SURFACE_PLANTS = sort_by_rarity(list(SURFACE_PLANTS) + _SURFACE_CROSSBREEDS)
+NOCTURNAL_PLANTS = sort_by_rarity(list(NOCTURNAL_PLANTS) + _NOCTURNAL_CROSSBREEDS)
+CELLAR_PLANTS = sort_by_rarity(list(NOCTURNAL_PLANTS) + list(FUNGUS_PLANTS))
+PLANT_ORDER = sort_by_rarity(list(SURFACE_PLANTS) + list(NOCTURNAL_PLANTS))
+FARMER_PLANTS = sort_by_rarity(list(FARMER_PLANTS))
+DESERT_PLANTS = sort_by_rarity(
+    [sid for sid in SURFACE_PLANTS if "desert" in PLANTS[sid]["tags"]]
+)
+GARDEN_PLANTS = [sid for sid in SURFACE_PLANTS if sid not in FARMER_PLANTS]
+
+CROSSBREED_CONDITION_LABELS = {
+    "eclipse": "ECLIPSE / ETERNAL NIGHT",
+    "rain": "RAIN",
+    "sunny": "SUNNY DAY",
+    "drought_heatwave": "DROUGHT OR HEATWAVE",
+    "frost": "FROST",
+    "autumn": "AUTUMN",
+    "any": "ANY WEATHER",
+}
+
+
+def crossbreed_condition_label(entry):
+    """Short human label for the weather/season a crossbreed recipe needs."""
+    return CROSSBREED_CONDITION_LABELS.get(entry.get("condition", "any"), "ANY WEATHER")
+
+
+def crossbreed_recipe_text(entry):
+    """One-line recipe for a discovered crossbreed, e.g. for the Garden Index."""
+    parents = " + ".join(PLANTS[pid]["name"] for pid in entry["parents"])
+    return "%s BESIDE EACH OTHER / %s" % (parents, crossbreed_condition_label(entry))
+
+
+def crossbreed_condition_met(entry, twist_id, twist, season_name):
+    """Whether the round's effective weather/season satisfies a recipe."""
+    condition = entry.get("condition", "any")
+    if condition == "any":
+        return True
+    if condition == "eclipse":
+        return bool(twist and twist.get("eclipse"))
+    if condition == "autumn":
+        return season_name == "Autumn"
+    if condition == "drought_heatwave":
+        return twist_id in ("drought", "heatwave")
+    return twist_id == condition
+
+
+def _crossbreed_parent_key(species, entry):
+    """How `species` counts toward a recipe: exact form, or its base lineage."""
+    if entry.get("exact_parents"):
+        return species
+    return PLANTS[species].get("base", species)
+
+
+def crossbreed_match(species_a, species_b, twist_id, twist, season_name):
+    """Crossbreed id two adjacent plants can produce right now, or None.
+
+    Exact-mutant recipes (the Eclipse Sovereign) outrank ordinary lineage
+    recipes, so a crowned pair is never spent on the lesser child.
+    """
+    if species_a not in PLANTS or species_b not in PLANTS or species_a == species_b:
+        return None
+    matches = []
+    for cid in CROSSBREED_ORDER:
+        entry = PLANTS[cid]
+        wanted = set(entry["parents"])
+        got = {_crossbreed_parent_key(species_a, entry), _crossbreed_parent_key(species_b, entry)}
+        if got != wanted:
+            continue
+        if not crossbreed_condition_met(entry, twist_id, twist, season_name):
+            continue
+        matches.append(cid)
+    if not matches:
+        return None
+    matches.sort(key=lambda cid: 0 if PLANTS[cid].get("exact_parents") else 1)
+    return matches[0]
+
+
+def sort_mutants(ids):
+    """Order mutant ids by their base plant's rarity, then by mutant name."""
+    return sorted(
+        ids,
+        key=lambda mid: (
+            rarity_rank(PLANTS[PLANTS[mid].get("base", mid)].get("rarity", "")),
+            str(PLANTS[mid].get("name", mid)).lower(),
+            str(mid),
+        ),
+    )
+
+
 MILESTONES = [10, 25, 50, 100, 150, 200, 300, 400, 500, 750, 1000]
 
 PACKS = {
@@ -363,6 +608,12 @@ _FREE_PACK_WEIGHTS = {
     "farmer": 70, "harvest": 60, "desert": 40, "golden": 15,
     "nocturnal": 30, "rare": 12, "cursed": 6,
 }
+
+
+# Pack pools are catalogues too: keep each pool's contents in rarity order so
+# pack tooltips list commons before legendaries wherever they are shown.
+for _pack in PACKS.values():
+    _pack["pool"] = {sid: _pack["pool"][sid] for sid in sort_by_rarity(list(_pack["pool"]))}
 
 
 def free_pack_weight(kind, rnd):
@@ -467,7 +718,7 @@ RELICS = {
                       "desc": "All plants grow 30% faster. A cursed snail follows your cursor: if it catches you, the run ends.",
                       "effects": {"growth": 0.30, "cursor_snail": True}},
 }
-RELIC_ORDER = list(RELICS)
+RELIC_ORDER = sort_by_rarity(list(RELICS), RELICS)
 
 RELIC_SYNERGIES = {
     "green_thumb": {"tag": "flower", "min": 4, "growth": 0.05, "power": 0.10,
