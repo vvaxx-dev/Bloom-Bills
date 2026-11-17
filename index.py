@@ -552,6 +552,13 @@ class IndexScene(Scene):
             y += 8
         if sp.get("note"):
             y += gfx.draw_wrapped(surf, sp["note"], 168, y, 136, GOOD) * 7 + 1
+        lore = data.plant_lore(self.selected)
+        if lore and y < 128:
+            # Two lines of house history, trimmed to what the card can hold.
+            for line in gfx.wrap(lore, 136)[:2]:
+                gfx.draw_text(surf, line, 168, y, DIM)
+                y += 7
+            y += 1
 
         gfx.rect(surf, PANEL_DARK, 168, y + 1, 136, 1)
         y += 5
@@ -639,6 +646,10 @@ class IndexScene(Scene):
             gfx.draw_text(surf, "NOW $%s" % fmt(self.app.run.relic_price(self.selected)), 304, y, ACCENT, align="right")
             y += 9
         y += gfx.draw_wrapped(surf, relic["desc"], 168, y, 136, TEXT) * 7 + 3
+        # Relic lore belongs on the Index card: the shop keeps its clean numbers,
+        # and the Index is where you go looking for what a thing actually is.
+        if relic.get("lore") and y < 132:
+            y += gfx.draw_wrapped(surf, relic["lore"], 168, y, 136, DIM) * 7 + 3
 
         syn = data.synergy_text(self.selected)
         if syn and y < 138:

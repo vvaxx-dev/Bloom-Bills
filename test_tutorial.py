@@ -1,4 +1,5 @@
-"""Coverage for the reusable Moss dialogue layer and first-run tutorial flow."""
+"""Coverage for the reusable Moss dialogue layer, the first-run walkthrough, and
+the story beats that ride on both."""
 
 import os
 import tempfile
@@ -38,6 +39,13 @@ class TutorialAppTests(unittest.TestCase):
         modal = self.app.dialogue_modal
         self.assertIsNotNone(modal)
         self.assertIs(self.app.active_modal(), modal)
+        # The story is not a second modal on a new run: Moss's premise rides on
+        # the front of the walkthrough, and the stage's own steps follow it.
+        from .tutorial import TUTORIAL_BUILDERS, intro_steps
+
+        self.assertEqual(modal.pages[0][0].text, intro_steps()[0].text)
+        self.assertEqual(len(set(id(page[0]) for page in modal.pages)),
+                         len(intro_steps()) + len(TUTORIAL_BUILDERS["packs"]()))
         packs_before = len(self.app.run.packs)
         seeds_before = dict(self.app.run.seeds)
         btn = self.app.scene.open_btn
@@ -78,7 +86,12 @@ class TutorialAppTests(unittest.TestCase):
 
         self.app.scene.go()
         self.assertEqual(self.app.scene_name, "packs")
-        self.assertIsNone(self.app.dialogue_modal)
+        # Round 2 is the run's first arc beat (the note in the seed jar), so the
+        # dialogue layer opens again - tracked on the run, not in `tutorial_done`.
+        self.assertIsNotNone(self.app.dialogue_modal)
+        self.assertEqual(self.app.run.story_beats, [])
+        self.finish_dialogue()
+        self.assertEqual(self.app.run.story_beats, ["arc-shed"])
 
     def test_skip_marks_every_stage_done_and_persists(self):
         from .save import SaveManager

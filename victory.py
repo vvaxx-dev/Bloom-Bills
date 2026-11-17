@@ -48,12 +48,16 @@ class VictoryScene(Scene):
 
         gfx.draw_text(surf, "THE FARM IS YOURS", CANVAS_W // 2, 24, GOOD, scale=2, align="center")
         gfx.draw_text(surf, "EVERY BILL PAID. THE COLLECTOR GIVES UP.", CANVAS_W // 2, 42, GOOD, align="center")
+        gfx.draw_text(surf, "MOSS: THIRTY-SIX YEARS OF HERS, AND EIGHT ROUNDS OF YOURS. NOT BAD.",
+                      CANVAS_W // 2, 49, DIM, align="center")
 
-        gfx.rect(surf, PANEL_DARK, 40, 54, CANVAS_W - 80, 1)
+        # Moss's line gets its own row, and the divider and the three stat lines
+        # below it are spaced to clear it.
+        gfx.rect(surf, PANEL_DARK, 40, 57, CANVAS_W - 80, 1)
         gfx.draw_text(surf, "ROUNDS: %d   BILLS PAID: %d" % (run.round, run.quotas_paid),
-                      CANVAS_W // 2, 60, TEXT, align="center")
+                      CANVAS_W // 2, 62, TEXT, align="center")
         gfx.draw_text(surf, "TOTAL EARNED: $%s" % fmt(run.total_earned),
-                      CANVAS_W // 2, 70, ACCENT, align="center")
+                      CANVAS_W // 2, 71, ACCENT, align="center")
         gfx.draw_text(surf, "HEIRLOOMS THIS RUN: +%d" % run.heirloom_reward(),
                       CANVAS_W // 2, 80, ACCENT, align="center")
         gfx.rect(surf, PANEL_DARK, 40, 92, CANVAS_W - 80, 1)

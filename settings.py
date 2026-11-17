@@ -66,6 +66,42 @@ CELLAR_PLOTS = 4
 CELLAR_SPEED = 0.75
 CELLAR_PRICE = 250
 
+# --- Garden hazards ---------------------------------------------------------
+# Four hazards tick inside the round loop (see `data.TWISTS` and
+# `Run._step_round`). They are all surface-only: the cellar stays dry, dark
+# and unbothered, which is part of why a player buys it.
+#
+# Disease: a new case lands every DISEASE_PERIOD, and every sick plant gets a
+# CONTAGION_CHANCE roll per CONTAGION_PERIOD to infect one planted neighbour.
+# Shovelling is the only cure - the soil it leaves behind is clean.
+DISEASE_PERIOD = 15.0
+CONTAGION_PERIOD = 6.0
+CONTAGION_CHANCE = 0.3
+DISEASE_GROWTH = 0.55       # a sick plant grows at 55% speed
+DISEASE_YIELD = 0.6         # ...and pays 60% of a healthy harvest
+DISEASE_SALE = 0.6          # ...and sells for 60% when the round ends
+#
+# Meteor Shower: one random plot per METEOR_PERIOD. A planted hit either is
+# destroyed (METEOR_DESTROY) or comes back starlit - mutated, and worth
+# METEOR_BONUS on harvest and at the final sale. An empty hit leaves stardust
+# in the soil for whatever you plant there next.
+METEOR_PERIOD = 10.0
+METEOR_DESTROY = 0.45
+METEOR_BONUS = 1.5
+#
+# Weeds: an empty plot sprouts one every WEED_PERIOD, and a weedy plot seeds a
+# neighbouring empty plot instead `WEED_SEED_CHANCE` of the time. Weedy soil
+# cannot be planted, and every weed left standing costs WEED_FEE at the buzzer.
+WEED_PERIOD = 12.0
+WEED_SEED_CHANCE = 0.45
+WEED_FEE = 6
+#
+# Aphids: a settled colony halves a plant's harvest, and the only way to shift
+# it is the watering can - so the pest is really a tax on your watering timing.
+APHID_PERIOD = 7.0
+APHID_YIELD = 0.5
+APHID_SALE = 0.7
+
 BOSS_EVERY = 9
 SEASON_LENGTH = 9
 
@@ -82,3 +118,12 @@ WATER = (120, 200, 210)
 SOIL = (110, 76, 52)
 SOIL_DARK = (84, 56, 40)
 BLACK = (0, 0, 0)
+# Hazard inks. `SICK` is mouldy rather than dead-green so it never competes with
+# GOOD's "you can harvest this" green, and the two soil tints are the plot
+# background recoloured, which is what makes a hazard readable at a glance.
+SICK = (176, 196, 110)
+SICK_SOIL = (92, 90, 56)
+STARDUST = (214, 176, 96)
+STARDUST_SOIL = (124, 100, 56)
+APHID = (60, 80, 44)
+WEED = (150, 210, 100)

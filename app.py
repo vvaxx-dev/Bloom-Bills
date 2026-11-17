@@ -20,7 +20,8 @@ from .settings import (
     BLACK, BORDERLESS, CANVAS_H, CANVAS_W, FPS, PANEL_DARK, START_SCALE, TEXT, TITLE,
 )
 from .state import Run
-from .tutorial import DialogueOverlay, TUTORIAL_STAGES, tutorial_steps
+from .tutorial import (PREMISE_KEY, DialogueOverlay, TUTORIAL_STAGES, beat_for,
+                     mark_beat_seen, tutorial_steps)
 
 RUN_SCENE_NAMES = ("packs", "round", "summary", "shop", "victory")
 
@@ -160,7 +161,42 @@ class App:
         for name in stages:
             if name not in done:
                 done.append(name)
+        if stage == "packs":
+            # The premise rides on the front of the packs walkthrough, so this is
+            # the moment it counts as read: later runs get the two-line version.
+            # `start_story` is deliberately not called here - the packs screen that
+            # follows is already full of words, and its own enter hook will pick the
+            # next beat up.
+            mark_beat_seen(self.profile, PREMISE_KEY)
         self.saves.save_profile(self.profile)
+
+    def start_story(self):
+        """Play the story beat due for this round on the packs screen, once.
+
+        Beats are gated three ways: the run remembers the arc (so a reload does
+        not repeat it and a new run does hear it), the profile remembers hazard
+        warnings (so Moss explains a rot once ever), and nothing plays while a
+        tutorial or modal owns the screen. Skipping a beat marks it seen too, on
+        the theory that a player who hits Esc once means it.
+        """
+        if not self.run or self.scene_name != "packs" or self.active_modal():
+            return
+        beat = beat_for(self.run, self.profile)
+        if not beat:
+            return
+        beat_id, steps, persistent = beat
+        if not steps:
+            return
+
+        def end():
+            if self.run:
+                self.run.mark_story_beat(beat_id)
+                self.save_run()
+            if persistent:
+                mark_beat_seen(self.profile, beat_id)
+                self.saves.save_profile(self.profile)
+
+        self.dialogue_modal = DialogueOverlay(self, steps, on_finish=end, on_skip=end)
 
     def start_tutorial(self, stage):
         """Open a first-run tutorial stage once, unless it was finished or skipped."""

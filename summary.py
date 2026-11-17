@@ -6,7 +6,7 @@ from . import gfx
 from .formatting import fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
-from .settings import ACCENT, BAD, BG, CANVAS_H, CANVAS_W, DIM, GOOD, PANEL_DARK, TEXT, WATER, WIN_QUOTAS
+from .settings import ACCENT, BAD, BG, CANVAS_H, CANVAS_W, DIM, GOOD, PANEL_DARK, TEXT, WATER, WEED, WIN_QUOTAS
 
 TONE_COLORS = {"good": GOOD, "bad": BAD, "neutral": TEXT}
 
@@ -87,6 +87,8 @@ class SummaryScene(Scene):
         sale = int(summary.get("sale", 0))
         interest = int(summary.get("interest", 0))
         upkeep = int(summary.get("upkeep", 0))
+        weed_fee = int(summary.get("weed_fee", 0))
+        weed_count = int(summary.get("weeds", 0))
         rate_pct = int(round(run.interest_rate() * 100))
         net = summary.get("net", harvest + sale + interest - upkeep)
 
@@ -107,6 +109,14 @@ class SummaryScene(Scene):
         if upkeep > 0:
             gfx.draw_text(surf, "CURSED UPKEEP", lx + 6, ry, BAD)
             gfx.draw_text(surf, "-$%s" % fmt(upkeep), lx + lw - 6, ry, BAD, align="right")
+            ry += 11
+
+        # Lawn rent is charged per weedy patch left standing at the buzzer, and
+        # it has to appear here or the money just vanishes with no explanation.
+        if weed_fee > 0:
+            gfx.draw_text(surf, "LAWN RENT (%d PATCH%s)" % (
+                weed_count, "" if weed_count == 1 else "ES"), lx + 6, ry, WEED)
+            gfx.draw_text(surf, "-$%s" % fmt(weed_fee), lx + lw - 6, ry, BAD, align="right")
             ry += 11
 
         gfx.rect(surf, PANEL_DARK, lx + 6, ry + 1, lw - 12, 1)

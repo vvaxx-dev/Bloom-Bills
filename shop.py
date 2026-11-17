@@ -152,6 +152,8 @@ class ShopScene(Scene):
         syn = data.synergy_text(rid)
         if syn:
             lines.append(("PAIRING: " + syn, GOOD))
+        if rel.get("lore"):
+            lines.append((rel["lore"], DIM))
         for step in rel.get("levels", [])[:lv]:
             lines.append((step["desc"], GOOD))
         for step in rel.get("levels", [])[lv:]:
@@ -251,12 +253,16 @@ class ShopScene(Scene):
                 ("BILL DUE: $%s" % fmt(run.bill_for_round(nxt)), BAD)
                 if run.is_quota_round(nxt) else ("NO BILL DUE", GOOD)
             )
-            gfx.tooltip(surf, [
+            lines = [
                 ("NEXT: ROUND %d (%s)" % (nxt, season["name"].upper()), ACCENT),
                 ("WEATHER: " + twist["name"].upper(), tcol),
                 (twist["desc"], TEXT),
-                bill_line,
-            ], self.mouse, 118)
+            ]
+            lore = data.twist_lore(run.twist_id(nxt))
+            if lore:
+                lines.append((lore, DIM))
+            lines.append(bill_line)
+            gfx.tooltip(surf, lines, self.mouse, 118)
         elif owned_hover is not None:
             rid = run.relics[owned_hover]
             refund = max(1, int(run.relic_price(rid) * 0.5))

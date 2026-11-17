@@ -666,3 +666,30 @@ class GardenAmbient:
                 ry = BOARD_TOP + 4 + int((i * 15) % h_span)
                 if math.sin(t * 3.2 + i * 1.4) > 0.1:
                     surf.fill((186, 134, 244), (rx, ry, 1, 1))
+        elif twist_id == "meteor_shower":
+            # Four slow fireballs cross the sky per loop, each a bright head with
+            # a fading tail, so the round always feels like the next strike is
+            # already on its way rather than arriving from a clear sky.
+            for i in range(4):
+                phase = (t * 0.5 + i * 0.25) % 1.0
+                px = BOARD_LEFT + 10 + int(phase * (w_span + 30))
+                py = BOARD_TOP - 8 + int(phase * (h_span + 20))
+                head = (255, 240, 200) if i % 2 == 0 else (250, 210, 70)
+                tail = (250, 150, 90) if i % 2 == 0 else (214, 150, 40)
+                for k in range(5):
+                    surf.fill(tail, (px - k * 3, py - k * 2, 1, 1))
+                surf.fill(head, (px, py, 2, 2))
+        elif twist_id == "disease":
+            # Spore motes drift low over the beds: the round's danger is in the
+            # air, which is the visual excuse for "check your neighbours".
+            for i in range(7):
+                mx = BOARD_LEFT + 3 + int((i * 47 + math.sin(t * 0.7 + i) * 14 + t * 7.0) % w_span)
+                my = BOARD_TOP + 6 + int((i * 29 + math.cos(t * 0.5 + i) * 10) % h_span)
+                surf.fill((176, 196, 110) if i % 2 else (140, 152, 92), (mx, my, 1, 1))
+        elif twist_id == "weeds":
+            for i in range(5):
+                wx = BOARD_LEFT + 6 + int((i * 53 + t * 3.0) % max(1, w_span - 12))
+                wy = BOARD_BOTTOM - 3 - int((i * 11) % 6)
+                sway = int(math.sin(t * 1.6 + i) * 1.4)
+                surf.fill((150, 210, 100), (wx + sway, wy - 2, 1, 2))
+                surf.fill((110, 170, 72), (wx + sway - 1, wy - 1, 1, 1))

@@ -1,8 +1,25 @@
+"""The whole-game suite: economy and price ladders, mechanics and hazards, Moss's
+dialogue, sprite art, and screen layout. Every class owns one contract, and most
+of them are written as promises a player can feel rather than as maths checks:
+a hazard has to be answerable, a beat has to play once, a card has to fit.
+"""
+
+import os
+import tempfile
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
+import pygame
+
 from .state import Run, Plot
-from . import data
+from . import data, tutorial
+from .settings import (
+    APHID_SALE, APHID_YIELD, CONTAGION_CHANCE, DISEASE_GROWTH, DISEASE_SALE, DISEASE_YIELD,
+    METEOR_BONUS, METEOR_DESTROY, WEED_FEE, WEED_PERIOD,
+)
+from .sprites_data import FONT
+from .tutorial import PREMISE_KEY, guide_steps
 
 
 class EconomyTests(unittest.TestCase):
@@ -2487,6 +2504,885 @@ class SpritePreviewLayoutTests(unittest.TestCase):
         # Asking for the portrait by itself is still a normal, drawable sheet.
         alone = preview_sprites.compose(art, ["moss"], 3, 1280)
         self.assertGreater(alone.get_height(), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+def hazard_round(twist_id, seed=3, species="daisy", plots=1, cellar=False, relics=()):
+    """A running round under `twist_id`, with `plots` daisies on the surface.
+
+    The clock is 40s so every hazard period fires at least once inside a single
+    `update` call, and the plot list keeps its four starting plots so tests can
+    talk about empty neighbours.
+    """
+    run = Run(seed=seed)
+    run.twist_id = lambda _rnd=None: twist_id
+    run.relics = list(relics)
+    run.begin_round()
+    run.cellar_unlocked = True
+    run.time_total = run.time_left = 40.0
+    for i in range(plots):
+        run.plots[i] = Plot(species)
+    if cellar:
+        run.cellar_plots[0] = Plot("brown_mushroom")
+    run.start_timer()
+    return run
+
+
+@contextmanager
+def rig(run, value=0.5, target=0):
+    """Force a random-target hazard to hit plot `target` and roll `value`."""
+    with patch.object(run.rng, "randrange", return_value=target), \
+            patch.object(run.rng, "random", return_value=value):
+        yield
+
+
+class DiseaseTests(unittest.TestCase):
+    def test_a_crop_sickens_on_the_period_and_grows_slow(self):
+        run = hazard_round("disease", plots=1)
+        with patch.object(run.rng, "random", return_value=1.0):
+            run.update(14.9)
+            self.assertEqual(run.diseased_count(), 0)
+            run.update(0.3)
+            self.assertEqual(run.diseased_count(), 1)
+        self.assertTrue(run.plots[0].sick)
+
+        # Same elapsed clock, same crop, no rot: the sick one must lag behind.
+        healthy = hazard_round("none", plots=1)
+        run.plots[0].progress = healthy.plots[0].progress = 0.0
+        with patch.object(run.rng, "random", return_value=1.0):
+            run.update(1.0)
+            healthy.update(1.0)
+        self.assertLess(run.plots[0].progress, healthy.plots[0].progress)
+        self.assertAlmostEqual(
+            run.plot_growth_speed(0) / healthy.plot_growth_speed(0), DISEASE_GROWTH, places=4)
+
+    def test_sick_crops_pay_less_at_harvest_and_at_the_buzzer(self):
+        run = hazard_round("disease", plots=1)
+        clean = hazard_round("none", plots=1)
+        run.plots[0].sick = True
+        run.plots[0].progress = clean.plots[0].progress = data.PLANTS["daisy"]["grow"]
+        self.assertEqual(run.harvest_value(0), max(1, int(clean.harvest_value(0) * DISEASE_YIELD + 0.5)))
+        # Checked before the liquidation, which clears the plot's flags with it.
+        self.assertAlmostEqual(run.hazard_sale_mult(run.plots[0]), DISEASE_SALE, places=6)
+        self.assertEqual(clean.hazard_sale_mult(clean.plots[0]), 1.0)
+        run.money = clean.money = 0
+        run.end_round()
+        clean.end_round()
+        self.assertLess(run.money, clean.money)
+
+    def test_disease_walks_plot_to_plot_and_not_across_a_gap(self):
+        run = hazard_round("disease", seed=11, plots=2)
+        run.plots[0].sick = True
+        with patch.object(run.rng, "random", return_value=0.0):
+            self.assertEqual(run._disease_spread(), 1)
+        self.assertTrue(run.plots[1].sick)
+
+        gap = hazard_round("disease", seed=11, plots=3)
+        gap.plots[0].sick = True
+        gap.plots[1] = Plot()          # the empty plot in the middle
+        with patch.object(gap.rng, "random", return_value=0.0):
+            self.assertEqual(gap._disease_spread(), 0)
+        self.assertFalse(gap.plots[2].sick)
+
+    def test_one_roll_per_sick_plant_even_with_several_neighbours(self):
+        run = hazard_round("disease", seed=5, plots=4)
+        run.plots[1].sick = True
+        for i in (0, 2, 3):
+            run.plots[i] = Plot("daisy")
+        # Above CONTAGION_CHANCE, and nothing catches it despite three neighbours.
+        with patch.object(run.rng, "random", return_value=CONTAGION_CHANCE + 0.2):
+            self.assertEqual(run._disease_spread(), 0)
+        with patch.object(run.rng, "random", return_value=CONTAGION_CHANCE - 0.2):
+            self.assertEqual(run._disease_spread(), 1)
+            self.assertEqual(run.diseased_count(), 2)
+
+    def test_the_shovel_is_the_only_cure(self):
+        run = hazard_round("disease", plots=1)
+        plot = run.plots[0]
+        plot.sick = True
+        plot.progress = data.PLANTS["daisy"]["grow"]
+        self.assertTrue(run.harvest(0))
+        self.assertTrue(plot.sick, "harvesting must not quietly cure a crop")
+        ok, _ = run.remove_plant(0)
+        self.assertTrue(ok)
+        self.assertFalse(plot.sick)
+        self.assertIsNone(plot.species)
+        self.assertEqual([e["kind"] for e in run.events if e["kind"] == "cured"], ["cured"])
+
+        run.seeds["daisy"] = 1
+        self.assertTrue(run.plant(0, "daisy"))
+        self.assertFalse(run.plots[0].sick, "dug soil comes back clean")
+
+    def test_the_cellar_is_insulated(self):
+        run = hazard_round("disease", plots=1, cellar=True)
+        with patch.object(run.rng, "random", return_value=0.0):
+            run.update(40.0)
+        self.assertTrue(all(not p.sick for p in run.cellar_plots))
+        self.assertTrue(run.cellar_plots[0].species)
+        self.assertTrue(run.plots[0].sick, "the surface crop is the one that caught it")
+
+    def test_sulphur_duster_softens_the_penalty_and_the_spread(self):
+        plain = hazard_round("disease", plots=2)
+        duster = hazard_round("disease", plots=2, relics=["sulphur_duster"])
+        for run in (plain, duster):
+            run.plots[0].sick = True
+        self.assertGreater(duster.plot_growth_speed(0), plain.plot_growth_speed(0))
+        self.assertGreater(duster.harvest_value(0), plain.harvest_value(0))
+        self.assertLess(plain.disease_factors()[0], 1.0)
+        # Relief of 0.5 pulls every penalty halfway back, no further.
+        self.assertAlmostEqual(duster.disease_factors()[0], 1.0 - (1.0 - DISEASE_GROWTH) * 0.5, places=6)
+
+        roll = CONTAGION_CHANCE - 0.05
+        with patch.object(plain.rng, "random", return_value=roll):
+            self.assertEqual(plain._disease_spread(), 1)
+        with patch.object(duster.rng, "random", return_value=roll):
+            self.assertEqual(duster._disease_spread(), 0, "the duster should eat a borderline roll")
+
+
+class MeteorTests(unittest.TestCase):
+    def test_a_strike_on_a_crop_either_flattens_or_starlights_it(self):
+        doomed = hazard_round("meteor_shower", plots=1)
+        with rig(doomed, value=0.0):
+            doomed._meteor_strike()
+        self.assertIsNone(doomed.plots[0].species)
+        self.assertFalse(doomed.plots[0].starlit)
+        self.assertIn("meteor", [e["kind"] for e in doomed.events])
+
+        lucky = hazard_round("meteor_shower", plots=1)
+        with rig(lucky, value=METEOR_DESTROY + 0.4):
+            lucky._meteor_strike()
+        self.assertTrue(lucky.plots[0].species, "a crop survives a lucky strike")
+        self.assertTrue(lucky.plots[0].starlit)
+
+    def test_a_starlit_crop_is_fifty_percent_better(self):
+        plain = hazard_round("none", plots=1)
+        star = hazard_round("none", plots=1)
+        star.plots[0].starlit = True
+        self.assertAlmostEqual(star.harvest_value(0) / plain.harvest_value(0), METEOR_BONUS, places=4)
+        plain.plots[0].progress = star.plots[0].progress = data.PLANTS["daisy"]["grow"]
+        plain.money = star.money = 0
+        plain.end_round()
+        star.end_round()
+        self.assertGreater(star.money, plain.money)
+
+    def test_a_strike_rewrites_the_species_when_it_can(self):
+        run = hazard_round("meteor_shower", plots=1, species="daisy")
+        with rig(run, value=1.0):
+            run._meteor_strike()
+        self.assertNotEqual(run.plots[0].species, "daisy")
+        self.assertTrue(data.PLANTS[run.plots[0].species].get("mutant"))
+
+    def test_a_crop_that_cannot_mutate_still_gets_the_bonus(self):
+        run = hazard_round("meteor_shower", plots=1, species="crystal_bloom")
+        self.assertTrue(data.PLANTS["crystal_bloom"].get("no_mutations"))
+        with rig(run, value=1.0):
+            run._meteor_strike()
+        self.assertEqual(run.plots[0].species, "crystal_bloom")
+        self.assertTrue(run.plots[0].starlit)
+
+    def test_stardust_survives_planting_and_is_spent_by_it(self):
+        run = hazard_round("meteor_shower", plots=0)
+        with rig(run, value=1.0):
+            self.assertTrue(run._meteor_strike())
+        self.assertTrue(run.plots[0].starlit)
+        self.assertIsNone(run.plots[0].species)
+
+        run.seeds["daisy"] = 2
+        self.assertTrue(run.plant(0, "daisy"))
+        self.assertTrue(run.plots[0].starlit, "the dust has to reach the crop, not just the soil")
+        self.assertIn("stardust", [e["kind"] for e in run.events])
+
+        run.remove_plant(0)
+        self.assertFalse(run.plots[0].starlit, "shovelling sweeps the plot clean")
+        self.assertTrue(run.plant(0, "daisy"))
+        self.assertFalse(run.plots[0].starlit)
+
+    def test_a_strike_on_a_weedy_plot_digs_it_out_for_free(self):
+        run = hazard_round("meteor_shower", plots=0)
+        run.plots[0].weed = True
+        with rig(run, value=1.0):
+            run._meteor_strike()
+        self.assertFalse(run.plots[0].weed)
+        self.assertFalse(run.plots[0].starlit)
+
+    def test_a_strike_on_a_full_garden_still_lands_somewhere(self):
+        run = hazard_round("meteor_shower", plots=4)
+        with patch.object(run.rng, "random", return_value=1.0):
+            run.update(10.1)
+        self.assertEqual(sum(1 for p in run.plots if p.starlit), 1)
+
+    def test_lightning_rod_removes_the_downside(self):
+        run = hazard_round("meteor_shower", plots=1, relics=["lightning_rod"])
+        with rig(run, value=0.0):
+            run._meteor_strike()
+        self.assertTrue(run.plots[0].species)
+        self.assertTrue(run.plots[0].starlit)
+
+    def test_meteors_only_land_on_the_surface(self):
+        run = hazard_round("meteor_shower", plots=1, cellar=True)
+        with rig(run, value=0.0):
+            for _ in range(8):
+                run._meteor_strike()
+        self.assertTrue(run.cellar_plots[0].species)
+        self.assertFalse(any(p.starlit or p.sick for p in run.cellar_plots))
+
+
+class WeedTests(unittest.TestCase):
+    def test_empty_plots_get_choked_on_the_period(self):
+        run = hazard_round("weeds", plots=1)
+        with patch.object(run.rng, "random", return_value=1.0):
+            run.update(WEED_PERIOD + 0.01)
+        self.assertEqual(run.weedy_count(), 1)
+        self.assertFalse(run.plots[0].weed, "a planted plot is not a weed's target")
+
+    def test_weedy_soil_refuses_a_seed_but_digs_clear(self):
+        run = hazard_round("weeds", plots=1)
+        run.plots[1].weed = True
+        run.seeds["daisy"] = 2
+        self.assertFalse(run.plant(1, "daisy"))
+        self.assertEqual(run.seeds["daisy"], 2, "the seed stays in the tray")
+        self.assertTrue(run.clear_weeds(1))
+        self.assertFalse(run.plots[1].weed)
+        self.assertTrue(run.plant(1, "daisy"))
+
+    def test_a_shovelled_weed_reports_clean_soil(self):
+        run = hazard_round("weeds", plots=0)
+        run.plots[2].weed = True
+        ok, msg = run.remove_plant(2)
+        self.assertTrue(ok)
+        self.assertIn("weeds", msg.lower())
+        self.assertIn("weed_clear", [e["kind"] for e in run.events])
+
+    def test_weeds_seed_their_own_neighbours(self):
+        run = hazard_round("weeds", plots=0)
+        run.plots[1].weed = True
+        with patch.object(run.rng, "random", return_value=0.0):
+            run._sprout_weed()
+        self.assertTrue(run.plots[0].weed or run.plots[2].weed, "a weed spreads sideways")
+
+    def test_left_weeds_are_billed_at_the_buzzer(self):
+        run = hazard_round("weeds", plots=1)
+        run.money = 500
+        for i in (1, 2):
+            run.plots[i].weed = True
+        run.end_round()
+        self.assertEqual(run.last_summary["weeds"], 2)
+        self.assertEqual(run.last_summary["weed_fee"], 2 * WEED_FEE)
+        self.assertEqual(run.money, 500 - 2 * WEED_FEE)
+
+    def test_a_full_garden_never_weeds(self):
+        run = hazard_round("weeds", plots=4)
+        self.assertFalse(run._sprout_weed())
+
+    def test_the_cellar_needs_no_weeding(self):
+        run = hazard_round("weeds", plots=1, cellar=True)
+        self.assertFalse(run.clear_weeds(0, cellar=True))
+        self.assertFalse(run.plot_is_weedy(0, cellar=True))
+        with patch.object(run.rng, "random", return_value=0.0):
+            run.update(40.0)
+        self.assertTrue(all(not p.weed for p in run.cellar_plots))
+
+
+class AphidTests(unittest.TestCase):
+    def test_a_colony_halves_the_harvest_until_it_is_watered(self):
+        run = hazard_round("aphids", plots=1)
+        plot = run.plots[0]
+        plot.progress = data.PLANTS["daisy"]["grow"]
+        clean = run.harvest_value(0)
+        plot.aphids = True
+        self.assertEqual(run.harvest_value(0), max(1, int(clean * APHID_YIELD + 0.5)))
+        self.assertTrue(run.water(0))
+        self.assertFalse(plot.aphids)
+        self.assertIn("aphid_wash", [e["kind"] for e in run.events])
+        self.assertEqual(run.harvest_value(0), clean)
+
+    def test_aphids_settle_on_one_more_crop_at_a_time(self):
+        run = hazard_round("aphids", seed=8, plots=3)
+        run.plots[0].aphids = True
+        with patch.object(run.rng, "random", return_value=1.0):
+            self.assertTrue(run._aphid_colony())
+        self.assertEqual(sum(1 for p in run.plots if p.aphids), 2)
+
+    def test_watering_is_the_answer_even_for_an_auto_watered_garden(self):
+        # A Hired Gardener soaks plots on its own, so the colony never survives
+        # a full watering cycle - the relic is an answer, not a second problem.
+        run = hazard_round("aphids", plots=1, relics=["gardener"])
+        run.plots[0].aphids = True
+        run.update(5.0)
+        self.assertFalse(run.plots[0].aphids)
+        self.assertGreater(run.counters["water"], 0)
+
+    def test_aphids_shorten_the_end_of_round_sale(self):
+        run = hazard_round("aphids", plots=1)
+        clean = hazard_round("none", plots=1)
+        run.plots[0].progress = clean.plots[0].progress = data.PLANTS["daisy"]["grow"]
+        run.plots[0].aphids = True
+        run.money = clean.money = 0
+        run.end_round()
+        clean.end_round()
+        self.assertLess(run.money, clean.money)
+
+
+class HazardRosterTests(unittest.TestCase):
+    def test_the_four_hazards_are_reachable_and_described(self):
+        reachable = set(data.RANDOM_TWISTS) | set(data.MINOR_TWISTS) | set(data.BOSS_TWISTS)
+        for tid in ("disease", "meteor_shower", "weeds", "aphids"):
+            with self.subTest(twist=tid):
+                self.assertIn(tid, reachable)
+                twist = data.TWISTS[tid]
+                self.assertEqual(twist["growth"], 1.0)
+                self.assertEqual(twist["yield"], 1.0)
+                self.assertEqual(twist["time"], 0)
+                self.assertIsNone(twist["ban"])
+                self.assertTrue(twist["desc"])
+                self.assertTrue(twist["short"])
+                self.assertTrue(twist.get("lore"), "a hazard without a story hint is a bug")
+
+    def test_the_new_bosses_land_at_the_end_of_the_roster(self):
+        # Appending keeps every existing round number on the boss it already had,
+        # so a saved run's forecast cannot shift underneath the player.
+        self.assertEqual(data.BOSS_TWISTS[:8], [
+            "crow_swarm", "hailstorm", "ghost", "queen_bee",
+            "root_rot", "heatwave", "eternal_night", "gale",
+        ])
+        self.assertEqual(data.BOSS_TWISTS[-2:], ["disease", "meteor_shower"])
+        self.assertEqual(Run(seed=1).twist_id(9), "crow_swarm")
+
+    def test_hazards_only_run_while_the_twist_is_the_forecast(self):
+        run = hazard_round("none", plots=2)
+        run.plots[0].sick = True
+        with patch.object(run.rng, "random", return_value=0.0):
+            run.update(40.0)
+        self.assertEqual(run.weedy_count(), 0)
+        self.assertEqual(sum(1 for p in run.plots if p.aphids), 0)
+
+    def test_clear_skies_freezes_a_hazard_round(self):
+        # Clear Skies removes the forecast, not what the forecast already did -
+        # the crops it infected stay infected. This pins that the *ticking* stops.
+        run = hazard_round("disease", plots=4, seed=9, relics=["clear_skies"])
+        with patch.object(run.rng, "random", return_value=0.0):
+            run.update(16.0)
+            self.assertGreaterEqual(run.diseased_count(), 1)
+            run.update(5.0)          # crosses halfway, where the roll is made
+            self.assertTrue(run.weather_cleared)
+            frozen = run.diseased_count()
+            run.update(18.0)
+            self.assertEqual(run.diseased_count(), frozen)
+
+    def test_every_plot_flag_survives_the_save_round_trip(self):
+        plot = Plot("daisy", sick=True, aphids=True, starlit=True)
+        back = Plot.from_dict(plot.to_dict())
+        self.assertEqual((back.sick, back.aphids, back.starlit, back.weed), (True, True, True, False))
+
+    def test_the_new_relics_are_pure_counterplay(self):
+        from .sprites_data import GRIDS
+
+        for rid, keys in (("sulphur_duster", ("disease_resist", "sick_relief")),
+                          ("lightning_rod", ("rod_protects",))):
+            with self.subTest(relic=rid):
+                relic = data.RELICS[rid]
+                self.assertEqual(sorted(relic["effects"]), sorted(keys))
+                self.assertTrue(relic["lore"])
+                self.assertIn(rid, GRIDS)
+                run = hazard_round("none", plots=1, relics=[rid])
+                self.assertAlmostEqual(run.growth_speed(), 1.0)
+                self.assertEqual(run.harvest_value(0), hazard_round("none", plots=1).harvest_value(0))
+
+    def test_hazard_penalties_are_ordered_the_documented_way(self):
+        # Aphids are the milder hazard at the buzzer than in the hand, and Disease
+        # is the only one that also slows growth: this pins the intent, so a
+        # retune has to be a decision rather than a typo in `settings.py`.
+        self.assertLess(APHID_YIELD, 1.0)
+        self.assertLess(APHID_SALE, 1.0)
+        self.assertGreater(APHID_SALE, APHID_YIELD)
+        self.assertLess(DISEASE_SALE, 1.0)
+        self.assertLess(DISEASE_GROWTH, 1.0)
+        self.assertEqual(WEED_FEE, 6)
+        self.assertEqual(METEOR_BONUS, 1.5)
+
+
+class RoundSceneHazardTests(unittest.TestCase):
+    """The draw path for hazard states, because a bad rect is a crash not a typo."""
+
+    def setUp(self):
+        import pygame
+
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {"BLOOM_SAVE_DIR": self.tmp.name})
+        self.env.start()
+        from .app import App
+
+        self.app = App()
+        self.app.new_run()
+        self.app.dialogue_modal = None
+        self.app.goto("round")
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def test_hazard_states_draw_and_report_in_the_round_scene(self):
+        import pygame
+
+        from .settings import CANVAS_H, CANVAS_W
+
+        scene = self.app.scene
+        scene.run.twist_id = lambda _rnd=None: "meteor_shower"
+        scene.run.seeds["daisy"] = 3
+        self.assertTrue(scene.run.plant(0, "daisy"))
+        self.assertTrue(scene.run.plant(2, "daisy"))
+        scene.run.plots[0].aphids = True
+        scene.run.plots[1].weed = True
+        scene.run.plots[2].starlit = True
+        scene.run.start_timer()
+        self.assertTrue(scene.run.infect(0))
+        scene.update(0.16)
+        note = scene.hazard_note()
+        self.assertIn("STARLIT", note)
+        self.assertIn("SICK", note)
+        self.assertIn("WEED", note)
+        self.assertTrue(self.app.toasts, "the infection should have announced itself")
+        self.app.mouse = (30, 50)
+        scene.draw(pygame.Surface((CANVAS_W, CANVAS_H)))
+
+    def test_shovelling_a_weed_needs_no_confirmation(self):
+        from .round import plot_rect
+
+        scene = self.app.scene
+        scene.run.plots[1].weed = True
+        scene.shovel_mode = True
+        x, y, w, h = plot_rect(1)
+        scene.on_click((x + w // 2, y + h // 2))
+        self.assertIsNone(self.app.confirm_modal, "pulling a weed is not a destructive action")
+        self.assertFalse(scene.run.plots[1].weed)
+
+    def test_lawn_rent_is_itemised_on_the_ledger(self):
+        # Money that leaves without a line on the summary reads as a bug, so the
+        # weed charge has to be drawn, not merely subtracted.
+        import pygame
+
+        from . import gfx
+        from .settings import CANVAS_H, CANVAS_W
+
+        run = self.app.run
+        run.money = 500
+        run.plots[1].weed = True
+        run.plots[2].weed = True
+        run.end_round()
+        self.assertEqual(run.last_summary["weed_fee"], 2 * WEED_FEE)
+
+        painted = []
+        real = gfx.draw_text
+
+        def spy(surf, text, *args, **kwargs):
+            painted.append(str(text))
+            return real(surf, text, *args, **kwargs)
+
+        with patch.object(gfx, "draw_text", side_effect=spy):
+            self.app.goto("summary")
+            self.app.scene.draw(pygame.Surface((CANVAS_W, CANVAS_H)))
+        text = " ".join(painted).upper()
+        self.assertIn("LAWN RENT", text)
+        self.assertIn("2 PATCHES", text)
+        self.assertIn("-$12", text.replace(",", ""))
+
+    def test_the_ledger_still_fits_with_every_hazard_charged_at_once(self):
+        # Upkeep and lawn rent each add a row to the breakdown panel; the panel is
+        # a fixed height, so this asserts the extra line cannot push the totals off.
+        import pygame
+
+        from . import gfx
+        from .settings import CANVAS_H, CANVAS_W
+
+        run = self.app.run
+        run.money = 900
+        run.plots[0] = Plot("devil_ivy")
+        run.plots[0].progress = data.PLANTS["devil_ivy"]["grow"]
+        for i in (1, 2, 3):
+            run.plots[i].weed = True
+        run.end_round()
+        self.assertGreater(run.last_summary["upkeep"], 0)
+        self.assertGreater(run.last_summary["weed_fee"], 0)
+
+        ys = []
+        real = gfx.draw_text
+
+        def spy(surf, text, x, y, *a, **k):
+            ys.append((str(text), y))
+            return real(surf, text, x, y, *a, **k)
+
+        with patch.object(gfx, "draw_text", side_effect=spy):
+            self.app.goto("summary")
+            self.app.scene.draw(pygame.Surface((CANVAS_W, CANVAS_H)))
+        rows = [y for text, y in ys if "LAWN RENT" in text or "NET EARNED" in text or "TOTAL CASH" in text]
+        self.assertEqual(len(rows), 3, "all three rows should be on screen")
+        self.assertEqual(rows, sorted(rows))
+        self.assertLess(rows[-1], CANVAS_H, "the breakdown must not run off the panel")
+
+    def test_a_quiet_round_adds_no_lawn_rent_line(self):
+        import pygame
+
+        from . import gfx
+        from .settings import CANVAS_H, CANVAS_W
+
+        run = self.app.run
+        run.money = 500
+        run.end_round()
+        painted = []
+        real = gfx.draw_text
+        with patch.object(gfx, "draw_text",
+                          side_effect=lambda s, t, *a, **k: (painted.append(str(t)), real(s, t, *a, **k))[1]):
+            self.app.goto("summary")
+            self.app.scene.draw(pygame.Surface((CANVAS_W, CANVAS_H)))
+        self.assertNotIn("LAWN RENT", " ".join(painted).upper())
+
+    def test_weedy_soil_refuses_a_click_with_an_explanation(self):
+        from .round import plot_rect
+
+        scene = self.app.scene
+        scene.selected = "daisy"
+        scene.run.seeds["daisy"] = 1
+        scene.run.plots[1].weed = True
+        x, y, w, h = plot_rect(1)
+        scene.on_click((x + w // 2, y + h // 2))
+        self.assertEqual(scene.run.seeds["daisy"], 1)
+        self.assertIn("WEEDS HAVE THAT PLOT", self.app.toasts[0][0])
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class AppTestCase(unittest.TestCase):
+    """An app on a throwaway save dir, plus the dialogue helpers Moss needs."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {"BLOOM_SAVE_DIR": self.tmp.name})
+        self.env.start()
+        from .app import App
+
+        self.app = App()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def finish_dialogue(self):
+        modal = self.app.dialogue_modal
+        self.assertIsNotNone(modal)
+        while self.app.dialogue_modal is modal:
+            modal.on_key(pygame.K_SPACE)
+
+    def modal_text(self, modal=None):
+        modal = modal if modal is not None else self.app.dialogue_modal
+        return " ".join(" ".join(lines) for _step, lines in modal.pages).upper()
+
+    def quiet_run(self, round_no=2, twist="none"):
+        """A run past the intro and the walkthrough, ready for exactly one beat."""
+        from .tutorial import TUTORIAL_STAGES
+
+        self.app.new_run()
+        # A new run opens on the packs walkthrough; a beat wants the dialogue
+        # that follows it, not the walkthrough itself.
+        self.app.profile["tutorial_done"] = list(TUTORIAL_STAGES)
+        tutorial.mark_beat_seen(self.app.profile, PREMISE_KEY)
+        self.app.dialogue_modal = None
+        run = self.app.run
+        run.round = round_no
+        run.twist_id = lambda _rnd=None: twist
+        return run
+
+
+class IntroTests(AppTestCase):
+    def test_the_premise_is_folded_onto_the_front_of_the_first_walkthrough(self):
+        self.app.new_run()
+        modal = self.app.dialogue_modal
+        self.assertIsNotNone(modal)
+        self.assertEqual(modal.pages[0][0].text[:5], "MOSS.")
+        # The stage's own targeted steps still run, in order, after the intro.
+        from .tutorial import TUTORIAL_BUILDERS
+
+        steps = [page[0] for page in modal.pages]
+        seen, distinct = set(), []
+        for step in steps:
+            if id(step) not in seen:
+                seen.add(id(step))
+                distinct.append(step)
+        builder = TUTORIAL_BUILDERS["packs"]()
+        self.assertEqual([s.text for s in distinct[-len(builder):]], [s.text for s in builder])
+        self.assertEqual(len(distinct) - len(builder), len(tutorial.intro_steps()))
+
+    def test_the_full_intro_only_plays_on_a_first_ever_run(self):
+        self.app.new_run()
+        self.finish_dialogue()
+        self.assertIn(PREMISE_KEY, self.app.profile["story_seen"])
+        self.app.goto("title")
+        self.app.new_run()
+        self.assertIn("BACK AGAIN", self.app.dialogue_modal.pages[0][0].text)
+
+    def test_the_short_intro_is_two_lines_and_the_long_one_is_five(self):
+        self.assertEqual(len(tutorial.intro_steps(fresh=True)), 5)
+        self.assertEqual(len(tutorial.intro_steps(fresh=False)), 2)
+        for step in tutorial.intro_steps():
+            self.assertEqual(step.speaker, "MOSS")
+            self.assertIsNone(step.target)
+            self.assertEqual(step.text, step.text.upper())
+
+
+class RunArcTests(AppTestCase):
+    def test_a_beat_plays_on_the_packs_screen_and_is_remembered_by_the_run(self):
+        run = self.quiet_run(2)
+        self.app.goto("packs")
+        modal = self.app.dialogue_modal
+        self.assertIsNotNone(modal)
+        self.assertIn("NOTE IN THE SEED JAR", self.modal_text(modal))
+        self.finish_dialogue()
+        self.assertEqual(run.story_beats, ["arc-shed"])
+        self.app.save_run()
+        # A reload cannot make Moss repeat himself, but a new run hears it again.
+        reloaded = Run.from_dict(run.to_dict())
+        self.assertEqual(reloaded.story_beats, ["arc-shed"])
+        beat = tutorial.beat_for(reloaded, self.app.profile)
+        self.assertFalse(beat and beat[0].startswith("arc-"),
+                         "Moss must not repeat a run beat after a reload")
+
+    def test_a_skipped_beat_counts_as_heard(self):
+        run = self.quiet_run(2)
+        self.app.goto("packs")
+        self.app.dialogue_modal.on_key(pygame.K_ESCAPE)
+        self.assertIsNone(self.app.dialogue_modal)
+        self.assertEqual(run.story_beats, ["arc-shed"])
+
+    def test_beats_only_play_where_a_player_is_not_being_timed(self):
+        self.quiet_run(2, twist="disease")
+        self.app.goto("round")
+        self.assertIsNone(self.app.dialogue_modal, "the round screen must never be interrupted")
+        self.app.goto("packs")
+        self.finish_dialogue()          # the round-two beat, on the packs screen
+
+        # And a beat never stacks on top of another modal.
+        self.app.run.story_beats = []
+        self.app.open_pause()
+        self.app.start_story()
+        self.assertIsNone(self.app.dialogue_modal, "a modal already on screen wins")
+        self.app.pause_modal = None
+        self.app.start_story()
+        self.assertIsNotNone(self.app.dialogue_modal, "a free packs screen does get its beat")
+
+    def test_a_bill_beat_quotes_the_real_bill(self):
+        run = Run(seed=4)
+        run.grant_round_packs()
+        run.round = 3
+        beat = tutorial.beat_for(run, self.app.profile)
+        self.assertEqual(beat[0], "arc-first-bill")
+        self.assertEqual(beat[2], False, "arc beats are per-run, not per-profile")
+        self.assertIn("$300", beat[1][0].text)
+
+    def test_no_beat_waits_on_a_quiet_round(self):
+        # Round 8 with fair weather and nothing paid off is deliberately silent:
+        # a beat every round would be noise, and Moss talking at all is the
+        # exception the player learns to look for.
+        run = Run(seed=4)
+        run.round = 8
+        run.twist_id = lambda _rnd=None: "none"
+        self.assertIsNone(tutorial.beat_for(run, self.app.profile))
+
+    def test_a_paid_bill_unlocks_the_next_arc_beat(self):
+        run = Run(seed=4)
+        run.round = 4
+        self.assertNotEqual((tutorial.beat_for(run, self.app.profile) or ("",))[0], "arc-first-paid")
+        run.quotas_paid = 1
+        self.assertEqual(tutorial.beat_for(run, self.app.profile)[0], "arc-first-paid")
+
+    def test_the_endless_beat_needs_the_deed_to_be_paid_off(self):
+        run = Run(seed=4)
+        run.round = 25
+        self.assertNotEqual(tutorial.beat_for(run, self.app.profile)[0], "arc-past")
+        run.endless = True
+        run.quotas_paid = 8
+        self.assertEqual(tutorial.beat_for(run, self.app.profile)[0], "arc-past")
+
+    def test_the_deed_beat_lands_on_the_last_bill(self):
+        run = Run(seed=4)
+        run.round = 24
+        self.assertEqual(tutorial.beat_for(run, self.app.profile)[0], "arc-deed")
+
+
+class SeasonAndHazardBeatTests(AppTestCase):
+    def test_a_season_beat_lands_on_the_first_round_of_that_season_only(self):
+        # Seasons are nine rounds, so each one begins where a boss round begins:
+        # the arc beats are marked heard here to isolate the season text.
+        for round_no, season in ((10, "Summer"), (19, "Autumn"), (28, "Winter"), (37, "Spring")):
+            with self.subTest(round=round_no, season=season):
+                run = Run(seed=round_no)
+                run.round = round_no
+                for beat in tutorial.RUN_BEATS:
+                    run.mark_story_beat(beat["id"])
+                beat = tutorial.beat_for(run, self.app.profile)
+                self.assertEqual(beat[0], "season-" + season.lower())
+                run.mark_story_beat(beat[0])
+                self.assertNotEqual((tutorial.beat_for(run, self.app.profile) or ("",))[0],
+                                    "season-" + season.lower(),
+                                    "a season beat must not follow you through all nine rounds")
+                # Round 1 is the intro's own moment; Moss keeps quiet about seasons.
+                first = Run(seed=1)
+                first.round = 1
+                self.assertNotEqual((tutorial.beat_for(first, self.app.profile) or ("",))[0], "season-spring")
+
+    def test_a_hazard_warning_carries_the_rule_it_warns_about(self):
+        for tid, keyword in (("disease", "SHOVEL"), ("meteor_shower", "STARLIT"),
+                             ("weeds", "DIG"), ("aphids", "WATER")):
+            with self.subTest(twist=tid):
+                run = Run(seed=4)
+                run.round = 8
+                run.twist_id = lambda _rnd=None, t=tid: t
+                beat = tutorial.beat_for(run, self.app.profile)
+                self.assertEqual(beat[0], "haz-" + tid)
+                self.assertTrue(beat[2], "hazard warnings persist in the profile")
+                self.assertIn(keyword, " ".join(s.text for s in beat[1]),
+                              "a beat that is all mood and no rule is a wasted click")
+
+    def test_a_warning_is_explained_once_per_save_file_ever(self):
+        self.quiet_run(8, twist="disease")
+        self.app.goto("packs")
+        modal = self.app.dialogue_modal
+        self.assertIsNotNone(modal)
+        self.assertIn("DISEASE TODAY", self.modal_text(modal))
+        self.finish_dialogue()
+        self.assertIn("haz-disease", self.app.profile["story_seen"])
+        self.assertIn("haz-disease", self.app.saves.load_profile()["story_seen"])
+
+        # Same rot, later run: the plots still get sick, the lecture does not.
+        run = self.quiet_run(8, twist="disease")
+        run.story_beats = []
+        self.app.goto("packs")
+        self.assertIsNone(self.app.dialogue_modal, "Moss explains a rot once, ever")
+
+    def test_the_run_arc_outranks_a_hazard_warning_on_the_same_round(self):
+        # Round 9 is both the tenants beat and a boss forecast; the arc is the one
+        # that only gets one chance, so it goes first and the rot waits its turn.
+        run = Run(seed=4)
+        run.round = 9
+        beat = tutorial.beat_for(run, self.app.profile)
+        self.assertEqual(beat[0], "arc-tenants")
+
+
+class LorePassTests(AppTestCase):
+    def test_every_twist_carries_a_story_hint(self):
+        self.assertEqual({tid for tid, twist in data.TWISTS.items() if twist.get("lore")},
+                         set(data.TWISTS))
+        for tid, twist in data.TWISTS.items():
+            with self.subTest(twist=tid):
+                self.assertGreater(len(twist["lore"]), 20)
+                self.assertNotIn("\n", twist["lore"])
+        self.assertEqual(data.twist_lore("disease"), data.TWISTS["disease"]["lore"])
+        self.assertEqual(data.twist_lore("nope"), "")
+
+    def test_lore_never_touches_the_maths(self):
+        for tid in ("disease", "meteor_shower", "weeds", "aphids"):
+            twist = data.TWISTS[tid]
+            self.assertEqual((twist["growth"], twist["yield"], twist["time"]), (1.0, 1.0, 0))
+            self.assertIsNone(twist["ban"])
+
+    def test_the_plants_she_kept_are_documented(self):
+        documented = {sid for sid, plant in data.PLANTS.items() if plant.get("lore")}
+        self.assertTrue(documented <= set(data.PLANTS))
+        self.assertGreaterEqual(len(documented), 25)
+        for sid in ("daisy", "aloe_vera", "crystal_bloom"):
+            self.assertIn(sid, documented, "a crop she was known for should have a line")
+        self.assertEqual(data.plant_lore("daisy"), data.PLANTS["daisy"]["lore"])
+        self.assertTrue(data.plant_lore("daisy_shiny"), "a mutant inherits its base plant's line")
+        self.assertEqual(data.plant_lore("nope"), "")
+
+    def test_every_plant_and_relic_with_a_slot_for_lore_uses_it(self):
+        # The counterplay relics must explain themselves, or their whole purpose
+        # (an answer to a hazard) is invisible in the shop.
+        for rid, relic in data.RELICS.items():
+            if {"disease_resist", "sick_relief", "rod_protects"} & set(relic["effects"]):
+                self.assertTrue(relic.get("lore"), rid)
+        documented = [plant for plant in data.PLANTS.values() if plant.get("lore")]
+        self.assertEqual(len(documented), 25, "the crops she kept, and no others")
+
+    def test_the_title_screen_and_the_guide_agree_on_the_premise(self):
+        self.assertIn("EIGHT UNPAID BILLS", tutorial.PREMISE)
+        guide = tutorial.guide_steps()
+        self.assertGreaterEqual(len(guide), 4)
+        self.assertTrue(any("DEED" in step.text for step in guide))
+        self.assertEqual([s.text for s in guide_steps()], [s.text for s in guide],
+                         "the title guide must not fork the story")
+
+    def test_the_forecast_tooltip_is_where_the_hint_lives(self):
+        # A player reads the forecast before every round, so this is the one
+        # place a hint cannot be skipped by reflex-clicking.
+        run = self.quiet_run(8, twist="disease")
+        self.app.goto("packs")
+        lines = [text for text, _col in self.app.scene.forecast_lines()]
+        self.assertIn("DISEASE", " ".join(lines))
+        self.assertEqual(lines[3], data.twist_lore("disease"), "the hint belongs on the forecast")
+        self.assertTrue(lines[-1].startswith("ROUND TIME"), "the numbers stay last")
+        run.twist_id = lambda _rnd=None: "weeds"
+        self.assertIn(data.twist_lore("weeds"), [text for text, _c in self.app.scene.forecast_lines()])
+
+
+class CopyTests(unittest.TestCase):
+    def test_every_story_line_fits_the_font_and_the_box(self):
+        from . import gfx
+        from .tutorial import BODY_LINES, BOX_W, TEXT_PAD
+
+        texts = [s.text for s in tutorial.guide_steps()]
+        texts += [s.text for step in (tutorial.intro_steps(), tutorial.intro_steps(fresh=False)) for s in step]
+        run = Run(seed=4)
+        for beat in tutorial.RUN_BEATS + tutorial.SEASON_BEATS + tutorial.HAZARD_BEATS:
+            steps = beat["steps"]
+            texts += [s.text for s in (steps(run) if callable(steps) else steps)]
+        missing = {ch for text in texts for ch in text.upper() if ch not in FONT}
+        self.assertEqual(missing, set())
+        for text in texts:
+            self.assertNotIn(";", text)
+            self.assertNotIn('"', text)
+            # Two pages of the dialogue box is the ceiling: past that, Moss is
+            # giving a lecture and the player is clicking through it unread.
+            lines = gfx.wrap(text, BOX_W - TEXT_PAD * 2)
+            self.assertLessEqual(len(lines), BODY_LINES * 2, text)
+
+    def test_a_beat_never_runs_past_three_pages(self):
+        from . import gfx
+        from .tutorial import BODY_LINES, BOX_W, TEXT_PAD
+
+        run = Run(seed=4)
+        for beat in tutorial.RUN_BEATS + tutorial.SEASON_BEATS + tutorial.HAZARD_BEATS:
+            steps = beat["steps"]
+            steps = steps(run) if callable(steps) else steps
+            pages = sum(max(1, -(-len(gfx.wrap(s.text, BOX_W - TEXT_PAD * 2)) // BODY_LINES)) for s in steps)
+            self.assertLessEqual(pages, 3, beat["id"])
+
+    def test_the_title_premise_fits_the_screen_width(self):
+        from . import gfx
+        from .settings import CANVAS_W
+
+        self.assertLessEqual(gfx.text_width(gfx.fit_text(tutorial.PREMISE, CANVAS_W - 20), 1), CANVAS_W - 20)
+
+    def test_beats_are_keyed_to_rounds_the_game_reaches(self):
+        # A beat on a round past the last bill can only fire in endless mode, so
+        # the roster is checked against the ladder it is supposed to ride.
+        from .settings import QUOTA_EVERY, WIN_QUOTAS
+
+        last_bill_round = QUOTA_EVERY * WIN_QUOTAS
+        self.assertEqual(last_bill_round, 24)
+        for beat in tutorial.RUN_BEATS:
+            for round_no in beat.get("rounds", ()):
+                self.assertLessEqual(round_no, last_bill_round, beat["id"])
+            self.assertTrue(beat["steps"], beat["id"])
+        ids = [b["id"] for b in tutorial.RUN_BEATS + tutorial.SEASON_BEATS + tutorial.HAZARD_BEATS]
+        self.assertEqual(len(ids), len(set(ids)), "beat ids are save keys")
 
 
 if __name__ == "__main__":

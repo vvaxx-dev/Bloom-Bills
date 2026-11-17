@@ -3,6 +3,7 @@
 import pygame
 
 from . import gfx
+from .tutorial import PREMISE
 from .gfx import Button
 from .scene import Scene
 from .settings import ACCENT, BG, CANVAS_H, CANVAS_W, DIM, TEXT
@@ -36,6 +37,9 @@ class TitleScene(Scene):
     def draw(self, surf):
         gfx.rect(surf, BG, 0, 0, CANVAS_W, CANVAS_H)
         gfx.draw_text(surf, "BLOOM & BILLS", 160, 35, ACCENT, scale=2, align="center")
+        # The whole pitch on the title screen, so a new player knows what the
+        # garden is for before Moss starts explaining how to water it.
+        gfx.draw_text(surf, gfx.fit_text(PREMISE, CANVAS_W - 20), 160, 52, DIM, align="center")
         gfx.draw_text(surf, "HEIRLOOMS: %d" % self.profile["heirlooms"], 160, 62, ACCENT, align="center")
         gfx.draw_text(
             surf,

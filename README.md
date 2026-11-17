@@ -7,12 +7,12 @@ A compact gardening economy game: grow crops against a clock, pay eight escalati
 | System | Current value |
 | --- | --- |
 | Canvas | 320×180 internal resolution, integer-scaled 6× by default; 2×–8× in Settings, borderless by default |
-| Runtime | About 14,400 lines of Python across 29 files (including four test modules and a sprite preview tool); one runtime dependency: `pygame-ce>=2.5` |
+| Runtime | About 16,500 lines of Python across 29 files (including four test modules and a sprite preview tool); one runtime dependency: `pygame-ce>=2.5` |
 | Round clock | 45 seconds for rounds 1–3; the base drops 2 seconds per round from round 4 to a 30-second floor, then weather/relics can add or remove time, with a 10-second minimum |
 | Starting position | $15, 4 surface plots, and 2 free packs of 3 seeds each |
 | Bills | Rounds 3, 6, 9 … 24; `300 × 5^(bill-1)`, so the eighth is **$23,437,500** |
 | Win | Pay the eighth bill at round 24, then retire with the deed or continue into endless mode |
-| Content | 25 base plants, 12 crossbreeds, 35 mutant forms, 8 seed packs, 25 relics, 8 heirlooms, 19 weather twists including 8 bosses, and 12 relic/plant pairings |
+| Content | 25 base plants, 12 crossbreeds, 35 mutant forms, 8 seed packs, 27 relics, 8 heirlooms, 23 weather twists including 10 bosses, and 12 relic/plant pairings |
 
 ## Quick start
 
@@ -51,6 +51,8 @@ Plants grow on their own. Clicking a growing surface plot waters it: base wateri
 
 Harvesting is manual by default: click a mature plant on either board to collect its payout and start another growth cycle. Mature plants wait until harvested or sold at round end. Enable **Auto Harvest** to collect immediately instead. A Daisy has a 5-second base growth cycle and pays $2; Golden Orchid takes 28 seconds and pays $300. At the end of the round, every planted crop is liquidated for `int(sell × min(1, progress / grow) × sale multipliers)`; Compost Heap and Stock Market can raise those multipliers. Each payout is truncated to whole dollars, then the plots are cleared.
 
+Four twists put hazards on the plots themselves rather than on the round's multipliers, and they are the reason to keep the shovel selected: a sick crop is cured only by digging it out, a weed patch refuses new seed until it is dug, an aphid colony washes off with a single watering, and a meteor strike either empties a plot or leaves it starlit at ×1.5. The round banner reports what the hazard has actually done this round, and hovering the forecast repeats the rule. See **Garden hazards** below.
+
 Unplanted seeds are sold on the packs screen, not mid-round. The seed shelf is clickable; **SELL 1** and **SELL ALL** use `max(1, 25% of the plant's sell value)`, so a Daisy seed is $1 and a Golden Orchid seed is $125. The round tray's tooltip still shows resale value and points back to the packs screen.
 
 The packs screen has three paged shelves: unopened packs (12 per page), owned seeds (8 per page, with the resale strip), and packs for sale (4 per page). Left/Right, Up/Down, and the mouse wheel page the relevant shelf; hovering a pack shows its weighted contents and odds. The round screen's forecast and banner use compact weather lines measured against the 320px canvas, so long descriptions do not paint off screen.
@@ -79,6 +81,8 @@ Weather is deterministic from the run seed and round number, so a forecast never
 | Short Days | −20 seconds from the round |
 | Frost | Desert-tagged seeds cannot be planted on the surface |
 | Blight | One random surface plant withers at halfway |
+| Weeds | Every 12 seconds an empty surface plot sprouts weeds; weeds block planting and cost $6 each at the buzzer |
+| Aphids | Every 7 seconds a colony settles on one surface crop and halves its harvest; watering that plot washes them off |
 
 Every twist has a short HUD line. Banners, forecasts, toasts, and tooltips measure, wrap, hard-break, or trim text to the canvas; toasts are capped at two lines and tooltips are clamped to the screen.
 
@@ -92,6 +96,19 @@ Every twist has a short HUD line. Banners, forecasts, toasts, and tooltips measu
 | Heatwave | −15% growth; surface watering dries twice as fast |
 | Eternal Night | Applies Eclipse planting and growth rules for the whole round |
 | Gale | −10 seconds and −20% growth |
+
+### Garden hazards
+
+Four twists mark the soil instead of retuning the whole round, so they are read off the plots rather than off a multiplier. They are ordinary twists and bosses like any other weather: `weeds` and `aphids` ride in `RANDOM_TWISTS`, while `disease` and `meteor_shower` sit at the end of `BOSS_TWISTS` so that every round number keeps the boss it already had. All four are **surface-only** — the cellar never infects, never weeds up, and is never struck, which is part of what buying that land means.
+
+| Hazard | Cadence | What lands on the plot | The answer |
+| --- | --- | --- | --- |
+| Disease | one new case every 15s, spread rolls every 6s | growth ×0.55, harvest ×0.6, sale ×0.6; each sick crop can infect a *planted* neighbour | the shovel: digging a sick crop clears the plot to bare, uninfected soil |
+| Meteor Shower | one strike every 10s | 45% chance the plot is flattened outright, otherwise the crop is rewritten as a mutation and turns **starlit** | `starlit` multiplies harvest and sale by **1.5 after all other maths**; a strike on bare soil leaves stardust for your next seed there |
+| Weeds | every 12s | an empty plot is taken; 45% of the time it instead seeds a neighbour of an existing weed | dig it out (no confirmation, no cost) or pay $6 per patch at the buzzer; planting is refused until the soil is clear |
+| Aphids | every 7s | one crop's harvest is halved and its end-of-round sale is ×0.7 | water the plot — any watering, including Rain and the Hired Gardener, washes the colony off |
+
+Disease spreads plot-to-plot and never across a gap, and each sick plot rolls **once** per contagion tick against a single random neighbour, so one case cannot cascade down a row in one frame. Sulphur Duster softens all three disease penalties by `sick_relief` and halves the spread chance; Lightning Rod removes the meteor's destroy branch, leaving only the upside. Weeds and stardust both live on *empty* plots, so they compete: a meteor that lands on a weedy plot burns the weed and leaves nothing behind.
 
 Most boss events are surface-only; global time changes still affect the run. A season lasts nine rounds: rounds 1–9 are Spring, 10–18 Summer, 19–27 Autumn, 28–36 Winter, then the cycle repeats. Each season has a topbar tint and pixel-art emblem; Autumn leaves and Winter snow are visual effects. Seasons are mostly cosmetic, except that the Garden Ghost is restricted to Autumn.
 
@@ -142,7 +159,7 @@ Ambient critters visit in groups of at most three. They crawl, hop, or fly off s
 
 ## Relics
 
-There are 25 relics, each with a 12×12 pixel-art badge. Five slots are available by default; **Relic Cabinet** level 2 gives a sixth. The shop shows three offers by default and four at Relic Cabinet level 3. Rerolling starts at $50, doubles after each reroll in the same shop, and scales with `1.3^(round-1)`.
+There are 27 relics, each with a 12×12 pixel-art badge. Five slots are available by default; **Relic Cabinet** level 2 gives a sixth. The shop shows three offers by default and four at Relic Cabinet level 3. Rerolling starts at $50, doubles after each reroll in the same shop, and scales with `1.3^(round-1)`.
 
 Relic prices use a base cost, a rarity multiplier (common 1.0, uncommon 1.2, rare 1.45, legendary 1.6, exquisite 1.8), and per-round growth: 1.35× for rare and exquisite relics, 1.3× for the others. Packs rise 1.5× per round, plots triple with each purchase, and bills climb 5× every three rounds (about 1.71× per round) through the eighth bill. Owned relic effects stack for the run, some evolve when their counters reach a goal, and a relic can be sold back for half its current price.
 
@@ -182,7 +199,7 @@ The Garden Index lists each exact requirement. Shop and round tooltips show the 
 
 ## Heirlooms
 
-Heirlooms are permanent meta-progression currency, not cash. The run-end reward is `max(0, round - 1) + 3 × bills_paid`, plus 10 for a win. Spend them at the **Heirloom Shelf**; levels and banked totals live in `profile.json`. Upgrade costs come from each perk's cost list multiplied by `1.15^level`, and the shelf and pause panel page five rows at a time.
+Heirlooms are permanent meta-progression currency, not cash. The run-end reward is `max(0, round — 1) + 3 × bills_paid`, plus 10 for a win. Spend them at the **Heirloom Shelf**; levels and banked totals live in `profile.json`. Upgrade costs come from each perk's cost list multiplied by `1.15^level`, and the shelf and pause panel page five rows at a time.
 
 | Heirloom | Levels | Effect |
 | --- | ---: | --- |
@@ -201,7 +218,7 @@ Every heirloom has its own 12×12 pixel-art badge and lore entry. All effects ca
 
 The **Garden Index** has two top sections, **Plants** and **Upgrades**. Plants has **ALL**, **GARDEN**, **DESERT**, **FARMER**, **NIGHT**, **MUTANTS**, and **CROSSBREEDS** subsections; Upgrades has **RELICS** and **HEIRLOOMS**. Entries are shown in a 3×3 grid, nine per page, and every catalogue — plants, mutants (by base rarity), crossbreeds, relics, pack pools, the seed shelf, the round tray, and the owned-relic rows — is ordered by rarity first, then name. Left/Right or the wheel pages, Up/Down cycles subsections, and Tab switches Plants/Upgrades. The Index opens from the title screen and from the in-game **pause menu** (Esc → **GARDEN INDEX**); closing it returns to the paused round exactly as it was left.
 
-Relic pages show artwork, price, description, ownership, evolution goals, and plant-pairing requirements. Heirloom pages show artwork, permanent level, current and next bonuses, cost, and lore. The index covers all 25 relics, all 8 heirlooms, every base plant, and all 35 mutants. Undiscovered crossbreeds appear in the **CROSSBREEDS** subsection as **???** silhouettes whose **FIELD NOTES** hint at the parents and condition; discovering one (the id is stored in `profile.json`) permanently reveals its name, stats, exact recipe, and harvest chance, and its seeds join the packs-screen shelf — until then the shelf keeps the secret.
+Relic pages show artwork, price, description, ownership, evolution goals, and plant-pairing requirements. Heirloom pages show artwork, permanent level, current and next bonuses, cost, and lore. The index covers all 27 relics, all 8 heirlooms, every base plant, and all 35 mutants. Undiscovered crossbreeds appear in the **CROSSBREEDS** subsection as **???** silhouettes whose **FIELD NOTES** hint at the parents and condition; discovering one (the id is stored in `profile.json`) permanently reveals its name, stats, exact recipe, and harvest chance, and its seeds join the packs-screen shelf — until then the shelf keeps the secret.
 
 Long weather text, relic descriptions, and heirloom lore are hard-wrapped at glyph boundaries so an unbroken word cannot leak past a panel. HUD lines use measured fitting; toasts wrap to at most two lines; tooltips are anchored near the cursor, flip below it near the top edge, and are clamped to the canvas.
 
@@ -213,6 +230,7 @@ Long weather text, relic descriptions, and heirloom lore are hard-wrapped at gly
 | Space | Start the round clock; open the next pack on the packs screen; advance dialogue; continue where offered |
 | Enter | Continue/confirm on the title, packs, summary, game-over, settings, and confirmation screens |
 | X / Delete / Backspace | Toggle the shovel in a round; Backspace also goes back from the Garden Index or Heirloom Shelf |
+| Click with the shovel | Dig up a crop (no seed back), clear a weed patch, or cure a diseased plot; weeds need no confirmation |
 | Tab | Switch surface/cellar in a round; switch Plants/Upgrades in the Garden Index |
 | 1–6 | Select one of the six visible seeds in the round tray |
 | 1–8 | Select one of the eight visible seeds to sell on the packs screen |
@@ -231,7 +249,21 @@ First runs open short, stage-specific walkthroughs with **Moss**. His 96×156 po
 
 Esc or **SKIP** dismisses the tutorial and marks every stage as completed/skipped. Those stage names are stored under `tutorial_done` in `profile.json`, so they do not repeat. The title-screen **GUIDE** button replays a short overview at any time.
 
-The presentation lives in `tutorial.py` as `DialogueOverlay`: pass a list of `DialogueStep`s with optional target rectangles or callables that resolve against the active scene. The same box can be reused for story beats and later tutorials.
+`tutorial.py` holds both halves: `DialogueOverlay` is the presentation — pass a list of `DialogueStep`s with optional target rectangles or callables that resolve against the active scene — and the walkthrough steps and story beats are the content fed into it.
+
+## The story, and where it is told
+
+The premise is small on purpose: your Aunt Marigold died owing eight bills, and the will gives you the garden, the shed, and one groundskeeper. You are gardening to pay her debts off, and the eighth payment is the deed.
+
+All of it lives in `tutorial.py` next to the dialogue box that renders it — the opening speech and three lists of beats — so there is one voice and one presentation for Moss:
+
+- `intro_steps()` is the premise, folded onto the **front of the first-run packs walkthrough** rather than a modal of its own. A profile that has already read it gets the two-line version as a round-one beat instead.
+- `RUN_BEATS` and `SEASON_BEATS` are the arc (the note in the seed jar, the first bill, the tenants, the last page of the ledger). They play once per run, are remembered in `run.json`, and are keyed to round numbers or to the first round of a season.
+- `HAZARD_BEATS` are one warning per twist, played the first time that hazard shows in a forecast. They are remembered in `profile.json` forever: Moss explains a rot once.
+
+Beats are picked up by `App.start_story()`, which the packs screen calls on entry — the one screen a player always looks at before a round and the only one with no clock on it. A beat never stacks on a modal that is already open, and Esc marks it as heard.
+
+Everything else is a hint in text the player is already reading: a `lore` line on each twist is quoted under the forecast, on 25 of the plants in the seed shelf and Garden Index cards, and on the relics and heirlooms that answer a hazard. Lore is flavour only — it never changes a number, and the lore tests in `test_balance.py` hold that line.
 
 ## The code and the art
 
@@ -239,13 +271,15 @@ The code is split by responsibility, with `pygame-ce` as the only runtime depend
 
 - `app.py` owns the 60 FPS loop, event dispatch, 320×180 canvas, window scaling, toasts, modals, and scene switching.
 - `state.py` is the headless simulation: plots, growth, harvesting, weather, relics, bills, serialization. It imports no pygame, only `math`, `random`, and the local `data`/`settings` modules.
-- `data.py` holds plants, mutants, packs, relics, heirlooms, twists, seasons, and pairing tables.
+- `data.py` holds plants, mutants, packs, relics, heirlooms, twists, seasons, and pairing tables, with each twist, plant, and relic carrying its own `lore` line for the tooltips to quote.
 - `settings.py` holds the tuning constants and display geometry.
 - `round.py` is the growing screen and calls `Run.update()` each frame; `scene.py` defines the shared `Scene` base class and topbar, and `scenes.py` registers all nine scenes.
 - `packs.py`, `shop.py`, `summary.py`, `gameover.py`, `victory.py`, `title.py`, `index.py`, and `overlays.py` cover the other screens and modals.
 - `gfx.py` draws the pixel font, panels, buttons, tooltips, sprites, and custom cursor.
-- `sprites_data.py` stores every art grid and palette; `ambient.py` draws critters, weather particles, and the cursor snail.
-- `save.py`, `paths.py`, `formatting.py`, `tutorial.py`, and `preview_sprites.py` handle persistence, save paths, number formatting, dialogue, and sprite inspection.
+- `sprites_data.py` stores every art grid and palette; `ambient.py` draws critters, weather particles, hazard ambience (drifting spores, incoming fireballs, swaying weed), and the cursor snail.
+
+Every plant, relic, and heirloom id in `data.py` must have art in `sprites_data.GRIDS`; `test_balance.py` fails otherwise, which is what keeps the sheet complete as content grows.
+- `save.py`, `paths.py`, `formatting.py`, `tutorial.py`, and `preview_sprites.py` handle persistence, save paths, number formatting, Moss's dialogue and beat selection, and sprite inspection.
 
 All sprite art is generated at runtime from character grids in `sprites_data.py`: plant stages, mutant recolours, relic and heirloom badges, seasonal emblems, ambient critters, and the custom 1× cursor with its shadow. Plants are animated by shifting and stretching rows of those grids. There are no external image or audio files, and the system pointer is hidden.
 
@@ -259,13 +293,18 @@ With no sprite names it shows every grid. The live window watches `sprites_data.
 
 ## Tests
 
-From the repository root:
+From the directory *above* the repository:
 
 ```sh
-PYTHONPATH=.. SDL_VIDEODRIVER=dummy python3 -m unittest Bloom-Bills.test_balance Bloom-Bills.test_new_mechanics Bloom-Bills.test_tutorial Bloom-Bills.test_crossbreeding
+cd ..   # the parent of this directory, so the package name resolves
+PYTHONPATH=. SDL_VIDEODRIVER=dummy python3 -m unittest \
+    Bloom-Bills.test_balance Bloom-Bills.test_new_mechanics Bloom-Bills.test_tutorial \
+    Bloom-Bills.test_crossbreeding
 ```
 
-That runs **237 tests**: 151 economy/mechanics tests, 47 UI/art/index tests, 10 tutorial tests, and 29 crossbreeding tests. They cover bill and price ladders, save/load, weather and boss effects, mutations, packs, seed resale, relic and heirloom effects, plant pairings, sprite coverage and sheet layout, text fitting, the Garden Index, heirloom paging, flytrap critter feeding, the bill-waiver summary UI, crossbreed recipes/adjacency/weather gates/discovery, and rarity ordering of every catalogue. UI tests need `pygame-ce`; `SDL_VIDEODRIVER=dummy` lets them run headless.
+The package is this directory itself, so run the tests from its parent: `discover` needs `-s Bloom-Bills -t .`, and importing `Bloom-Bills.test_*` needs the parent on `PYTHONPATH`. From inside the directory the relative imports fail.
+
+That runs **302 tests**: 216 in `test_balance.py` (economy, mechanics, hazards, dialogue, art, and layout), 47 UI/art/index tests, 10 tutorial tests, and 29 crossbreeding tests. They cover bill and price ladders, save/load, weather and boss effects, mutations, packs, seed resale, relic and heirloom effects, plant pairings, sprite coverage and sheet layout, text fitting, the Garden Index, heirloom paging, flytrap critter feeding, the bill-waiver summary UI, crossbreed recipes/adjacency/weather gates/discovery, and rarity ordering of every catalogue. The hazard classes hold the contract that each one is *answerable* — the shovel cures and leaves clean soil, a gap blocks contagion, weeds block soil rather than crops, one watering clears a colony, and every penalty has a relic that answers it. The dialogue classes pin that a beat plays once, on the right screen, in the right save file, and that no story or lore line can change a number. UI tests need `pygame-ce`; `SDL_VIDEODRIVER=dummy` lets them run headless.
 
 ## Status
 

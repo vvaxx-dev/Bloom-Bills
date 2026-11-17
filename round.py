@@ -8,9 +8,10 @@ from .formatting import clock, fmt
 from .gfx import Button
 from .scene import Scene, draw_topbar
 from .settings import (
-    ACCENT, BAD, BG, CANVAS_H, CANVAS_W, CELLAR_PRICE, COLS, DIM, GOOD,
-    MAX_PLOTS, MYCELIUM_CREEP_TIME, PANEL_DARK, PANEL_LIGHT, SOIL, SOIL_DARK,
-    TEXT, WATER,)
+    ACCENT, APHID, BAD, BG, CANVAS_H, CANVAS_W, CELLAR_PRICE, COLS, DIM, GOOD,
+    MAX_PLOTS, MYCELIUM_CREEP_TIME, PANEL_DARK, PANEL_LIGHT, SICK, SICK_SOIL, SOIL,
+    SOIL_DARK, STARDUST, STARDUST_SOIL, TEXT, WATER, WEED, WEED_FEE,
+)
 
 CELL_W, CELL_H, GAP = 56, 34, 4
 GRID_X, GRID_Y = 4, 36
@@ -232,14 +233,26 @@ class RoundScene(Scene):
             return
         if self.shovel_mode:
             if plots[i].species is None:
-                self.app.toast("NOTHING PLANTED HERE")
+                if not in_cellar and plots[i].weed:
+                    # Digging out a weed is never a loss, so it goes through
+                    # without the destructive-action confirmation the crop
+                    # shovel asks for.
+                    run.clear_weeds(i)
+                    self.app.toast("PULLED THE WEEDS - CLEAN SOIL")
+                else:
+                    self.app.toast("NOTHING PLANTED HERE")
                 return
             plant_name = data.PLANTS[plots[i].species]["name"].upper()
+            sick = plots[i].sick
 
             def do_remove():
                 ok, _ = run.remove_plant(i, in_cellar)
                 if ok:
-                    self.app.toast("REMOVED %s" % plant_name)
+                    self.app.toast(
+                        "%s DUG OUT. THE PLOT IS CLEAN AGAIN." % plant_name
+                        if sick else "REMOVED %s" % plant_name,
+                        2.4,
+                    )
                 self.shovel_mode = False
                 self.pick_default()
 
@@ -256,6 +269,9 @@ class RoundScene(Scene):
             return
 
         if plots[i].species is None:
+            if not in_cellar and plots[i].weed:
+                self.app.toast("WEEDS HAVE THAT PLOT - SHOVEL IT (X)")
+                return
             if self.selected:
                 if run.plant(i, self.selected, in_cellar):
                     if run.seeds.get(self.selected, 0) <= 0:
@@ -378,6 +394,58 @@ class RoundScene(Scene):
                 if show_floaters:
                     self.floaters.append([fx, fy, "ROT!", BAD, 0.0])
                 self.app.toast("%s ROTTED!" % ev.get("name", "A PLANT").upper(), 2.0)
+            elif kind == "sick":
+                # Diseased: named, and the source plot is flagged so the spread
+                # reads as a chain rather than as random bad luck.
+                if show_floaters:
+                    self.floaters.append([fx, fy, "DISEASED!", SICK, 0.0])
+                    source = ev.get("source")
+                    if source is not None and 0 <= source < MAX_PLOTS:
+                        sx, sy, sw, _sh = plot_rect(source)
+                        self.floaters.append([sx + sw // 2, sy + 8, "SPREAD!", SICK, 0.0])
+                self.app.toast(
+                    "%s CAUGHT DISEASE! DIG IT OUT OR IT SPREADS." % ev["name"].upper(), 2.4)
+            elif kind == "cured":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "SOIL CLEAN", GOOD, 0.0])
+            elif kind == "meteor":
+                if ev.get("destroyed"):
+                    if show_floaters:
+                        self.floaters.append([fx, fy, "METEOR!", BAD, 0.0])
+                    self.app.toast("A METEOR TOOK YOUR %s!" % ev.get("name", "CROP").upper(), 2.2)
+                elif ev.get("stardust"):
+                    if show_floaters:
+                        self.floaters.append([fx, fy, "STARDUST!", ACCENT, 0.0])
+                    self.app.toast("STARDUST IN THAT PLOT - PLANT SOMETHING GOOD.", 2.4)
+                elif ev.get("weedy"):
+                    if show_floaters:
+                        self.floaters.append([fx, fy, "BURNT WEEDS", GOOD, 0.0])
+                else:
+                    if show_floaters:
+                        self.floaters.append([fx, fy, "STARLIT x1.5!", ACCENT, 0.0])
+                    self.app.toast(
+                        "A METEOR MADE %s STARLIT! X1.5 VALUE." % ev.get("name", "A CROP").upper(), 2.6)
+            elif kind == "weed":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "WEEDS!", WEED, 0.0])
+                    source = ev.get("source")
+                    if source is not None and 0 <= source < MAX_PLOTS:
+                        sx, sy, sw, _sh = plot_rect(source)
+                        self.floaters.append([sx + sw // 2, sy + 8, "SEEDED", WEED, 0.0])
+                self.app.toast("WEEDS TOOK AN EMPTY PLOT. DIG THEM OUT.", 2.0)
+            elif kind == "weed_clear":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "CLEARED", GOOD, 0.0])
+            elif kind == "aphid":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "APHIDS!", BAD, 0.0])
+                self.app.toast("APHIDS ON YOUR %s - WATER IT OFF!" % ev["name"].upper(), 2.4)
+            elif kind == "aphid_wash":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "WASHED OFF", WATER, 0.0])
+            elif kind == "stardust":
+                if show_floaters:
+                    self.floaters.append([fx, fy, "STARLIT CROP!", ACCENT, 0.0])
             elif kind == "ghost_swap":
                 other = ev.get("other_plot", -1)
                 if show_floaters:
@@ -459,6 +527,10 @@ class RoundScene(Scene):
             msg, col = "THE CELLAR: SELF-WATERING, WEATHERPROOF.", WATER
         elif not run.started:
             msg, col = "WEATHER: FAIR WEATHER - PLANT SEEDS, THEN PRESS START.", DIM
+        elif self.hazard_note():
+            # A hazard has left marks on the garden, which beats reminding the
+            # player how to click: the row of sick plots is the problem now.
+            msg, col = self.hazard_note(), SICK
         else:
             msg, col = "CLICK TO WATER; CLICK MATURE PLANTS TO HARVEST.", DIM
         gfx.draw_text(surf, gfx.fit_text(msg, CANVAS_W - 10), 5, 18, col)
@@ -490,7 +562,8 @@ class RoundScene(Scene):
 
         if hover is not None:
             x, y, w, h = plot_rect(hover)
-            hcol = BAD if (self.shovel_mode and plots[hover].species) else ACCENT
+            diggable = plots[hover].species or (not self.in_cellar() and plots[hover].weed)
+            hcol = BAD if (self.shovel_mode and diggable) else ACCENT
             for edge in ((x, y, w, 1), (x, y + h - 1, w, 1), (x, y, 1, h), (x + w - 1, y, 1, h)):
                 gfx.rect(surf, hcol, *edge)
 
@@ -564,6 +637,8 @@ class RoundScene(Scene):
             syn = data.synergy_text(relic_hover)
             if syn:
                 lines.append(("PAIRING: " + syn, GOOD))
+            if rel.get("lore"):
+                lines.append((rel["lore"], DIM))
             if relic_hover in run.active_synergy_ids():
                 lines.append(("PAIRING ACTIVE!", GOOD))
             if relic_hover == "chosen_bloom":
@@ -579,12 +654,23 @@ class RoundScene(Scene):
                 lines.append(("EVOLVES AT %d %sS" % (step["goal"], step["stat"].upper()), DIM))
             gfx.tooltip(surf, lines, mouse, 102)
         elif self.shovel_btn.hover(mouse):
-            gfx.tooltip(surf, [
+            lines = [
                 ("SHOVEL ACTIVE (X)" if self.shovel_mode else "SHOVEL (X)", BAD if self.shovel_mode else ACCENT),
                 ("CLICK A PLANTED CROP TO DIG IT UP.", TEXT),
-            ], mouse, 108)
+            ]
+            # The shovel is the answer to both soil hazards, and players keep
+            # forgetting it: say so only when there is something to answer.
+            if run.weedy_count():
+                lines.append(("OR A WEED - THE PLOT COMES BACK PLANTABLE", WEED))
+            if run.diseased_count():
+                lines.append(("DIGGING OUT A SICK CROP LEAVES IT CLEAN", GOOD))
+            if self.shovel_mode:
+                lines.append(("NO SEED COMES BACK.", DIM))
+            gfx.tooltip(surf, lines, mouse, 108)
         elif hover is not None and plots[hover].species:
             self.plot_tooltip(surf, hover)
+        elif hover is not None and not self.in_cellar() and (plots[hover].weed or plots[hover].starlit):
+            self.empty_plot_tooltip(surf, plots[hover])
         elif seed_hover is not None:
             sp = data.PLANTS[seed_hover]
             pays = sp.get("pays", True) is not False
@@ -599,24 +685,64 @@ class RoundScene(Scene):
                 lines.append(("PAYS NOTHING ITSELF", ACCENT))
             if sp.get("note"):
                 lines.append((sp["note"], GOOD))
+            lore = data.plant_lore(seed_hover)
+            if lore:
+                lines.append((lore, DIM))
             gfx.tooltip(surf, lines, mouse, 104)
         elif gfx.inside(mouse, (4, 16, 312, 11)):
             tcol = BAD if twist.get("boss") else TONE_COLORS.get(twist.get("tone", "neutral"), TEXT)
-            gfx.tooltip(surf, [
+            lines = [
                 ("WEATHER: " + twist["name"].upper(), tcol),
                 (twist["desc"], TEXT),
-            ], mouse, 112)
+            ]
+            lore = data.twist_lore(run.twist_id())
+            if lore and not run.weather_cleared:
+                lines.append((lore, DIM))
+            if self.hazard_note():
+                lines.append((self.hazard_note(), ACCENT))
+            gfx.tooltip(surf, lines, mouse, 112)
 
     def draw_plot(self, plots, surf, i, x, y, w, h):
         run = self.run
         p = plots[i]
         cellar = self.in_cellar()
         top, bottom = (SOIL_DARK, (66, 48, 38)) if cellar else (SOIL_DARK, SOIL)
+        # Hazard states recolour the soil itself, so the garden can be read at
+        # a glance before any tooltip is opened: mouldy for Disease, warm and
+        # golden where a meteor left stardust.
+        if not cellar and (p.sick or p.starlit):
+            bottom = SICK_SOIL if p.sick else STARDUST_SOIL
         gfx.rect(surf, top, x, y, w, h)
         gfx.rect(surf, bottom, x + 1, y + 1, w - 2, h - 2)
         for k in range(6):
             gfx.rect(surf, SOIL_DARK, x + 3 + (i * 7 + k * 11) % 50, y + 3 + (i * 5 + k * 13) % 28, 2, 1)
         if p.species is None:
+            if not cellar and p.weed:
+                # Weeds are drawn with the same animation as a real crop,
+                # because the trap is exactly that: it looks like progress.
+                gfx.draw_sprite(
+                    surf, "weed", x + 16, y + 1, 2,
+                    anim=gfx.plant_anim(self.t, index=i, style="reed", started=True,
+                                        hovered=gfx.inside(self.mouse, (x, y, w, h)), wind=0.5),
+                )
+                gfx.draw_text(surf, "WEEDS", x + 2, y + 2, WEED)
+                if self.shovel_mode:
+                    gfx.rect(surf, (52, 92, 46), x + 8, y + 11, w - 16, 11)
+                    gfx.draw_text(surf, "CLEAR", x + w // 2, y + 14, TEXT, align="center")
+                elif self.selected:
+                    gfx.draw_text(surf, "NEEDS THE SHOVEL", x + w // 2, y + 26, DIM, align="center")
+                return
+            if not cellar and p.starlit:
+                # The dust itself twinkles in STARDUST rather than the harvest
+                # gold, so a gifted plot and a ripe one cannot be confused.
+                for k, (ox, oy) in enumerate(((38, 6), (12, 20), (30, 24))):
+                    if int(self.t * 3 + i + k) % 3:
+                        gfx.rect(surf, STARDUST, x + ox, y + oy, 1, 1)
+                gfx.draw_sprite(surf, "star", x + w - 20, y + 8, 1)
+                gfx.draw_text(surf, "STARDUST", x + 2, y + 2, STARDUST)
+                if self.selected and gfx.inside(self.mouse, (x, y, w, h)):
+                    gfx.draw_text(surf, "PLANT (x1.5)", x + w // 2, y + 26, ACCENT, align="center")
+                return
             if not self.shovel_mode and self.selected and gfx.inside(self.mouse, (x, y, w, h)):
                 gfx.draw_sprite(surf, "seed", x + 22, y + 10, 1)
                 gfx.draw_text(surf, "PLANT", x + w // 2, y + 24, TEXT, align="center")
@@ -643,7 +769,19 @@ class RoundScene(Scene):
             speed=run.plot_growth_speed(i, cellar), hovered=hovered, wind=wind, glow=glow,
         )
         gfx.draw_sprite(surf, sprite_name, x + 16, y + 1, 2, subs, anim=anim)
-        gfx.bar(surf, x + 4, y + 28, w - 8, 3, frac, sp["color"])
+        if p.sick:
+            # Mouldy dabs on the foliage itself: three spots that drift a pixel
+            # so a sick plot never looks quite still under the cursor.
+            for k, (ox, oy) in enumerate(((24, 9), (34, 15), (20, 19))):
+                gfx.rect(surf, SICK, x + ox + (int(self.t * 2) + k) % 2, y + oy, 3, 2)
+        if p.aphids:
+            for k in range(4):
+                gfx.rect(surf, APHID, x + 14 + k * 5 + (int(self.t * 4) + k) % 2,
+                         y + 16 + (k % 2) * 3, 2, 2)
+        if p.starlit and int(self.t * 2 + i) % 3:
+            gfx.draw_sprite(surf, "star", x + w - 20, y + 3, 1)
+            gfx.rect(surf, STARDUST, x + 6, y + 30, w - 12, 1)
+        gfx.bar(surf, x + 4, y + 28, w - 8, 3, frac, SICK if p.sick else sp["color"])
         if sp.get("spread") and run.creep_grown.get(cellar, 0) < run.creep_cap(plots, i):
             if run._can_creep(plots, i, cellar) or p.creep_cd > 0:
                 # Creep meter: the amber bar under a mycelium filling toward its
@@ -656,6 +794,10 @@ class RoundScene(Scene):
             gfx.draw_text(surf, "DORMANT", x + 2, y + 2, (186, 134, 244))
         elif p.progress >= sp["grow"]:
             gfx.draw_text(surf, "READY", x + 2, y + 2, GOOD)
+        elif p.sick:
+            gfx.draw_text(surf, "SICK", x + 2, y + 2, SICK)
+        elif p.aphids:
+            gfx.draw_text(surf, "APHIDS", x + 2, y + 2, BAD)
         if self.shovel_mode and gfx.inside(self.mouse, (x, y, w, h)):
             gfx.rect(surf, (120, 36, 36), x + 8, y + 11, w - 16, 11)
             gfx.draw_text(surf, "REMOVE", x + w // 2, y + 14, TEXT, align="center")
@@ -680,6 +822,22 @@ class RoundScene(Scene):
             lines.append(("QUEEN BEE: DORMANT (NO HONEY)", (186, 134, 244)))
         elif p.progress >= sp["grow"]:
             lines.append(("READY: CLICK TO HARVEST", GOOD))
+        # Hazard lines come next: they are the reason a plot is worth less than
+        # the number the seed promised, so they read before the maths does.
+        if p.sick:
+            grow_m, yield_m, sale_m = run.disease_factors()
+            lines.append(("DISEASED: %d%% GROWTH, %d%% VALUE"
+                          % (round(100 * grow_m), round(100 * yield_m)), SICK))
+            lines.append(("SELLS AT %d%% AT THE BUZZER" % round(100 * sale_m), SICK))
+            lines.append(("SPREADS TO A NEIGHBOUR EVERY %ds"
+                          % int(run.twist().get("contagion", 0) or 0), BAD))
+            lines.append(("SHOVEL IT - THE PLOT COMES BACK CLEAN", GOOD))
+        if p.aphids:
+            lines.append(("APHIDS: HARVEST HALVED", BAD))
+            lines.append(("WATER THE PLOT TO WASH THEM OFF", WATER))
+        if p.starlit:
+            lines.append(("STARLIT: X1.5 HARVEST AND SALE", ACCENT))
+            lines.append(("A METEOR REWROTE THIS CROP", DIM))
         if sp.get("mature_bonus"):
             lines.append(("MATURE %dS: +$%d BASE" % (int(p.mature_time), int(p.mature_time) * sp["mature_bonus"]), WATER))
         if sp.get("crossbreed"):
@@ -751,4 +909,43 @@ class RoundScene(Scene):
             lines.append(("DOUBLES AT %d" % nxt, DIM))
         elif not sp.get("mutant") and data.mutants_for(p.species):
             lines.append(("MAY MUTATE AT %d+ HARVESTS" % data.mutation_threshold(p.species), mutant_col))
+        if self.shovel_mode:
+            lines.append(("DIG IT UP (NO SEED BACK)", BAD))
         gfx.tooltip(surf, lines, self.mouse, 88)
+
+    def empty_plot_tooltip(self, surf, plot):
+        """Tooltip for bare soil that something has already claimed."""
+        lines = []
+        if plot.weed:
+            lines += [
+                ("WEEDS", WEED),
+                ("NOBODY CAN PLANT HERE", BAD),
+                ("DIG IT OUT WITH THE SHOVEL (X)", TEXT),
+                ("COSTS $%d IF LEFT TO THE BUZZER" % WEED_FEE, DIM),
+                ("A METEOR WOULD BURN IT, TOO", DIM),
+            ]
+        if plot.starlit:
+            lines += [
+                ("STARDUST SOIL", ACCENT),
+                ("YOUR NEXT CROP HERE IS STARLIT: X1.5", GOOD),
+                ("THE DUST SURVIVES PLANTING, NOT SHOVELLING", DIM),
+            ]
+        gfx.tooltip(surf, lines, self.mouse, 100)
+
+    def hazard_note(self):
+        """What the active hazard has actually done this round, for the forecast."""
+        run = self.run
+        bits = []
+        sick = run.diseased_count()
+        if sick:
+            bits.append("%d PLOT%s SICK - SHOVEL THEM" % (sick, "" if sick == 1 else "S"))
+        weeds = run.weedy_count()
+        if weeds:
+            bits.append("%d WEED%s TO DIG" % (weeds, "" if weeds == 1 else "S"))
+        aphids = sum(1 for p in run.plots if p.species and p.aphids)
+        if aphids:
+            bits.append("%d WITH APHIDS - WATER THEM" % aphids)
+        starlit = sum(1 for p in run.plots if p.starlit)
+        if starlit:
+            bits.append("%d STARLIT PLOT%s" % (starlit, "" if starlit == 1 else "S"))
+        return ". ".join(bits)

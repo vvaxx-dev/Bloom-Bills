@@ -45,6 +45,16 @@ class GameOverScene(Scene):
             gfx.draw_text(surf, "NEW BEST ROUND!", 160, 64, ACCENT, align="center")
         else:
             gfx.draw_text(surf, "BEST ROUND: %d" % self.app.profile["best_round"], 160, 64, DIM, align="center")
+        # Moss closes the ledger in one line, kept short so it cannot compete
+        # with the headline above it.
+        epitaph = (
+            "MOSS: SHE'D HAVE CROPPED THE OTHER PLOTS AND PAID IT ANYWAY."
+            if not won and not result.get("cause")
+            else "MOSS: I TOLD YOU TO KEEP STILL AROUND THAT SNAIL."
+            if result.get("cause") == "snail"
+            else "MOSS: NOW GO AND DO THE ROWS PROPERLY."
+        )
+        gfx.draw_text(surf, gfx.fit_text(epitaph, CANVAS_W - 16), 160, 71, DIM, align="center")
 
         gfx.rect(surf, PANEL_DARK, 50, 78, 220, 1)
         gfx.draw_text(surf, "HEIRLOOMS EARNED THIS RUN", 160, 82, DIM, align="center")

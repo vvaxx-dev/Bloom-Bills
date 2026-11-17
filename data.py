@@ -1,9 +1,15 @@
 """Static game content and balance tables: plants, mutants, packs, relics, weather, and perks."""
 
 try:
-    from .settings import COMPOST_WINDOW, SEASON_LENGTH
+    from .settings import (
+        APHID_PERIOD, COMPOST_WINDOW, CONTAGION_PERIOD, DISEASE_PERIOD, METEOR_PERIOD,
+        SEASON_LENGTH, WEED_PERIOD,
+    )
 except ImportError:
-    from settings import COMPOST_WINDOW, SEASON_LENGTH
+    from settings import (
+        APHID_PERIOD, COMPOST_WINDOW, CONTAGION_PERIOD, DISEASE_PERIOD, METEOR_PERIOD,
+        SEASON_LENGTH, WEED_PERIOD,
+    )
 
 RARITY_COLORS = {
     "common": (200, 196, 210),
@@ -50,40 +56,65 @@ def sort_by_rarity(ids, table=None):
 PLANTS = {
     "crystal_bloom": {"name": "Crystal Bloom", "tags": ["flower"], "grow": 25, "yield": 200, "sell": 350,
                       "rarity": "legendary", "color": (100, 210, 250), "mature_bonus": 20, "no_mutations": True,
-                      "note": "+$20 base harvest per full second spent mature. Auto-harvest collects immediately."},
-    "daisy":          {"name": "Daisy",              "tags": ["flower"],                      "grow": 5,  "yield": 2,   "sell": 4,   "rarity": "common",    "color": (245, 240, 230)},
-    "tomato":         {"name": "Tomato",             "tags": ["veg", "fruit"],                "grow": 8,  "yield": 6,   "sell": 10,  "rarity": "common",    "color": (214, 64, 56)},
-    "sunflower":      {"name": "Sunflower",          "tags": ["flower"],                      "grow": 11, "yield": 14,  "sell": 24,  "rarity": "uncommon",  "color": (250, 210, 70)},
-    "cactus":         {"name": "Cactus",             "tags": ["desert"],                      "grow": 15, "yield": 36,  "sell": 60,  "rarity": "uncommon",  "color": (88, 170, 72)},
-    "pumpkin":        {"name": "Pumpkin",            "tags": ["veg", "fruit"],                "grow": 20, "yield": 90,  "sell": 150, "rarity": "rare",      "color": (240, 140, 50)},
-    "orchid":         {"name": "Golden Orchid",      "tags": ["flower", "rare"],              "grow": 28, "yield": 300, "sell": 500, "rarity": "legendary", "color": (250, 190, 60)},
-    "brown_mushroom": {"name": "Brown Mushroom",     "tags": ["nocturnal", "mushroom"],       "grow": 5,  "yield": 3,   "sell": 6,   "rarity": "common",    "color": (170, 130, 90)},
-    "red_mushroom":   {"name": "Red Mushroom",       "tags": ["nocturnal", "mushroom"],       "grow": 9,  "yield": 15,  "sell": 28,  "rarity": "uncommon",  "color": (220, 70, 60)},
-    "moonflower":     {"name": "Moonflower",         "tags": ["nocturnal", "flower"],         "grow": 14, "yield": 42,  "sell": 75,  "rarity": "rare",      "color": (150, 190, 250)},
-    "queen_night":    {"name": "Queen of the Night", "tags": ["nocturnal", "flower"],         "grow": 30, "yield": 340, "sell": 540, "rarity": "legendary", "color": (180, 120, 240)},
-    "devil_ivy":      {"name": "Devil's Ivy",        "tags": ["nocturnal", "cursed", "flower"], "grow": 6, "yield": 60,  "sell": 95,  "rarity": "rare",      "color": (120, 220, 110), "upkeep": 60},
-    "widow_bloom":    {"name": "Widow's Bloom",      "tags": ["nocturnal", "cursed", "flower"], "grow": 18, "yield": 260, "sell": 420, "rarity": "legendary", "color": (230, 60, 90),  "aura": "jealous"},
-    "potato":         {"name": "Potato",             "tags": ["veg", "root"],                 "grow": 6,  "yield": 5,   "sell": 9,   "rarity": "common",    "color": (196, 158, 104)},
-    "wheat":          {"name": "Wheat",              "tags": ["grain"],                       "grow": 9,  "yield": 13,  "sell": 22,  "rarity": "common",    "color": (230, 200, 110)},
-    "corn":           {"name": "Corn",               "tags": ["veg", "grain"],                "grow": 12, "yield": 26,  "sell": 44,  "rarity": "uncommon",  "color": (250, 220, 80)},
-    "carrot":         {"name": "Carrot",             "tags": ["veg", "root"],                 "grow": 10, "yield": 19,  "sell": 32,  "rarity": "uncommon",  "color": (236, 122, 48)},
-    "cranberries":    {"name": "Cranberries",        "tags": ["fruit", "berry"],              "grow": 18, "yield": 72,  "sell": 125, "rarity": "rare",      "color": (198, 44, 74)},
-    "saffron":        {"name": "Saffron",            "tags": ["flower", "spice"],             "grow": 26, "yield": 285, "sell": 490, "rarity": "legendary", "color": (226, 128, 68)},
+                      "note": "+$20 base harvest per full second spent mature. Auto-harvest collects immediately.",
+                      "lore": "Sits ripe and pays more the longer you let it stare at you. Patience, it turns out, is a crop."},
+    "daisy":          {"name": "Daisy",              "tags": ["flower"],                      "grow": 5,  "yield": 2,   "sell": 4,   "rarity": "common",    "color": (245, 240, 230),
+                       "lore": "The first thing she planted and the last thing she sold. Two dollars is two dollars with a letter on the table."},
+    "tomato":         {"name": "Tomato",             "tags": ["veg", "fruit"],                "grow": 8,  "yield": 6,   "sell": 10,  "rarity": "common",    "color": (214, 64, 56),
+                       "lore": "Grew under the kitchen window so she could shout at it while the kettle boiled."},
+    "sunflower":      {"name": "Sunflower",          "tags": ["flower"],                      "grow": 11, "yield": 14,  "sell": 24,  "rarity": "uncommon",  "color": (250, 210, 70),
+                       "lore": "Tall enough to shade the deed box. She called these the interest payments."},
+    "cactus":         {"name": "Cactus",             "tags": ["desert"],                      "grow": 15, "yield": 36,  "sell": 60,  "rarity": "uncommon",  "color": (88, 170, 72),
+                       "lore": "Plant it, forget it. Her description of half her marriages."},
+    "pumpkin":        {"name": "Pumpkin",            "tags": ["veg", "fruit"],                "grow": 20, "yield": 90,  "sell": 150, "rarity": "rare",      "color": (240, 140, 50),
+                       "lore": "The whole valley grew pumpkins the year the mill closed."},
+    "orchid":         {"name": "Golden Orchid",      "tags": ["flower", "rare"],              "grow": 28, "yield": 300, "sell": 500, "rarity": "legendary", "color": (250, 190, 60),
+                       "lore": "The only crop that ever cleared a bill on its own. She kept two plants and no illusions."},
+    "brown_mushroom": {"name": "Brown Mushroom",     "tags": ["nocturnal", "mushroom"],       "grow": 5,  "yield": 3,   "sell": 6,   "rarity": "common",    "color": (170, 130, 90),
+                       "lore": "Cellar money: small, quick, and unbothered by anything the sky does."},
+    "red_mushroom":   {"name": "Red Mushroom",       "tags": ["nocturnal", "mushroom"],       "grow": 9,  "yield": 15,  "sell": 28,  "rarity": "uncommon",  "color": (220, 70, 60),
+                       "lore": "Bright enough to read by. Moss swears the cellar lights itself on a good year."},
+    "moonflower":     {"name": "Moonflower",         "tags": ["nocturnal", "flower"],         "grow": 14, "yield": 42,  "sell": 75,  "rarity": "rare",      "color": (150, 190, 250),
+                       "lore": "Opens for the dark. Her best idea, and she never explained it twice."},
+    "queen_night":    {"name": "Queen of the Night", "tags": ["nocturnal", "flower"],         "grow": 30, "yield": 340, "sell": 540, "rarity": "legendary", "color": (180, 120, 240),
+                       "lore": "Thirty seconds, then a fortune, then the neighbours wake up."},
+    "devil_ivy":      {"name": "Devil's Ivy",        "tags": ["nocturnal", "cursed", "flower"], "grow": 6, "yield": 60,  "sell": 95,  "rarity": "rare",      "color": (120, 220, 110), "upkeep": 60,
+                       "lore": "Charges rent. She called it a tenant plant and gave it the corner bed."},
+    "widow_bloom":    {"name": "Widow's Bloom",      "tags": ["nocturnal", "cursed", "flower"], "grow": 18, "yield": 260, "sell": 420, "rarity": "legendary", "color": (230, 60, 90),  "aura": "jealous",
+                       "lore": "Gorgeous, jealous, and it will halve everything around it. There is a lesson in the will."},
+    "potato":         {"name": "Potato",             "tags": ["veg", "root"],                 "grow": 6,  "yield": 5,   "sell": 9,   "rarity": "common",    "color": (196, 158, 104),
+                       "lore": "Keeps in the ground. Keeps in the cellar. Keeps in a will."},
+    "wheat":          {"name": "Wheat",              "tags": ["grain"],                       "grow": 9,  "yield": 13,  "sell": 22,  "rarity": "common",    "color": (230, 200, 110),
+                       "lore": "Cheap, fast, and the reason the south fence leaned."},
+    "corn":           {"name": "Corn",               "tags": ["veg", "grain"],                "grow": 12, "yield": 26,  "sell": 44,  "rarity": "uncommon",  "color": (250, 220, 80),
+                       "lore": "Tall enough to hide in, which is how you and your cousins spent one entire summer."},
+    "carrot":         {"name": "Carrot",             "tags": ["veg", "root"],                 "grow": 10, "yield": 19,  "sell": 32,  "rarity": "uncommon",  "color": (236, 122, 48),
+                       "lore": "Pulls early, sells late. A good trick to learn from a root."},
+    "cranberries":    {"name": "Cranberries",        "tags": ["fruit", "berry"],              "grow": 18, "yield": 72,  "sell": 125, "rarity": "rare",      "color": (198, 44, 74),
+                       "lore": "Bogs on the north edge. Nobody else wanted that corner."},
+    "saffron":        {"name": "Saffron",            "tags": ["flower", "spice"],             "grow": 26, "yield": 285, "sell": 490, "rarity": "legendary", "color": (226, 128, 68),
+                       "lore": "Twenty-six seconds for a fortune, if you can sit still that long."},
     "aloe_vera":      {"name": "Aloe Vera",          "tags": ["desert", "succulent"],         "grow": 13, "yield": 30,  "sell": 52,  "rarity": "uncommon",  "color": (120, 200, 130),
-                       "note": "Thick leaves hold water: a steady desert earner."},
+                       "note": "Thick leaves hold water: a steady desert earner.",
+                       "lore": "It holds water the way she held grudges: slowly, and for years."},
     "prickly_pear":   {"name": "Prickly Pear",       "tags": ["desert", "fruit"],             "grow": 17, "yield": 55,  "sell": 95,  "rarity": "rare",      "color": (202, 92, 148),
-                       "note": "Slow and spiny, with fruit worth the wait."},
+                       "note": "Slow and spiny, with fruit worth the wait.",
+                       "lore": "Slow and spiny, and worth the wait, like this whole family."},
     "agave":          {"name": "Agave",              "tags": ["desert", "flower"],            "grow": 24, "yield": 180, "sell": 300, "rarity": "legendary", "color": (150, 195, 170),
-                       "note": "The twin flower: one tall bloom and a huge payday."},
+                       "note": "The twin flower: one tall bloom and a huge payday.",
+                       "lore": "One flower, once, then a huge payday. She approved of the economics."},
     "four_leaf_clover": {"name": "Four-Leaf Clover", "tags": ["flower", "lucky"],             "grow": 11, "yield": 3,   "sell": 12,  "rarity": "uncommon",  "color": (110, 200, 110),
                        "pays": False, "bloom_chance": 0.25, "bloom_mult": 1.5,
-                       "note": "Pays nothing itself. Each harvest has a 25% chance to x1.5 a neighbour's base harvest for the round."},
+                       "note": "Pays nothing itself. Each harvest has a 25% chance to x1.5 a neighbour's base harvest for the round.",
+                         "lore": "Pays nothing itself and makes the neighbours rich. She had a few friends like that."},
     "venus_flytrap":  {"name": "Venus Flytrap",      "tags": ["carnivore"],                   "grow": 12, "yield": 4,   "sell": 16,  "rarity": "rare",      "color": (200, 70, 100),
                        "feed": 2,
-                       "note": "A poor payer alone, but every harvest anywhere feeds it $2 toward its next bite."},
+                       "note": "A poor payer alone, but every harvest anywhere feeds it $2 toward its next bite.",
+                       "lore": "It eats what eats her beans. She considered that a partnership, not a pet."},
     "mycelium":       {"name": "Mycelium",           "tags": ["mushroom", "fungus"],          "grow": 8,  "yield": 6,   "sell": 12,  "rarity": "uncommon",  "color": (222, 204, 168),
                        "network": 0.12, "spread": 0.10, "spread_cap": 3, "no_mutations": True,
-                       "note": "Creeps into empty plots to its left, right, up or down: roughly one harvest in twenty spreads the patch, and the patch grows one free plot every 20s. Each connected mycelium adds +12% to the whole patch, and one seed grows at most 3 extra plots a round."},
+                       "note": "Creeps into empty plots to its left, right, up or down: roughly one harvest in twenty spreads the patch, and the patch grows one free plot every 20s. Each connected mycelium adds +12% to the whole patch, and one seed grows at most 3 extra plots a round.",
+                       "lore": "The network under the shed floor. She watered it once, in 1991, and never again."},
 }
 FARMER_PLANTS = ["potato", "wheat", "corn", "carrot", "cranberries", "saffron"]
 DESERT_PLANTS = ["cactus", "aloe_vera", "prickly_pear", "agave"]
@@ -486,6 +517,7 @@ for _cid, _entry in CROSSBREEDS.items():
     _entry["crossbreed"] = True
     _entry["no_mutations"] = True
     PLANTS[_cid] = _entry
+
 CROSSBREED_ORDER = sort_by_rarity(list(CROSSBREEDS))
 
 # Board membership for crossbreeds: nocturnal crosses live in the cellar and
@@ -628,7 +660,8 @@ def free_pack_weight(kind, rnd):
 RELICS = {
     "clear_skies": {"name": "Clear Skies", "rarity": "exquisite", "cost": 1000,
                     "desc": "50% chance at halfway to clear any weather or boss for the rest of the round.",
-                    "effects": {"clear_weather": True}},
+                    "effects": {"clear_weather": True},
+                    "lore": "Half the valley swears she could talk a storm round. Moss swears the other half."},
     "chosen_bloom": {"name": "Chosen Bloom", "rarity": "exquisite", "cost": 1000,
                      "desc": "Click this relic, then choose one plant per round: grows 50% faster, harvests x2.",
                      "effects": {"choose_plant": True}},
@@ -641,10 +674,12 @@ RELICS = {
                       "desc": "Watering lasts 2s longer.",
                       "effects": {"water_time": 2},
                       "levels": [{"stat": "water", "goal": 150, "effects": {"water_time": 1},
-                                  "desc": "Watering lasts 3s longer total."}]},
+                                  "desc": "Watering lasts 3s longer total."}],
+                      "lore": "Two extra seconds of soak per plot. She measured a good watering in curses, not litres."},
     "compost":       {"name": "Compost Heap",   "rarity": "common",   "cost": 130,
                       "desc": "In the last %ds of each round, harvests and plant sales pay x2." % int(COMPOST_WINDOW),
-                      "effects": {"compost_window": COMPOST_WINDOW, "compost_mult": 2.0}},
+                      "effects": {"compost_window": COMPOST_WINDOW, "compost_mult": 2.0},
+                      "lore": "Everything the garden could not use became the thing that made it grow. Moss explains this one slowly."},
     "fertilizer":    {"name": "Fertilizer",     "rarity": "common",   "cost": 145,
                       "desc": "All plants grow 20% faster.",
                       "effects": {"growth": 0.2},
@@ -652,10 +687,12 @@ RELICS = {
                                   "desc": "All plants grow 40% faster total."}]},
     "almanac":       {"name": "Almanac",        "rarity": "common",   "cost": 165,
                       "desc": "Rounds last 10s longer.",
-                      "effects": {"round_time": 10}},
+                      "effects": {"round_time": 10},
+                      "lore": "Ten more seconds of day, in her handwriting, with the useful pages dog-eared."},
     "piggy_bank":    {"name": "Piggy Bank",     "rarity": "uncommon", "cost": 475,
                       "desc": "Earn 5% interest on your cash after each round.",
-                      "effects": {"interest": 0.05}},
+                      "effects": {"interest": 0.05},
+                      "lore": "Found in the coal scuttle with your name scratched in it. It was already cracked."},
     "monoculture":   {"name": "Monoculture",    "rarity": "uncommon", "cost": 500,
                       "desc": "x2.5 harvests if every plant is the same kind.",
                       "effects": {"mono_mult": 2.5}},
@@ -672,13 +709,15 @@ RELICS = {
                       "desc": "All harvests x1.5.",
                       "effects": {"yield_mult": [("all", 1.5)]},
                       "levels": [{"stat": "harvest", "goal": 400, "effects": {"yield_mult": [("all", 0.5)]},
-                                  "desc": "All harvests x2.25 total."}]},
+                                  "desc": "All harvests x2.25 total."}],
+                      "lore": "Her first defence against the flock and her last defence against company."},
     "clover":        {"name": "Lucky Clover",   "rarity": "rare",     "cost": 650,
                       "desc": "Rare seeds are twice as likely in packs.",
                       "effects": {"pack_luck": 2.0}},
     "gardener":      {"name": "Hired Gardener", "rarity": "rare",     "cost": 760,
                       "desc": "Plots water themselves, non-stop.",
-                      "effects": {"auto_water": True}},
+                      "effects": {"auto_water": True},
+                      "lore": "Hired once, in a bad October, and never fired. The can has not been dry since."},
     "spore_lantern": {"name": "Spore Lantern",  "rarity": "uncommon", "cost": 600,
                       "desc": "Mushroom harvests x2.",
                       "effects": {"yield_mult": [("mushroom", 2.0)]},
@@ -690,21 +729,26 @@ RELICS = {
                       ]},
     "catalog":       {"name": "Seed Catalog",   "rarity": "rare",     "cost": 700,
                       "desc": "One extra free pack each round.",
-                      "effects": {"free_packs": 1}},
+                      "effects": {"free_packs": 1},
+                      "lore": "Order what you do not have. She had the last page torn out, on purpose."},
     "greenhouse":    {"name": "Greenhouse",     "rarity": "rare",     "cost": 850,
                       "desc": "All harvests x2. Plants grow 10% faster.",
-                      "effects": {"yield_mult": [("all", 2.0)], "growth": 0.1}},
+                      "effects": {"yield_mult": [("all", 2.0)], "growth": 0.1},
+                      "lore": "Built from the parlour windows of the house next door, which she insisted was a loan."},
     "mutagen":       {"name": "Mutagen",        "rarity": "rare",     "cost": 800,
                       "desc": "25% chance a seed sprouts already mutated. Mutants are 1.2x better.",
                       "effects": {"mutate_on_plant": 0.25, "mutant_bonus": 0.2},
                       "levels": [{"stat": "harvest", "goal": 200, "effects": {"mutate_on_plant": 0.15},
-                                  "desc": "40% chance to sprout mutated. Mutants are 1.2x better."}]},
+                                  "desc": "40% chance to sprout mutated. Mutants are 1.2x better."}],
+                      "lore": "Kept in a lemonade bottle under the bench. Do not ask what was in it, ask what it did."},
     "time_capsule":  {"name": "Time Capsule", "rarity": "rare", "cost": 780,
                       "desc": "Every 10s, bank 25% of the harvest money earned in the previous 10s.",
-                      "effects": {"capsule_period": 10.0, "capsule_share": 0.25}},
+                      "effects": {"capsule_period": 10.0, "capsule_share": 0.25},
+                      "lore": "A jam jar of coins buried for every round. 'Money waits better than people do.'"},
     "stock_market":  {"name": "Stock Market", "rarity": "rare", "cost": 720,
                       "desc": "Each round one species you own sells for 2x when the round ends.",
-                      "effects": {"stock_market": 2.0}},
+                      "effects": {"stock_market": 2.0},
+                      "lore": "She never left this valley, and somehow always knew what the market was doing."},
     "collector":     {"name": "The Collector", "rarity": "rare", "cost": 820,
                       "desc": "Every different species planted makes all relic effects 2% stronger.",
                       "effects": {"relic_power": 0.02}},
@@ -713,10 +757,20 @@ RELICS = {
                       "effects": {"bad_weather_growth": 0.20}},
     "friendly_owl":  {"name": "The Friendly Owl", "rarity": "uncommon", "cost": 590,
                       "desc": "Scares off every crow and drops a bonus seed every 12s.",
-                      "effects": {"scare_crows": True, "owl_seed_period": 12.0}},
+                      "effects": {"scare_crows": True, "owl_seed_period": 12.0},
+                      "lore": "A working bird, not a pet. She paid him in mice; he paid her in crows that were not there."},
+    "sulphur_duster": {"name": "Sulphur Duster", "rarity": "uncommon", "cost": 420,
+                       "desc": "Halves every Disease penalty, and neighbours catch it half as often.",
+                       "effects": {"disease_resist": 0.5, "sick_relief": 0.5},
+                       "lore": "Moss keeps a tin of sulphur by the shed door. 'Dust first,' he says. 'Ask your aunt about the low corner later.'"},
+    "lightning_rod":  {"name": "Lightning Rod", "rarity": "rare", "cost": 760,
+                       "desc": "Under this rod a meteor never destroys a crop - every strike only rewrites it into a starlit one.",
+                       "effects": {"rod_protects": True},
+                       "lore": "The barn lost its roof the summer the sky came down. Your aunt bolted this to the doorframe and never paid for repairs."},
     "eternal_snail": {"name": "Eternal Snail", "rarity": "exquisite", "cost": 1000,
                       "desc": "All plants grow 30% faster. A cursed snail follows your cursor: if it catches you, the run ends.",
-                      "effects": {"growth": 0.30, "cursor_snail": True}},
+                      "effects": {"growth": 0.30, "cursor_snail": True},
+                      "lore": "Everything grows faster here, and something slow is always behind you. That is the whole deal."},
 }
 RELIC_ORDER = sort_by_rarity(list(RELICS), RELICS)
 
@@ -759,59 +813,100 @@ TWISTS = {
     # banner are a single 320px row, so every twist needs a line that fits; the
     # full `desc` stays in tooltips and the Garden Index where it can wrap.
     "none":          {"name": "Fair Weather",  "desc": "No weather. Smooth sailing.",        "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "neutral",
-                      "short": "NO WEATHER. SMOOTH SAILING."},
+                      "short": "NO WEATHER. SMOOTH SAILING.",
+                      "lore": "Your aunt called a still day 'the garden catching its breath'. It is the forecast you get least."},
     "still":         {"name": "Dead Calm",     "desc": "Nothing stirs. A quiet day.",        "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "neutral",
-                      "short": "NOTHING STIRS. A QUIET DAY."},
+                      "short": "NOTHING STIRS. A QUIET DAY.",
+                      "lore": "Nothing moves. Moss says that is either a blessing or the valley holding its breath."},
     "sunny":         {"name": "Sunny Day",     "desc": "All plants grow 25% faster.",        "growth": 1.25, "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "good",
-                      "short": "ALL PLANTS GROW 25% FASTER."},
+                      "short": "ALL PLANTS GROW 25% FASTER.",
+                      "lore": "Sunlight is the one thing on this place that was never mortgaged."},
     "rain":          {"name": "Rain",          "desc": "Crops water themselves all round.",  "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "rain": True, "tone": "good",
-                      "short": "CROPS WATER THEMSELVES ALL ROUND."},
+                      "short": "CROPS WATER THEMSELVES ALL ROUND.",
+                      "lore": "'Let the sky do the chores,' says the shed door, in her handwriting."},
     "market":        {"name": "Market Day",    "desc": "Harvests are worth 25% more.",       "growth": 1.0,  "yield": 1.25, "time": 0,   "ban": None,     "blight": False, "tone": "good",
-                      "short": "HARVESTS ARE WORTH 25% MORE."},
+                      "short": "HARVESTS ARE WORTH 25% MORE.",
+                      "lore": "The cart road fills at dawn. Everything you grow is worth a quarter more and the whole valley knows it."},
     "eclipse":       {"name": "Eclipse",       "desc": "Dark at noon: nocturnal seeds grow on the surface. Sun-lovers grow 20% slower.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "eclipse": True, "tone": "neutral",
-                      "short": "NOCTURNAL SEEDS UP TOP. SUN-LOVERS -20%."},
+                      "short": "NOCTURNAL SEEDS UP TOP. SUN-LOVERS -20%.",
+                      "lore": "The day the birds roost: the dark came down from the sky instead of up from the cellar."},
     "drought":       {"name": "Drought",       "desc": "Plants grow 35% slower.",            "growth": 0.65, "yield": 1.0,  "time": 0,   "ban": None,     "blight": False, "tone": "bad",
-                      "short": "PLANTS GROW 35% SLOWER."},
+                      "short": "PLANTS GROW 35% SLOWER.",
+                      "lore": "Dust to the ankle. She swore timing the watering mattered more than what you planted."},
     "locusts":       {"name": "Locusts",       "desc": "Harvests are worth 40% less.",       "growth": 1.0,  "yield": 0.6,  "time": 0,   "ban": None,     "blight": False, "tone": "bad",
-                      "short": "HARVESTS ARE WORTH 40% LESS."},
+                      "short": "HARVESTS ARE WORTH 40% LESS.",
+                      "lore": "They never eat a leaf. They just make everything you sell worth less, which she called the better trick."},
     "short":         {"name": "Short Days",    "desc": "The round is 20 seconds shorter.",   "growth": 1.0,  "yield": 1.0,  "time": -20, "ban": None,     "blight": False, "tone": "bad",
-                      "short": "THE ROUND IS 20 SECONDS SHORTER."},
+                      "short": "THE ROUND IS 20 SECONDS SHORTER.",
+                      "lore": "That month the light closes the books for you, ready or not."},
     "frost":         {"name": "Frost",         "desc": "Desert plants cannot be planted.",   "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": "desert", "blight": False, "tone": "bad",
-                      "short": "DESERT PLANTS CANNOT BE PLANTED."},
+                      "short": "DESERT PLANTS CANNOT BE PLANTED.",
+                      "lore": "Frost turns desert crops to glass. Anything that can go downstairs, send it down."},
     "blight":        {"name": "Blight",        "desc": "A random plant withers halfway.",    "growth": 1.0,  "yield": 1.0,  "time": 0,   "ban": None,     "blight": True,  "tone": "bad",
-                      "short": "A RANDOM PLANT WITHERS AT HALFWAY."},
+                      "short": "A RANDOM PLANT WITHERS AT HALFWAY.",
+                      "lore": "One plant quits at exactly midday. She called it the tax on standing still."},
+    "weeds":         {"name": "Weeds",         "desc": "Every 12s an empty plot sprouts weeds you cannot plant in, and each one left standing costs $6 at the buzzer.",
+                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "weed": WEED_PERIOD, "tone": "bad",
+                      "short": "EMPTY PLOTS WEED EVERY 12S - DIG THEM OR PAY.",
+                      "lore": "Weeds are not malicious, only patient, and patient costs six dollars a head at the buzzer."},
+    "aphids":        {"name": "Aphids",        "desc": "Every 7s a colony settles on one crop and halves its harvest. Water that plot and they wash off.",
+                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "aphid": APHID_PERIOD, "tone": "bad",
+                      "short": "APHIDS SETTLE EVERY 7S: WATER TO WASH THEM OFF.",
+                      "lore": "Aphids hate two things: water, and a gardener with somewhere to be. Soak the plot and they are gone."},
     "crow_swarm":    {"name": "Crazy Crows!",  "desc": "Every 6s the flock eats a random plant - one at a time, all round. Mutants are 20% less likely to be picked.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "crow": 6, "crow_count": 1,
                       "crow_mutant_weight": 0.8, "tone": "bad",
-                      "short": "THE FLOCK EATS A PLANT EVERY 6S."},
+                      "short": "THE FLOCK EATS A PLANT EVERY 6S.",
+                      "lore": "Six seconds is all the flock needs. An owl works. Pride does not."},
     "hailstorm":     {"name": "Hailstorm",     "desc": "Every 7s hail batters the farm, knocking half of every plant's growth off.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "hail": 7, "tone": "bad",
-                      "short": "HAIL EVERY 7S: EVERY PLANT LOSES HALF ITS GROWTH."},
+                      "short": "HAIL EVERY 7S: EVERY PLANT LOSES HALF ITS GROWTH.",
+                      "lore": "Hail only punishes what is still growing, which is her argument for letting a crop ripen early."},
     "root_rot":      {"name": "Root Rot",      "desc": "Every 8s rot takes a random plant out of the ground.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "rot": 8, "tone": "bad",
-                      "short": "ROT TAKES A PLANT EVERY 8S."},
+                      "short": "ROT TAKES A PLANT EVERY 8S.",
+                      "lore": "Rot is disease with no manners: no warning, no spread, just one plant fewer."},
+    "disease":       {"name": "Disease",       "desc": "Every 15s a crop catches the rot. Sick plants grow at 55% speed and pay 60%, and each one can infect a planted neighbour every 6s. Shovelling is the only cure, and it leaves clean soil.",
+                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True,
+                      "disease": DISEASE_PERIOD, "contagion": CONTAGION_PERIOD, "tone": "bad",
+                      "short": "A CROP SICKENS EVERY 15S, THEN SPREADS. SHOVEL IT.",
+                      "lore": "She always lost the low corner first. Do not nurse a sick crop - dig it out. Half the garden is saved by quitting the other half early."},
+    "meteor_shower": {"name": "Meteor Shower", "desc": "Every 10s a meteor picks a plot at random: 45% chance it flattens whatever grows there, otherwise the crop comes back starlit and worth x1.5. A strike on bare soil leaves stardust for your next seed.",
+                      "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True,
+                      "meteor": METEOR_PERIOD, "tone": "bad",
+                      "short": "EVERY 10S: A PLOT BURNS OR A CROP GOES STARLIT.",
+                      "lore": "The sky comes down this way about once a generation. Bet on the mutation only with a plot you can afford to lose."},
     "heatwave":      {"name": "Heatwave",      "desc": "Water evaporates twice as fast and plants grow 15% slower.",
                       "growth": 0.85, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "dry": 2.0, "tone": "bad",
-                      "short": "GROWTH -15%, WATER DRIES 2X FASTER."},
+                      "short": "GROWTH -15%, WATER DRIES 2X FASTER.",
+                      "lore": "Water dries in half the time. Moss's rule: soak what you are unsure about first."},
     "eternal_night": {"name": "Eternal Night", "desc": "The sun never comes up: nocturnal plants grow up top, sun-lovers sulk.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "eclipse": True, "tone": "bad",
-                      "short": "NOCTURNAL SEEDS UP TOP, SUN-LOVERS SULK."},
+                      "short": "NOCTURNAL SEEDS UP TOP, SUN-LOVERS SULK.",
+                      "lore": "The sun forgets to come up and everything she kept downstairs runs the farm."},
     "gale":          {"name": "Gale",          "desc": "The wind strips 10s off the round and slows every plant 20%.",
                       "growth": 0.8, "yield": 1.0, "time": -10, "ban": None, "blight": False, "boss": True, "tone": "bad",
-                      "short": "ROUND -10S, GROWTH -20%."},
+                      "short": "ROUND -10S, GROWTH -20%.",
+                      "lore": "Ten seconds gone, a fifth of the growth gone. Tie the seed shelf down and plant short."},
     "ghost":         {"name": "The Garden Ghost", "desc": "Every 5s the ghost swaps two plants and restarts both from seed.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "ghost": 5, "autumn_only": True, "tone": "bad",
-                      "short": "EVERY 5S TWO PLANTS SWAP AND RESTART."},
+                      "short": "EVERY 5S TWO PLANTS SWAP AND RESTART.",
+                      "lore": "She is still walking the rows in October. Do not chase her. Note which two plots she swapped, and replant."},
     "queen_bee":     {"name": "Queen Bee",     "desc": "Only flowering plants make honey for the Queen; every other surface plant is dormant.",
                       "growth": 1.0, "yield": 1.0, "time": 0, "ban": None, "blight": False, "boss": True, "honey_only": True, "tone": "bad",
-                      "short": "ONLY FLOWERING PLANTS CAN GROW OR HARVEST."},
+                      "short": "ONLY FLOWERING PLANTS CAN GROW OR HARVEST.",
+                      "lore": "The Queen pays for honey only. Every other crop stands in the bed doing nothing at all."},
 }
-RANDOM_TWISTS = ["drought", "locusts", "short", "frost", "blight", "sunny", "rain", "market", "eclipse"]
+RANDOM_TWISTS = ["drought", "locusts", "short", "frost", "blight", "weeds", "aphids",
+                 "sunny", "rain", "market", "eclipse"]
 MINOR_TWISTS = ["sunny", "rain", "market", "eclipse", "still"]
 BOSS_TWISTS = [
     "crow_swarm", "hailstorm", "ghost", "queen_bee",
     "root_rot", "heatwave", "eternal_night", "gale",
+    # The soil-and-sky hazards are appended rather than inserted, so the boss
+    # each round number lands on never shifts: round 9 is still the crows.
+    "disease", "meteor_shower",
 ]
 
 # `bar` and `trim` tint the run topbar for the season: a dark, legible
@@ -880,6 +975,33 @@ def deep_pockets_rate(level):
 def packs_for_plant(species):
     """Return pack ids whose seed pool contains `species`."""
     return [kind for kind in PACK_ORDER if species in PACKS[kind]["pool"]]
+
+
+# ---------------------------------------------------------------------------
+# Garden lore: the story side of the tables.
+#
+# Bloom & Bills tells its story in the margins rather than in cutscenes, so the
+# `lore` keys sit inside `PLANTS`, `TWISTS`, and `RELICS` on the text the player
+# already reads: the forecast tooltip, the seed shelf, the relic card. Half of
+# them are also honest mechanical hints - "aphids hate water", "a strike on bare
+# soil leaves stardust" - because Moss would never hand over a rule without
+# wrapping it in something Aunt Marigold once said to him. His dialogue in
+# `tutorial.py` speaks these same lines, and never rewrites them.
+
+
+def plant_lore(species):
+    """The line of house history on a plant card; mutants inherit their base crop's."""
+    sp = PLANTS.get(species) or {}
+    if sp.get("lore"):
+        return sp["lore"]
+    if sp.get("mutant"):
+        return (PLANTS.get(sp.get("base")) or {}).get("lore", "")
+    return ""
+
+
+def twist_lore(twist_id):
+    """The line of garden folklore under a forecast, or an empty string."""
+    return (TWISTS.get(twist_id) or {}).get("lore", "")
 
 
 def produces_honey(species):

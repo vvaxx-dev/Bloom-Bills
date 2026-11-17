@@ -78,6 +78,10 @@ class PacksScene(Scene):
         ]
         self.refresh()
         self.announce_season()
+        # Moss talks on the packs screen and nowhere else: it is the one screen a
+        # player is guaranteed to look at before a round, and it has no clock.
+        if hasattr(self.app, "start_story"):
+            self.app.start_story()
 
     def shelf_order(self):
         """Seed shelf order: rarity order, with mystery crossbreeds hidden.
@@ -263,6 +267,27 @@ class PacksScene(Scene):
 
     def sell_all(self):
         self.sell_seed(all_of=True)
+
+    def forecast_lines(self):
+        """The forecast tooltip for the round about to start.
+
+        The lore line is where Moss's warnings live: a forecast is read before
+        every round, so a hint arrives exactly when it is worth something rather
+        than in a cutscene nobody watches twice.
+        """
+        run = self.run
+        twist = run.twist(run.round)
+        tcol = BAD if twist.get("boss") else TONE_COLORS.get(twist.get("tone", "neutral"), TEXT)
+        lines = [
+            ("ROUND %d WEATHER" % run.round, ACCENT),
+            (twist["name"].upper(), tcol),
+            (twist["desc"], TEXT),
+        ]
+        lore = data.twist_lore(run.twist_id(run.round))
+        if lore:
+            lines.append((lore, DIM))
+        lines.append(("ROUND TIME: %dS" % run.round_time(), DIM))
+        return lines
 
     def announce_season(self):
         run = self.run
@@ -477,12 +502,7 @@ class PacksScene(Scene):
                 gfx.tooltip(surf, self.pack_lines(kind), self.mouse, 96)
                 return
         if gfx.inside(self.mouse, FORECAST_BOX):
-            gfx.tooltip(surf, [
-                ("ROUND %d WEATHER" % run.round, ACCENT),
-                (twist["name"].upper(), tcol),
-                (twist["desc"], TEXT),
-                ("ROUND TIME: %dS" % run.round_time(), DIM),
-            ], self.mouse, 120)
+            gfx.tooltip(surf, self.forecast_lines(), self.mouse, 120)
             return
         if self.sell_one_btn.hover(self.mouse) or self.sell_all_btn.hover(self.mouse):
             lines = [("SELL SEEDS", ACCENT)]
@@ -517,6 +537,9 @@ class PacksScene(Scene):
                 lines.append(("PAYS NOTHING ITSELF", ACCENT))
             if sp.get("note"):
                 lines.append((sp["note"], GOOD))
+            lore = data.plant_lore(seed_hover)
+            if lore:
+                lines.append((lore, DIM))
             if twist["ban"] and twist["ban"] in sp["tags"]:
                 lines.append(("BANNED BY %s THIS ROUND!" % twist["name"].upper(), BAD))
             gfx.tooltip(surf, lines, self.mouse, 112)

@@ -11,26 +11,30 @@ import random
 try:
     from . import data
     from .settings import (
-        BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE, CELLAR_SPEED,
-        CLEAR_SKIES_CHANCE, COLS, CRITTER_FEED_VALUE,
+        APHID_SALE, APHID_YIELD, BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE,
+        CELLAR_SPEED, CLEAR_SKIES_CHANCE, COLS, CONTAGION_CHANCE, CRITTER_FEED_VALUE,
+        DISEASE_GROWTH, DISEASE_SALE, DISEASE_YIELD,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
+        METEOR_BONUS, METEOR_DESTROY,
         MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
         QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
         REROLL_BASE_PRICE, ROUND_TIME, SEED_SELL_SHARE, SEEDS_PER_PACK, START_MONEY,
-        START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WIN_QUOTAS,
+        START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WEED_FEE, WEED_SEED_CHANCE, WIN_QUOTAS,
     )
 except ImportError:
     import data
     from settings import (
-        BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE, CELLAR_SPEED,
-        CLEAR_SKIES_CHANCE, COLS, CRITTER_FEED_VALUE,
+        APHID_SALE, APHID_YIELD, BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE,
+        CELLAR_SPEED, CLEAR_SKIES_CHANCE, COLS, CONTAGION_CHANCE, CRITTER_FEED_VALUE,
+        DISEASE_GROWTH, DISEASE_SALE, DISEASE_YIELD,
         LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
+        METEOR_BONUS, METEOR_DESTROY,
         MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
         PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
         QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
         REROLL_BASE_PRICE, ROUND_TIME, SEED_SELL_SHARE, SEEDS_PER_PACK, START_MONEY,
-        START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WIN_QUOTAS,
+        START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WEED_FEE, WEED_SEED_CHANCE, WIN_QUOTAS,
     )
 
 MAX_EVENTS = 300
@@ -53,13 +57,20 @@ class Plot:
     When it fills, one mycelium grows into an empty orthogonal neighbour and
     the whole patch starts filling again, so a patch keeps advancing round
     after round instead of sitting still.
+
+    Hazard state lives here too, and all four flags are per-plot and per-round,
+    so shovelling (which calls `clear()`) is a complete cure:
+    `sick` is Disease, `aphids` is a settled colony that watering washes off,
+    `starlit` is a meteor's rewrite (or stardust left in bare soil), and `weed`
+    marks ground too choked to plant in.
     """
 
     __slots__ = ("species", "progress", "water_left", "water_cd", "harvests", "fed", "gorged", "bloom",
-                 "creep_cd", "mature_time")
+                 "creep_cd", "mature_time", "sick", "aphids", "starlit", "weed")
 
     def __init__(self, species=None, progress=0.0, water_left=0.0, water_cd=0.0, harvests=0,
-                fed=0, gorged=0.0, bloom=1.0, creep_cd=0.0, mature_time=0.0):
+                fed=0, gorged=0.0, bloom=1.0, creep_cd=0.0, mature_time=0.0,
+                sick=False, aphids=False, starlit=False, weed=False):
         self.species = species
         self.progress = progress
         self.water_left = water_left
@@ -70,6 +81,10 @@ class Plot:
         self.bloom = bloom
         self.creep_cd = creep_cd
         self.mature_time = mature_time
+        self.sick = bool(sick)
+        self.aphids = bool(aphids)
+        self.starlit = bool(starlit)
+        self.weed = bool(weed)
 
     def clear(self):
         self.species = None
@@ -82,6 +97,10 @@ class Plot:
         self.bloom = 1.0
         self.creep_cd = 0.0
         self.mature_time = 0.0
+        self.sick = False
+        self.aphids = False
+        self.starlit = False
+        self.weed = False
 
     def to_dict(self):
         return {
@@ -91,6 +110,8 @@ class Plot:
             "gorged": self.gorged, "bloom": self.bloom,
             "creep_cd": self.creep_cd,
             "mature_time": self.mature_time,
+            "sick": self.sick, "aphids": self.aphids,
+            "starlit": self.starlit, "weed": self.weed,
         }
 
     @classmethod
@@ -109,6 +130,10 @@ class Plot:
             float(d.get("bloom", 1.0)),
             float(d.get("creep_cd", 0)),
             float(d.get("mature_time", 0.0)),
+            bool(d.get("sick", False)),
+            bool(d.get("aphids", False)),
+            bool(d.get("starlit", False)),
+            bool(d.get("weed", False)),
         )
 
 
@@ -179,10 +204,30 @@ class Run:
         # Crossbreed seeds discovered this run; the app mirrors these into
         # the persistent profile so the Garden Index stays revealed forever.
         self.discovered_crossbreeds = set()
+        # Story beats already played this run (see `tutorial.py`). Kept in run.json
+        # so reloading a save does not replay a beat the player has seen.
+        self.story_beats = []
+        # Hazard timers: each only advances while its twist is the forecast,
+        # and they are reset by `begin_round` along with the per-plot flags.
+        self.disease_timer = 0.0
+        self.contagion_timer = 0.0
+        self.meteor_timer = 0.0
+        self.weed_timer = 0.0
+        self.aphid_timer = 0.0
+        self.weeds_this_round = 0
 
     def _emit(self, kind, **payload):
         if len(self.events) < MAX_EVENTS:
             self.events.append({"kind": kind, **payload})
+
+    def story_beat_seen(self, beat_id):
+        """Whether Moss has already played this story beat during this run."""
+        return beat_id in self.story_beats
+
+    def mark_story_beat(self, beat_id):
+        """Record a played story beat so a reload does not repeat the dialogue."""
+        if beat_id not in self.story_beats:
+            self.story_beats.append(beat_id)
 
     def perk(self, key):
         return self.perks.get(key, 0)
@@ -539,6 +584,8 @@ class Run:
             speed *= 1.3 if "nocturnal" in data.PLANTS[p.species]["tags"] else 0.8
         if p.water_left > 0:
             speed *= WATER_BOOST
+        if p.sick:
+            speed *= self.disease_factors()[0]
         if p.species:
             speed *= self._plant_speed_mult(p.species)
             speed *= 1.0 + self.synergy_growth(p.species)
@@ -670,6 +717,10 @@ class Run:
         mult *= self.twist()["yield"]
         if self.is_chosen(i, cellar):
             mult *= 2.0
+        # Plot-level hazards reshape the payout last, so Disease and Aphids cut
+        # a bonus just as hard as they cut a base crop, and a starlit plot
+        # multiplies whatever the garden had already decided it was worth.
+        mult *= self.hazard_value_mult(plot)
 
         if "cursed" not in tags:
             has_jealous = any(
@@ -764,11 +815,35 @@ class Run:
             return False
         if self.seeds.get(species, 0) <= 0 or not self.can_plant(species, cellar):
             return False
+        ground = plot_list[i]
+        if ground.weed and not cellar:
+            # Weedy soil has to be dug out first; the seed stays in the tray.
+            return False
         self.seeds[species] -= 1
         planted = self._starting_mutation(species)
-        plot_list[i] = Plot(planted)
+        # Stardust left by a meteor survives the planting and carries into the
+        # new crop, so a strike on bare ground is an investment, not a miss.
+        stardust = bool(ground.starlit) and not cellar
+        ground.clear()
+        ground.species = planted
+        ground.starlit = stardust
+        if stardust:
+            self._emit("stardust", plot=i, cellar=cellar, name=data.PLANTS[planted]["name"])
         if planted != species:
             self._emit("mutate", plot=i, cellar=cellar, name=data.PLANTS[planted]["name"])
+        return True
+
+    def plot_is_weedy(self, i, cellar=False):
+        plot_list = self.cellar_plots if cellar else self.plots
+        return bool(0 <= i < len(plot_list) and plot_list[i].weed and not cellar)
+
+    def clear_weeds(self, i, cellar=False):
+        """Dig out a weed patch, leaving clean soil behind. Returns True if one went."""
+        plot_list = self.cellar_plots if cellar else self.plots
+        if cellar or not (0 <= i < len(plot_list)) or not plot_list[i].weed:
+            return False
+        plot_list[i].weed = False
+        self._emit("weed_clear", plot=i, cellar=False)
         return True
 
     def is_chosen(self, i, cellar=False):
@@ -801,14 +876,24 @@ class Run:
         return True
 
     def remove_plant(self, i, cellar=False):
-        """Uproot the crop in plot `i` without refunding its seed."""
+        """Uproot the crop in plot `i` without refunding its seed.
+
+        Shovelling is also the cure for every plot-level hazard: `clear()` drops
+        the Disease flag, the aphid colony and any stardust along with the crop,
+        and digs out a weed patch, so a dug plot is always clean soil again.
+        """
         plot_list = self.cellar_plots if cellar else self.plots
         if not (0 <= i < len(plot_list)) or plot_list[i].species is None:
+            if self.clear_weeds(i, cellar):
+                return True, "Pulled the weeds."
             return False, "Nothing planted there."
         name = data.PLANTS[plot_list[i].species]["name"]
+        sick = plot_list[i].sick
         plot_list[i].clear()
         if self.chosen_plant == (bool(cellar), i):
             self.chosen_plant = (None, -1)
+        if sick:
+            self._emit("cured", plot=i, cellar=False, name=name)
         return True, "Removed %s." % name
 
     def _starting_mutation(self, species):
@@ -833,6 +918,12 @@ class Run:
         p.water_left = wt
         p.water_cd = wt if self._has("auto_water") else wt + WATER_REST
         self.counters["water"] = self.counters.get("water", 0) + 1
+        if p.aphids:
+            # Aphids hate a soak. The same click that doubles growth also washes
+            # the colony off, so an aphid round is really a tax on your watering
+            # timing - and a Hired Gardener or a Rain day shifts them for free.
+            p.aphids = False
+            self._emit("aphid_wash", plot=i, cellar=False)
         return True
 
     def buy_cellar(self):
@@ -860,6 +951,12 @@ class Run:
         self.hail_timer = 0.0
         self.rot_timer = 0.0
         self.ghost_timer = 0.0
+        self.disease_timer = 0.0
+        self.contagion_timer = 0.0
+        self.meteor_timer = 0.0
+        self.weed_timer = 0.0
+        self.aphid_timer = 0.0
+        self.weeds_this_round = 0
         self.creep_grown = {False: 0, True: 0}
         self.round_income = 0
         self.events = []
@@ -931,6 +1028,8 @@ class Run:
                 plot_speed *= 1.5
             plot_speed *= self._plant_speed_mult(p.species, cellar=cellar)
             plot_speed *= 1.0 + self.synergy_growth(p.species)
+            if p.sick:
+                plot_speed *= self.disease_factors()[0]
             grow = data.PLANTS[p.species]["grow"]
             if self.auto_harvest:
                 p.progress += plot_speed * (dt + (WATER_BOOST - 1.0) * boosted)
@@ -1026,6 +1125,162 @@ class Run:
             self.compost_announced = True
             self._emit("compost", window=int(window))
 
+    def disease_factors(self):
+        """Return the (growth, harvest, sale) multipliers a diseased crop lives with.
+
+        A Sulphur Duster buys relief: every penalty is pulled halfway back toward
+        normal, scaled by the usual relic power. `relief` of 1.0 removes them
+        entirely, so the relic is capped at being a complete answer, not a cure
+        that makes the hazard profitable.
+        """
+        relief = min(1.0, max(0.0, self._sum("sick_relief") * self._relic_scale("sulphur_duster")))
+        # No relief means the raw penalty; full relief means the crop does not
+        # notice the rot at all. Nothing in between is allowed to overshoot.
+        return tuple(base + (1.0 - base) * relief
+                     for base in (DISEASE_GROWTH, DISEASE_YIELD, DISEASE_SALE))
+
+    def hazard_value_mult(self, plot):
+        """Harvest multiplier from plot-level hazards: Disease, Aphids, stardust."""
+        mult = 1.0
+        if plot.sick:
+            mult *= self.disease_factors()[1]
+        if plot.aphids:
+            mult *= APHID_YIELD
+        if plot.starlit:
+            mult *= METEOR_BONUS
+        return mult
+
+    def hazard_sale_mult(self, plot):
+        """The same hazards as an end-of-round sale multiplier."""
+        mult = 1.0
+        if plot.sick:
+            mult *= self.disease_factors()[2]
+        if plot.aphids:
+            mult *= APHID_SALE
+        if plot.starlit:
+            mult *= METEOR_BONUS
+        return mult
+
+    def diseased_count(self):
+        return sum(1 for p in self.plots if p.species and p.sick)
+
+    def weedy_count(self):
+        return sum(1 for p in self.plots if p.weed)
+
+    def infect(self, i, source=None):
+        """Give plot `i` Disease. Shovelling is the only thing that takes it back off."""
+        if not (0 <= i < len(self.plots)):
+            return False
+        plot = self.plots[i]
+        if not plot.species or plot.sick:
+            return False
+        plot.sick = True
+        self._emit("sick", plot=i, cellar=False, source=source,
+                   name=data.PLANTS[plot.species]["name"])
+        return True
+
+    def _disease_case(self):
+        """One new random infection, which is how a Disease round opens."""
+        hosts = [i for i, p in enumerate(self.plots) if p.species and not p.sick]
+        return self.infect(self.rng.choice(hosts)) if hosts else False
+
+    def _disease_spread(self):
+        """Every sick plant rolls once to infect a planted neighbour.
+
+        One roll per sick plot per tick, not one per neighbour, so a ring of
+        crops around a casualty is bad luck rather than a guaranteed wipe - and
+        the whole hazard stays answerable with a shovel and some spacing.
+        """
+        resist = min(1.0, max(0.0, self._sum("disease_resist") * self._relic_scale("sulphur_duster")))
+        # Snapshot the sick plots first. Without this, a plot infected earlier in
+        # the same loop would roll too, and one case would cascade down a whole
+        # row in a single tick - the hazard would be unplayable rather than mean.
+        sick = [i for i, plot in enumerate(self.plots) if plot.species and plot.sick]
+        spread = 0
+        for i in sick:
+            hosts = [n for n in self.neighbours(i)
+                     if self.plots[n].species and not self.plots[n].sick]
+            if not hosts:
+                continue
+            if self.rng.random() < CONTAGION_CHANCE * (1.0 - resist) and self.infect(self.rng.choice(hosts), i):
+                spread += 1
+        return spread
+
+    def _starlit_mutate(self, plot):
+        """A meteor rewrites a crop into one of its mutant forms, when it has any."""
+        sp = data.PLANTS[plot.species]
+        if sp.get("mutant") or sp.get("crossbreed") or sp.get("no_mutations"):
+            return False
+        options = data.mutants_for(plot.species)
+        if not options:
+            return False
+        plot.species = self.rng.choice(options)
+        plot.harvests = 0
+        return True
+
+    def _meteor_strike(self):
+        """Meteor Shower: one random plot per tick, flattened or made starlit.
+
+        A strike on a crop is a coin flip between losing it and getting a
+        x1.5 mutation; a strike on bare soil leaves stardust there for whatever
+        you plant next, which turns the empty corner of your garden into a
+        thing to aim at. A Lightning Rod removes the downside entirely.
+        """
+        if not self.plots:
+            return False
+        i = self.rng.randrange(len(self.plots))
+        plot = self.plots[i]
+        if plot.weed and not plot.species:
+            plot.weed = False
+            self._emit("meteor", plot=i, cellar=False, name="", destroyed=False, weedy=True)
+            return True
+        if plot.species:
+            if not self._has("rod_protects") and self.rng.random() < METEOR_DESTROY:
+                name = data.PLANTS[plot.species]["name"]
+                plot.clear()
+                self._emit("meteor", plot=i, cellar=False, name=name, destroyed=True)
+                return True
+            mutated = self._starlit_mutate(plot)
+            plot.starlit = True
+            self._emit("meteor", plot=i, cellar=False, name=data.PLANTS[plot.species]["name"],
+                       destroyed=False, mutated=mutated)
+            return True
+        plot.starlit = True
+        self._emit("meteor", plot=i, cellar=False, name="", destroyed=False, stardust=True)
+        return True
+
+    def _sprout_weed(self):
+        """Weeds: colonise an empty plot, preferring ground beside an existing weed."""
+        empty = [i for i, p in enumerate(self.plots) if not p.species and not p.weed]
+        if not empty:
+            return False
+        sown = [i for i, p in enumerate(self.plots) if p.weed]
+        if sown and self.rng.random() < WEED_SEED_CHANCE:
+            for i in self.rng.sample(sown, len(sown)):
+                spots = [n for n in self.neighbours(i)
+                         if not self.plots[n].species and not self.plots[n].weed]
+                if spots:
+                    self._seed_weed(self.rng.choice(spots), i)
+                    return True
+        self._seed_weed(self.rng.choice(empty))
+        return True
+
+    def _seed_weed(self, i, source=None):
+        self.plots[i].weed = True
+        self.weeds_this_round += 1
+        self._emit("weed", plot=i, cellar=False, source=source)
+        return True
+
+    def _aphid_colony(self):
+        """Aphids settle on one crop and halve it until the next watering."""
+        hosts = [i for i, p in enumerate(self.plots) if p.species and not p.aphids]
+        if not hosts:
+            return False
+        i = self.rng.choice(hosts)
+        self.plots[i].aphids = True
+        self._emit("aphid", plot=i, cellar=False, name=data.PLANTS[self.plots[i].species]["name"])
+        return True
+
     def crow_pick(self, alive, twist=None):
         """Pick the plot the flock eats next, weighted by how tasty it looks.
 
@@ -1117,6 +1372,42 @@ class Run:
             while self.ghost_timer >= ghost:
                 self.ghost_timer -= ghost
                 self._ghost_swap()
+
+        # Hazards that mark the soil rather than just taking a crop out of it.
+        # All four are surface-only: the cellar stays dry, dark and unbothered.
+        disease = tw.get("disease")
+        if disease:
+            self.disease_timer += dt
+            while self.disease_timer >= disease:
+                self.disease_timer -= disease
+                self._disease_case()
+            contagion = tw.get("contagion")
+            if contagion:
+                self.contagion_timer += dt
+                while self.contagion_timer >= contagion:
+                    self.contagion_timer -= contagion
+                    self._disease_spread()
+
+        meteor = tw.get("meteor")
+        if meteor:
+            self.meteor_timer += dt
+            while self.meteor_timer >= meteor:
+                self.meteor_timer -= meteor
+                self._meteor_strike()
+
+        weed = tw.get("weed")
+        if weed:
+            self.weed_timer += dt
+            while self.weed_timer >= weed:
+                self.weed_timer -= weed
+                self._sprout_weed()
+
+        aphid = tw.get("aphid")
+        if aphid:
+            self.aphid_timer += dt
+            while self.aphid_timer >= aphid:
+                self.aphid_timer -= aphid
+                self._aphid_colony()
 
         if self.time_left <= 1e-9:
             self.time_left = 0.0
@@ -1456,6 +1747,12 @@ class Run:
         sale = 0
         stock_effect = self._sum("stock_market") if self.stock_species else 1.0
         stock_mult = 1.0 + max(0.0, stock_effect - 1.0) * self._relic_scale("stock_market")
+        # Weeds are charged as "lawn rent": every patch still standing when the
+        # buzzer goes costs WEED_FEE, which is what makes an ignored corner of
+        # the garden a real decision rather than free blocked soil. It is
+        # itemised separately from cursed upkeep on the summary.
+        weed_count = sum(1 for p in self.plots if p.weed)
+        weed_fee = WEED_FEE * weed_count
         for group in (self.plots, self.cellar_plots):
             for p in group:
                 if p.species:
@@ -1463,12 +1760,12 @@ class Run:
                     upkeep += sp.get("upkeep", 0)
                     frac = min(1.0, p.progress / sp["grow"])
                     pick_mult = stock_mult if p.species == self.stock_species else 1.0
-                    sale += int(sp["sell"] * frac * sale_mult * pick_mult)
+                    sale += int(sp["sell"] * frac * sale_mult * pick_mult * self.hazard_sale_mult(p))
                 p.clear()
 
         self.money += sale
         self.total_earned += sale
-        self.money = max(0, self.money - upkeep)
+        self.money = max(0, self.money - upkeep - weed_fee)
 
         rate = self.interest_rate()
         interest = max(1, int(round(self.money * rate, 9))) if (self.money > 0 and rate > 0) else 0
@@ -1484,7 +1781,7 @@ class Run:
             "round": self.round,
             "harvest": self.round_income,
             "earned": self.round_income + sale + interest,
-            "net": self.round_income + sale + interest - upkeep,
+            "net": self.round_income + sale + interest - upkeep - weed_fee,
             "sale": sale,
             "interest": interest,
             "interest_rate": rate,
@@ -1492,6 +1789,8 @@ class Run:
             "paid": None,
             "money": self.money,
             "upkeep": upkeep,
+            "weed_fee": weed_fee,
+            "weeds": weed_count,
             "victory": False,
             "twist": self.twist_id(self.round),
             "stock_species": self.stock_species,
@@ -1713,6 +2012,7 @@ class Run:
             "free_offer": self.free_offer, "stock_species": self.stock_species,
             "capsule_timer": self.capsule_timer, "capsule_income": self.capsule_income,
             "owl_timer": self.owl_timer, "snail_bitten": self.snail_bitten,
+            "story_beats": list(self.story_beats),
         }
 
     @classmethod
@@ -1755,6 +2055,8 @@ class Run:
         run.capsule_income = int(d.get("capsule_income", 0))
         run.owl_timer = float(d.get("owl_timer", 0.0))
         run.snail_bitten = bool(d.get("snail_bitten", False))
+        # Story beats already played this run, so a reload does not repeat Moss.
+        run.story_beats = [str(b) for b in d.get("story_beats", []) if isinstance(b, str)]
         run.rerolls = int(d.get("rerolls", 0))
         run.quotas_paid = int(d.get("quotas_paid", 0))
         run.total_earned = int(d.get("total_earned", 0))
