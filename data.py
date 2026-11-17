@@ -1,15 +1,9 @@
 """Static game content and balance tables: plants, mutants, packs, relics, weather, and perks."""
 
-try:
-    from .settings import (
-        APHID_PERIOD, COMPOST_WINDOW, CONTAGION_PERIOD, DISEASE_PERIOD, METEOR_PERIOD,
-        SEASON_LENGTH, WEED_PERIOD,
-    )
-except ImportError:
-    from settings import (
-        APHID_PERIOD, COMPOST_WINDOW, CONTAGION_PERIOD, DISEASE_PERIOD, METEOR_PERIOD,
-        SEASON_LENGTH, WEED_PERIOD,
-    )
+from .settings import (
+    APHID_PERIOD, COMPOST_WINDOW, CONTAGION_PERIOD, DISEASE_PERIOD, METEOR_PERIOD,
+    SEASON_LENGTH, WEED_PERIOD,
+)
 
 RARITY_COLORS = {
     "common": (200, 196, 210),

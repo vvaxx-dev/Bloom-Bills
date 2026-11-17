@@ -60,7 +60,7 @@ class ShopScene(Scene):
         for pos, b in enumerate(self.sell_buttons):
             if pos < len(display_order):
                 rid = run.relics[display_order[pos]]
-                refund = max(1, int(run.relic_price(rid) * 0.5))
+                refund = run.relic_refund(rid)
                 b.label, b.enabled = "SELL $" + fmt(refund), True
             else:
                 b.label, b.enabled = "", False
@@ -89,7 +89,7 @@ class ShopScene(Scene):
         i = order[pos]
         rid = self.run.relics[i]
         rel = data.RELICS[rid]
-        refund = max(1, int(self.run.relic_price(rid) * 0.5))
+        refund = self.run.relic_refund(rid)
         if hasattr(self.app, "ask_confirm"):
             self.app.ask_confirm(
                 "SELL %s?" % rel["name"].upper(),
@@ -265,7 +265,7 @@ class ShopScene(Scene):
             gfx.tooltip(surf, lines, self.mouse, 118)
         elif owned_hover is not None:
             rid = run.relics[owned_hover]
-            refund = max(1, int(run.relic_price(rid) * 0.5))
+            refund = run.relic_refund(rid)
             gfx.tooltip(
                 surf,
                 self._relic_tooltip_lines(rid, [("SELL REFUND: $%s" % fmt(refund), ACCENT)]),

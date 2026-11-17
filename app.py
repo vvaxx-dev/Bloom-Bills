@@ -269,7 +269,14 @@ class App:
         saved = self.saves.load_run()
         if not saved:
             return self.new_run()
-        self.run = Run.from_dict(saved)
+        try:
+            self.run = Run.from_dict(saved)
+        except Exception:
+            # A run snapshot that will not parse cannot be continued: move it
+            # aside and start fresh instead of crashing on Continue every time.
+            backup = self.saves.run_path.with_name(self.saves.run_path.name + ".bak")
+            self.saves.run_path.replace(backup)
+            return self.new_run()
         # Apply any permanent perks bought on the Heirloom Shelf while the run was parked.
         changed = False
         for key, target_lv in self.profile.get("perks", {}).items():

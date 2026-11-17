@@ -35,8 +35,25 @@ class SaveManager:
             return None
 
     def load_profile(self):
-        """Load profile.json, filling missing keys and clamping settings to valid bounds."""
-        profile = self._read_json(self.profile_path) or PROFILE_DEFAULT.copy()
+        """Load profile.json, filling missing keys and clamping settings to valid bounds.
+
+        A corrupt profile.json is moved to profile.json.bak instead of being
+        silently replaced with defaults: the defaults only live in memory
+        until the next save, so the player's heirlooms and crossbreed index
+        are not wiped out from under them.
+        """
+        profile = None
+        if self.profile_path.exists():
+            try:
+                profile = json.loads(self.profile_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                profile = None
+            if not isinstance(profile, dict):
+                backup = self.profile_path.with_name(self.profile_path.name + ".bak")
+                self.profile_path.replace(backup)
+                profile = None
+        if profile is None:
+            profile = PROFILE_DEFAULT.copy()
         for key, value in PROFILE_DEFAULT.items():
             profile.setdefault(key, value.copy() if isinstance(value, dict) else value)
         profile["perks"] = {key: int(value) for key, value in profile["perks"].items()}
@@ -74,7 +91,14 @@ class SaveManager:
         _atomic_write(self.profile_path, profile)
 
     def load_run(self):
-        return self._read_json(self.run_path)
+        """Load the active run snapshot; a corrupt run.json is moved to run.json.bak."""
+        if not self.run_path.exists():
+            return None
+        data = self._read_json(self.run_path)
+        if data is None:
+            backup = self.run_path.with_name(self.run_path.name + ".bak")
+            self.run_path.replace(backup)
+        return data
 
     def save_run(self, run):
         _atomic_write(self.run_path, run)

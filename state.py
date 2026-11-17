@@ -8,34 +8,19 @@ from __future__ import annotations
 import math
 import random
 
-try:
-    from . import data
-    from .settings import (
-        APHID_SALE, APHID_YIELD, BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE,
-        CELLAR_SPEED, CLEAR_SKIES_CHANCE, COLS, CONTAGION_CHANCE, CRITTER_FEED_VALUE,
-        DISEASE_GROWTH, DISEASE_SALE, DISEASE_YIELD,
-        LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
-        METEOR_BONUS, METEOR_DESTROY,
-        MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
-        PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
-        QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
-        REROLL_BASE_PRICE, ROUND_TIME, SEED_SELL_SHARE, SEEDS_PER_PACK, START_MONEY,
-        START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WEED_FEE, WEED_SEED_CHANCE, WIN_QUOTAS,
-    )
-except ImportError:
-    import data
-    from settings import (
-        APHID_SALE, APHID_YIELD, BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE,
-        CELLAR_SPEED, CLEAR_SKIES_CHANCE, COLS, CONTAGION_CHANCE, CRITTER_FEED_VALUE,
-        DISEASE_GROWTH, DISEASE_SALE, DISEASE_YIELD,
-        LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
-        METEOR_BONUS, METEOR_DESTROY,
-        MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
-        PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
-        QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
-        REROLL_BASE_PRICE, ROUND_TIME, SEED_SELL_SHARE, SEEDS_PER_PACK, START_MONEY,
-        START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WEED_FEE, WEED_SEED_CHANCE, WIN_QUOTAS,
-    )
+from . import data
+from .settings import (
+    APHID_SALE, APHID_YIELD, BASE_FREE_PACKS, BOSS_EVERY, CELLAR_PLOTS, CELLAR_PRICE,
+    CELLAR_SPEED, CLEAR_SKIES_CHANCE, COLS, CONTAGION_CHANCE, CRITTER_FEED_VALUE,
+    DISEASE_GROWTH, DISEASE_SALE, DISEASE_YIELD,
+    LATE_ROUND_TIME_DROP, LATE_ROUND_TIME_FLOOR, MAX_PLOTS,
+    METEOR_BONUS, METEOR_DESTROY,
+    MUTATION_CHANCE, MYCELIUM_CREEP_SHARE, MYCELIUM_CREEP_TIME, MYCELIUM_MAX_SPREAD,
+    PLOT_BASE_PRICE, PLOT_PRICE_GROWTH, PRICE_GROWTH,
+    QUOTA_EVERY, RARE_RELIC_PRICE_GROWTH, RELIC_PRICE_GROWTH, RELIC_SLOTS,
+    REROLL_BASE_PRICE, ROUND_TIME, SEED_SELL_SHARE, SEEDS_PER_PACK, START_MONEY,
+    START_PLOTS, WATER_BOOST, WATER_REST, WATER_TIME, WEED_FEE, WEED_SEED_CHANCE, WIN_QUOTAS,
+)
 
 MAX_EVENTS = 300
 
@@ -151,7 +136,10 @@ class Run:
         self.seeds = {}
         self.packs = []
         self.plots = [Plot() for _ in range(min(MAX_PLOTS, START_PLOTS + self.perks.get("plots", 0)))]
-        self.plots_bought = 0
+        # Heirloom plots count toward the price ladder exactly like plots bought
+        # in the shop, so the next plot costs the same whether the garden's
+        # plots came from Spare Plot heirlooms or from purchases during the run.
+        self.plots_bought = self.perks.get("plots", 0)
         self.cellar_plots = [Plot() for _ in range(CELLAR_PLOTS)]
         self.cellar_unlocked = False
         self.relics = []
@@ -191,6 +179,10 @@ class Run:
         self.last_summary = None
         self.pending_bill = 0
         self._relic_lvls = {}
+        # What the player actually paid for each owned relic, so resale refunds
+        # half of the purchase price instead of half of the inflated current
+        # price (which made relic resale arbitrage against the price ladder).
+        self._relic_paid = {}
         self._effects_cache = (None, ())
         self.heirlooms_spent = 0
         self.bill_waivers = 1 if self.perks.get("insurance", 0) else 0
@@ -491,7 +483,7 @@ class Run:
         roll_rng = random.Random(self.seed * 104729 + rnd)
         if roll_rng.random() < 0.6:
             return "none"
-        return random.Random(self.seed * 104729 + rnd).choice(data.MINOR_TWISTS)
+        return roll_rng.choice(data.MINOR_TWISTS)
 
     def twist(self, rnd=None):
         if self.weather_cleared and (rnd is None or rnd == self.round):
@@ -875,6 +867,23 @@ class Run:
         p.mature_time = 0.0
         return True
 
+    def _destroy_plot(self, i, cellar=False):
+        """Clear plot `i`, spending the Chosen Bloom choice if it was on it.
+
+        The shovel already spends the choice (`remove_plant`); blight, crows,
+        meteors and rot must do the same, otherwise replanting the plot keeps
+        the \u00d72 choice alive for the next crop.
+        """
+        plots = self.cellar_plots if cellar else self.plots
+        if (
+            0 <= i < len(plots)
+            and self.chosen_plant == (bool(cellar), i)
+            and plots[i] is self._chosen_ref
+        ):
+            self.chosen_plant = None
+            self._chosen_ref = None
+        plots[i].clear()
+
     def remove_plant(self, i, cellar=False):
         """Uproot the crop in plot `i` without refunding its seed.
 
@@ -1237,7 +1246,7 @@ class Run:
         if plot.species:
             if not self._has("rod_protects") and self.rng.random() < METEOR_DESTROY:
                 name = data.PLANTS[plot.species]["name"]
-                plot.clear()
+                self._destroy_plot(i)
                 self._emit("meteor", plot=i, cellar=False, name=name, destroyed=True)
                 return True
             mutated = self._starlit_mutate(plot)
@@ -1324,7 +1333,7 @@ class Run:
             if alive:
                 victim = self.rng.choice(alive)
                 self._emit("wither", plot=victim, cellar=False)
-                self.plots[victim].clear()
+                self._destroy_plot(victim)
 
         crow = tw.get("crow")
         if crow:
@@ -1340,7 +1349,7 @@ class Run:
                         break
                     victim = self.crow_pick(alive, tw)
                     eaten = data.PLANTS[self.plots[victim].species]["name"]
-                    self.plots[victim].clear()
+                    self._destroy_plot(victim)
                     self._emit("eaten", plot=victim, cellar=False, name=eaten)
 
         hail = tw.get("hail")
@@ -1363,7 +1372,7 @@ class Run:
                 if alive:
                     victim = self.rng.choice(alive)
                     name = data.PLANTS[self.plots[victim].species]["name"]
-                    self.plots[victim].clear()
+                    self._destroy_plot(victim)
                     self._emit("rot", plot=victim, cellar=False, name=name)
 
         ghost = tw.get("ghost")
@@ -1443,11 +1452,21 @@ class Run:
 
     def _grant_owl_seed(self):
         pool = [sid for sid, count in self.seeds.items() if count > 0 and sid in data.PLANTS]
-        pool += [sid for sid in self._planted_species() if sid not in pool]
+        # The owl never hands out crossbreeds or mutants - those seeds are
+        # earned by cross-pollination and mutation alone - and never duplicates
+        # a species already growing somewhere in the garden.
+        pool = [sid for sid in pool
+                if not data.PLANTS[sid].get("crossbreed")
+                and not data.PLANTS[sid].get("mutant")]
         if not pool:
-            # Never hand out a crossbreed here: those seeds are earned by
-            # cross-pollination alone, not dropped by a passing owl.
-            pool = [sid for sid in data.SURFACE_PLANTS if not data.PLANTS[sid].get("crossbreed")]
+            pool = [sid for sid in data.SURFACE_PLANTS
+                    if sid in data.PLANTS
+                    and not data.PLANTS[sid].get("crossbreed")
+                    and not data.PLANTS[sid].get("mutant")]
+        planted = set(self._planted_species())
+        pool = [sid for sid in pool if sid not in planted]
+        if not pool:
+            return
         sid = self.rng.choice(sorted(set(pool)))
         # A flytrap on the board means the owl is hunting over a full garden.
         count = 2 if self._synergy_active(data.RELIC_SYNERGIES["friendly_owl"]) else 1
@@ -1751,13 +1770,16 @@ class Run:
         # buzzer goes costs WEED_FEE, which is what makes an ignored corner of
         # the garden a real decision rather than free blocked soil. It is
         # itemised separately from cursed upkeep on the summary.
+        # Flat penalties scale with the round so they stay relevant while the
+        # bills escalate: $6 weeds and $60 cursed upkeep round 1 are trivial by
+        # round 24, so both grow with the farm.
         weed_count = sum(1 for p in self.plots if p.weed)
-        weed_fee = WEED_FEE * weed_count
+        weed_fee = WEED_FEE * self.round * weed_count
         for group in (self.plots, self.cellar_plots):
             for p in group:
                 if p.species:
                     sp = data.PLANTS[p.species]
-                    upkeep += sp.get("upkeep", 0)
+                    upkeep += sp.get("upkeep", 0) * self.round
                     frac = min(1.0, p.progress / sp["grow"])
                     pick_mult = stock_mult if p.species == self.stock_species else 1.0
                     sale += int(sp["sell"] * frac * sale_mult * pick_mult * self.hazard_sale_mult(p))
@@ -1896,6 +1918,18 @@ class Run:
             return 0
         return self.relic_price(self.shop_offers[index])
 
+    def relic_refund(self, rid, paid=None):
+        """Refund for selling relic `rid`: half of what the player paid for it.
+
+        `paid` overrides the remembered purchase price (used for saves that
+        predate this field). Basing the refund on the price actually paid -
+        not the inflated current price - makes relic resale stop being
+        arbitrage against the price ladder.
+        """
+        if paid is None:
+            paid = self._relic_paid.get(rid, self.relic_price(rid))
+        return int(paid * 0.5)
+
     def reroll_price(self):
         return int(REROLL_BASE_PRICE * 2.0 ** self.rerolls * RELIC_PRICE_GROWTH ** (self.round - 1))
 
@@ -1919,6 +1953,7 @@ class Run:
         if self.money < price:
             return False, "Not enough money."
         self.money -= price
+        self._relic_paid[rid] = price
         self.relics.append(rid)
         self._relic_lvls[rid] = self.relic_level(rid)
         self.shop_offers[index] = None
@@ -1931,7 +1966,8 @@ class Run:
             return False, "No relic there.", 0
         rid = self.relics.pop(index)
         self._relic_lvls.pop(rid, None)
-        refund = max(1, int(self.relic_price(rid) * 0.5))
+        paid = self._relic_paid.pop(rid, None)
+        refund = self.relic_refund(rid, paid)
         self.money += refund
         return True, "Sold %s for $%d!" % (data.RELICS[rid]["name"], refund), refund
 
@@ -2001,7 +2037,7 @@ class Run:
             "plots": [p.to_dict() for p in self.plots], "plots_bought": self.plots_bought,
             "cellar_plots": [p.to_dict() for p in self.cellar_plots],
             "cellar_unlocked": self.cellar_unlocked,
-            "relics": self.relics, "mastery": self.mastery, "counters": self.counters,
+            "relics": self.relics, "relic_paid": self._relic_paid, "mastery": self.mastery, "counters": self.counters,
             "shop_offers": self.shop_offers, "rerolls": self.rerolls,
             "quotas_paid": self.quotas_paid, "total_earned": self.total_earned,
             "won": self.won, "dead": self.dead, "pending_bill": self.pending_bill,
@@ -2076,6 +2112,9 @@ class Run:
             }
         if run.phase == "shop" and not run.shop_offers:
             run.roll_offers()
+        run._relic_paid = {
+            rid: int(price) for rid, price in d.get("relic_paid", {}).items() if rid in data.RELICS
+        }
         run._relic_lvls = {rid: run.relic_level(rid) for rid in run.relics}
         for group in (run.plots, run.cellar_plots):
             for p in group:
