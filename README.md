@@ -161,7 +161,7 @@ Ambient critters visit in groups of at most three. They crawl, hop, or fly off s
 
 There are 27 relics, each with a 12×12 pixel-art badge. Five slots are available by default; **Relic Cabinet** level 2 gives a sixth. The shop shows three offers by default and four at Relic Cabinet level 3. Rerolling starts at $50, doubles after each reroll in the same shop, and scales with `1.3^(round-1)`.
 
-Relic prices use a base cost, a rarity multiplier (common 1.0, uncommon 1.2, rare 1.45, legendary 1.6, exquisite 1.8), and per-round growth: 1.35× for rare and exquisite relics, 1.3× for the others. Packs rise 1.5× per round, plots triple with each purchase, and bills climb 5× every three rounds (about 1.71× per round) through the eighth bill. Owned relic effects stack for the run, some evolve when their counters reach a goal, and a relic can be sold back for half its current price.
+Relic prices use a base cost, a rarity multiplier (common 1.0, uncommon 1.2, rare 1.45, legendary 1.6, exquisite 1.8), and per-round growth: 1.35× for rare and exquisite relics, 1.3× for the others. Packs rise 1.5× per round, plots triple with each purchase, and bills climb 5× every three rounds (about 1.71× per round) through the eighth bill. Owned relic effects stack for the run, some evolve when their counters reach a goal, and a relic can be sold back for half the price paid for it.
 
 Examples include Monoculture's 2.5× payout for a single-species garden, Biodiversity's +20% harvest per distinct species, Beehive's adjacent-flower bonus, Scarecrow's 1.5× harvests, and Greenhouse's 2× harvests plus 10% growth.
 

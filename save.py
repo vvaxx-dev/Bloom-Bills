@@ -31,7 +31,7 @@ class SaveManager:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else None
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return None
 
     def load_profile(self):
@@ -44,19 +44,35 @@ class SaveManager:
         """
         profile = None
         if self.profile_path.exists():
-            try:
-                profile = json.loads(self.profile_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                profile = None
-            if not isinstance(profile, dict):
+            profile = self._read_json(self.profile_path)
+            if profile is None:
                 backup = self.profile_path.with_name(self.profile_path.name + ".bak")
                 self.profile_path.replace(backup)
-                profile = None
         if profile is None:
-            profile = PROFILE_DEFAULT.copy()
+            profile = {k: v.copy() if isinstance(v, (dict, list)) else v for k, v in PROFILE_DEFAULT.items()}
         for key, value in PROFILE_DEFAULT.items():
-            profile.setdefault(key, value.copy() if isinstance(value, dict) else value)
-        profile["perks"] = {key: int(value) for key, value in profile["perks"].items()}
+            profile.setdefault(key, value.copy() if isinstance(value, (dict, list)) else value)
+
+        for key in ("v", "heirlooms", "best_round", "runs", "wins"):
+            val = profile.get(key)
+            if isinstance(val, bool):
+                profile[key] = PROFILE_DEFAULT[key]
+            else:
+                try:
+                    profile[key] = int(val)
+                except (TypeError, ValueError):
+                    profile[key] = PROFILE_DEFAULT[key]
+
+        raw_perks = profile.get("perks")
+        clean_perks = {}
+        if isinstance(raw_perks, dict):
+            for key, value in raw_perks.items():
+                if not isinstance(value, bool):
+                    try:
+                        clean_perks[str(key)] = int(value)
+                    except (TypeError, ValueError):
+                        pass
+        profile["perks"] = clean_perks
 
         raw_settings = profile.get("settings")
         merged_settings = dict(SETTINGS_DEFAULT)
@@ -72,7 +88,8 @@ class SaveManager:
 
         raw_harvested = profile.get("harvested")
         profile["harvested"] = (
-            {str(k): int(v) for k, v in raw_harvested.items() if isinstance(v, (int, float))}
+            {str(k): int(v) for k, v in raw_harvested.items()
+             if isinstance(v, (int, float)) and not isinstance(v, bool)}
             if isinstance(raw_harvested, dict) else {}
         )
         raw_crossbreeds = profile.get("discovered_crossbreeds")
@@ -85,6 +102,12 @@ class SaveManager:
             [str(x) for x in raw_tutorial if isinstance(x, str)]
             if isinstance(raw_tutorial, list) else []
         )
+        if "story_seen" in profile:
+            raw_story = profile.get("story_seen")
+            profile["story_seen"] = (
+                [str(x) for x in raw_story if isinstance(x, str)]
+                if isinstance(raw_story, list) else []
+            )
         return profile
 
     def save_profile(self, profile):

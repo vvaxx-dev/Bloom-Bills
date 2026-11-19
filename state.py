@@ -870,17 +870,16 @@ class Run:
     def _destroy_plot(self, i, cellar=False):
         """Clear plot `i`, spending the Chosen Bloom choice if it was on it.
 
-        The shovel already spends the choice (`remove_plant`); blight, crows,
-        meteors and rot must do the same, otherwise replanting the plot keeps
-        the \u00d72 choice alive for the next crop.
+        The shovel (`remove_plant`), blight, crows, meteors, rot, and
+        devouring all clear a plot and must spend the choice so replanting
+        does not carry the x2 into the next crop and the choice cannot be
+        re-used in the same round.
         """
         plots = self.cellar_plots if cellar else self.plots
-        if (
-            0 <= i < len(plots)
-            and self.chosen_plant == (bool(cellar), i)
-            and plots[i] is self._chosen_ref
-        ):
-            self.chosen_plant = None
+        if not 0 <= i < len(plots):
+            return
+        if self.chosen_plant == (bool(cellar), i):
+            self.chosen_plant = (None, -1)
             self._chosen_ref = None
         plots[i].clear()
 
@@ -898,9 +897,7 @@ class Run:
             return False, "Nothing planted there."
         name = data.PLANTS[plot_list[i].species]["name"]
         sick = plot_list[i].sick
-        plot_list[i].clear()
-        if self.chosen_plant == (bool(cellar), i):
-            self.chosen_plant = (None, -1)
+        self._destroy_plot(i, cellar)
         if sick:
             self._emit("cured", plot=i, cellar=False, name=name)
         return True, "Removed %s." % name
@@ -1600,7 +1597,7 @@ class Run:
         victim = plot_list[victim_index].species
         gained = data.PLANTS[victim]["yield"] * 0.5
         plot_list[i].gorged += gained
-        plot_list[victim_index].clear()
+        self._destroy_plot(victim_index, cellar)
         self._emit(
             "devour", plot=victim_index, cellar=cellar,
             name=data.PLANTS[victim]["name"], gained=int(round(gained)),
@@ -2066,7 +2063,7 @@ class Run:
         plots = [Plot.from_dict(p) for p in d.get("plots", [])]
         if plots:
             run.plots = plots[:MAX_PLOTS]
-        run.plots_bought = int(d.get("plots_bought", 0))
+        run.plots_bought = int(d.get("plots_bought", run.plots_bought))
         cellar = [Plot.from_dict(p) for p in d.get("cellar_plots", [])]
         if cellar:
             run.cellar_plots = cellar[:MAX_PLOTS]
@@ -2112,9 +2109,15 @@ class Run:
             }
         if run.phase == "shop" and not run.shop_offers:
             run.roll_offers()
-        run._relic_paid = {
-            rid: int(price) for rid, price in d.get("relic_paid", {}).items() if rid in data.RELICS
-        }
+        raw_paid = d.get("relic_paid")
+        run._relic_paid = {}
+        if isinstance(raw_paid, dict):
+            for rid, price in raw_paid.items():
+                if rid in data.RELICS and not isinstance(price, bool):
+                    try:
+                        run._relic_paid[rid] = max(0, int(price))
+                    except (TypeError, ValueError):
+                        pass
         run._relic_lvls = {rid: run.relic_level(rid) for rid in run.relics}
         for group in (run.plots, run.cellar_plots):
             for p in group:

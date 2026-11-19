@@ -1551,6 +1551,119 @@ class RegressionFixTests(unittest.TestCase):
                 else:
                     os.environ["BLOOM_SAVE_DIR"] = old
 
+    def test_chosen_bloom_is_spent_when_plant_is_destroyed(self):
+        for kind in ("crow_swarm", "root_rot", "meteor_shower", "blight", "devour"):
+            with self.subTest(kind=kind):
+                run = Run(seed=1)
+                run.relics = ["chosen_bloom"]
+                run.begin_round()
+                if kind == "devour":
+                    run.plots = [Plot("venus_flytrap_maneater"), Plot("daisy"), Plot(), Plot()]
+                    self.assertTrue(run.choose_plant(1))
+                    run._devour(0)
+                    victim = 1
+                else:
+                    run.twist_id = lambda _rnd=None, k=kind: k
+                    run.begin_round()
+                    run.plots = [Plot("daisy")]
+                    self.assertTrue(run.choose_plant(0))
+                    run.start_timer()
+                    if kind == "blight":
+                        run.update(run.time_total / 2.0 + 0.1)
+                    elif kind == "meteor_shower":
+                        with patch.object(run.rng, "random", return_value=0.0):
+                            run.update(10.1)
+                    else:
+                        run.update(8.1)
+                    victim = 0
+                self.assertIsNone(run.plots[victim].species)
+                self.assertFalse(run.is_chosen(victim))
+                run.plots.append(Plot("daisy"))
+                self.assertFalse(run.choose_plant(len(run.plots) - 1))
+                run.seeds["daisy"] = 1
+                self.assertTrue(run.plant(victim, "daisy"))
+                self.assertFalse(run.is_chosen(victim))
+                self.assertEqual(run.harvest_value(victim), data.PLANTS["daisy"]["yield"])
+
+    def test_spare_plot_price_does_not_depend_on_when_it_is_taken(self):
+        at_start = Run(seed=1, perks={"plots": 4})
+        mid_run = Run(seed=1, perks={})
+        for _ in range(4):
+            ok, _, _ = mid_run.buy_heirloom("plots", 1000)
+            self.assertTrue(ok)
+        self.assertEqual(len(at_start.plots), len(mid_run.plots))
+        self.assertEqual(at_start.plots_bought, mid_run.plots_bought)
+        self.assertEqual(at_start.plot_price(), mid_run.plot_price())
+
+        first_perk = Run(seed=1, perks={"plots": 1})
+        first_perk.money = 10000
+        self.assertTrue(first_perk.buy_plot())
+        shop_first = Run(seed=1, perks={})
+        shop_first.money = 10000
+        self.assertTrue(shop_first.buy_plot())
+        self.assertTrue(shop_first.buy_heirloom("plots", 1000)[0])
+        self.assertEqual(len(first_perk.plots), len(shop_first.plots))
+        self.assertEqual(first_perk.plot_price(), shop_first.plot_price())
+
+    def test_dead_calm_matches_other_minor_twists(self):
+        minor = [Run(seed=s).twist_id(2) for s in range(1, 4001)]
+        non_none = [tw for tw in minor if tw != "none"]
+        still_share = non_none.count("still") / len(non_none)
+        self.assertLess(abs(still_share - 1.0 / len(data.MINOR_TWISTS)), 0.03)
+
+    def test_relic_resale_refunds_half_of_price_paid(self):
+        run = Run(seed=1)
+        run.round = 3
+        run.money = 100000
+        run.shop_offers = ["greenhouse"]
+        paid = run.relic_offer_price(0)
+        self.assertTrue(run.buy_relic(0)[0])
+        run.round = 12
+        restored = Run.from_dict(run.to_dict())
+        ok, _, refund = restored.sell_relic(0)
+        self.assertTrue(ok)
+        self.assertEqual(refund, int(paid * 0.5))
+        self.assertLess(refund, paid)
+
+        free_run = Run(seed=1)
+        free_run.round = 3
+        free_run.shop_offers = ["greenhouse"]
+        free_run.free_offer = 0
+        self.assertTrue(free_run.buy_relic(0)[0])
+        free_run.round = 15
+        ok, _, free_refund = free_run.sell_relic(0)
+        self.assertTrue(ok)
+        self.assertEqual(free_refund, 0)
+
+    def test_corrupt_saves_back_up_instead_of_wiping_or_crashing(self):
+        from .app import App
+        from .save import SaveManager
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"BLOOM_SAVE_DIR": tmp}):
+            saves = SaveManager()
+            saves.profile_path.write_text("{corrupt", encoding="utf-8")
+            profile = saves.load_profile()
+            self.assertEqual(profile["heirlooms"], 0)
+            self.assertTrue((saves.folder / "profile.json.bak").exists())
+
+            saves.profile_path.write_bytes(b"\xff\xfe\xfd")
+            profile = saves.load_profile()
+            self.assertEqual(profile["perks"], {})
+
+            saves.profile_path.write_text('{"perks": "bad", "heirlooms": "oops"}', encoding="utf-8")
+            profile = saves.load_profile()
+            self.assertEqual(profile["perks"], {})
+            self.assertEqual(profile["heirlooms"], 0)
+
+            saves.run_path.write_bytes(b"\xff\xfe\xfd")
+            self.assertIsNone(saves.load_run())
+            self.assertTrue((saves.folder / "run.json.bak").exists())
+
+            saves.run_path.write_text('{"rng": [1, "bad"]}', encoding="utf-8")
+            app = App()
+            app.continue_run()
+            self.assertTrue((saves.folder / "run.json.bak").exists())
+            self.assertIsNotNone(app.run)
+
 
 
 
